@@ -11,7 +11,6 @@
 <p align="center">
   <a href="https://hex.pm/packages/prompt_runner_sdk"><img src="https://img.shields.io/hexpm/v/prompt_runner_sdk.svg" alt="Hex.pm"></a>
   <a href="https://hexdocs.pm/prompt_runner_sdk"><img src="https://img.shields.io/badge/docs-hexdocs-blue.svg" alt="Documentation"></a>
-  <a href="https://github.com/nshkrdotcom/prompt_runner_sdk/actions"><img src="https://github.com/nshkrdotcom/prompt_runner_sdk/workflows/CI/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
 </p>
 
@@ -308,52 +307,16 @@ mix run run_prompts.exs --config runner_config.exs --run --continue
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         CLI Interface                           │
-│                    (PromptRunner.CLI)                           │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Configuration Layer                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │    Config    │  │   Prompts    │  │  CommitMessages      │   │
-│  │   Loader     │  │    Parser    │  │     Parser           │   │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      Execution Engine                           │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │    Runner    │  │   Progress   │  │     Validator        │   │
-│  │              │  │   Tracker    │  │                      │   │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       LLM Facade                                │
-│  ┌────────────────────────┐  ┌────────────────────────────────┐ │
-│  │    Claude Agent SDK    │  │        Codex SDK               │ │
-│  │    (Anthropic)         │  │        (OpenAI)                │ │
-│  └────────────────────────┘  └────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     Output & Integration                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │   Stream     │  │     Git      │  │       UI             │   │
-│  │   Renderer   │  │  Integration │  │    Utilities         │   │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="assets/architecture.svg" alt="Prompt Runner SDK Architecture" width="700">
+</p>
 
 ## Examples
 
-The `examples/simple` directory contains a complete two-prompt demonstration:
+Each example has its own README under `examples/`. Start with `examples/README.md`.
+
+The `examples/simple` directory contains a two-prompt demonstration that writes
+files into the repo (Claude for prompt 01, Codex for prompt 02):
 
 ```bash
 # Navigate to the examples directory
@@ -365,10 +328,10 @@ cat runner_config.exs
 # List prompts
 mix run ../../run_prompts.exs --config runner_config.exs --list
 
-# Run the first prompt (uses Claude)
+# Run the first prompt (Claude writes examples/simple/claude-output.txt)
 mix run ../../run_prompts.exs --config runner_config.exs --run 01
 
-# Run the second prompt (uses Codex override)
+# Run the second prompt (Codex writes examples/simple/codex-output.txt)
 mix run ../../run_prompts.exs --config runner_config.exs --run 02
 ```
 
@@ -380,8 +343,9 @@ two dummy repos and commits to each repo separately:
 cd examples/multi_repo_dummy
 bash setup.sh
 
-# Run the multi-repo prompt
+# Run the multi-repo prompts (01 = Codex, 02 = Claude)
 mix run ../../run_prompts.exs --config runner_config.exs --run 01
+mix run ../../run_prompts.exs --config runner_config.exs --run 02
 
 # Clean up
 bash cleanup.sh

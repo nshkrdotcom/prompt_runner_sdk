@@ -1,2 +1,3 @@
 # Format: NUM|PHASE|SP|NAME|FILE[|TARGET_REPOS]
-01|1|2|Multi Repo Notes|001-multi-repo.md|alpha,beta
+01|1|2|Multi Repo Notes (Codex)|001-multi-repo.md|alpha,beta
+02|1|2|Multi Repo Notes (Claude)|002-multi-repo-claude.md|alpha,beta

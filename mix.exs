@@ -61,6 +61,7 @@ defmodule PromptRunner.MixProject do
       logo: "assets/prompt_runner_sdk.svg",
       extras: [
         "README.md",
+        "CHANGELOG.md",
         "LICENSE"
       ],
       groups_for_modules: [
@@ -78,7 +79,7 @@ defmodule PromptRunner.MixProject do
     [
       name: "prompt_runner_sdk",
       description: description(),
-      files: ~w(lib mix.exs README.md LICENSE assets examples),
+      files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE assets),
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,

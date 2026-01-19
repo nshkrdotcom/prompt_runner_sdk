@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 520" width="700" height="520">
+  <defs>
+    <!-- Professional monochromatic palette -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fafbfc;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f0f2f5;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="layerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f8f9fa;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="subBoxGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8f9fa;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e9ecef;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Subtle accent for headers -->
+    <linearGradient id="headerAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4b5563;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6b7280;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Drop shadow -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+    
+    <!-- Subtle inner shadow for sub-boxes -->
+    <filter id="innerShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="0.5" stdDeviation="1" flood-color="#000" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="700" height="520" fill="url(#bgGrad)"/>
+  
+  <!-- Layer 1: CLI Interface -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="20" width="640" height="60" rx="6" fill="url(#layerGrad)" stroke="#e5e7eb" stroke-width="1"/>
+    <rect x="30" y="20" width="640" height="4" rx="6" fill="#6366f1" opacity="0.8"/>
+    <text x="350" y="48" text-anchor="middle" fill="#1f2937" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600">CLI Interface</text>
+    <text x="350" y="66" text-anchor="middle" fill="#6b7280" font-family="Inter, system-ui, sans-serif" font-size="11">PromptRunner.CLI</text>
+  </g>
+  
+  <!-- Arrow 1 -->
+  <g>
+    <line x1="350" y1="80" x2="350" y2="100" stroke="#9ca3af" stroke-width="1.5"/>
+    <polygon points="344,96 350,105 356,96" fill="#9ca3af"/>
+  </g>
+  
+  <!-- Layer 2: Configuration Layer -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="105" width="640" height="80" rx="6" fill="url(#layerGrad)" stroke="#e5e7eb" stroke-width="1"/>
+    <rect x="30" y="105" width="640" height="4" rx="6" fill="#8b5cf6" opacity="0.7"/>
+    <text x="350" y="125" text-anchor="middle" fill="#1f2937" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="600">Configuration Layer</text>
+    
+    <!-- Sub-boxes -->
+    <g filter="url(#innerShadow)">
+      <rect x="45" y="135" width="190" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="140" y="160" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11">Config Loader</text>
+    </g>
+    <g filter="url(#innerShadow)">
+      <rect x="255" y="135" width="190" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="350" y="160" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11">Prompts Parser</text>
+    </g>
+    <g filter="url(#innerShadow)">
+      <rect x="465" y="135" width="190" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="560" y="160" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11">CommitMessages Parser</text>
+    </g>
+  </g>
+  
+  <!-- Arrow 2 -->
+  <g>
+    <line x1="350" y1="185" x2="350" y2="205" stroke="#9ca3af" stroke-width="1.5"/>
+    <polygon points="344,201 350,210 356,201" fill="#9ca3af"/>
+  </g>
+  
+  <!-- Layer 3: Execution Engine -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="210" width="640" height="80" rx="6" fill="url(#layerGrad)" stroke="#e5e7eb" stroke-width="1"/>
+    <rect x="30" y="210" width="640" height="4" rx="6" fill="#10b981" opacity="0.7"/>
+    <text x="350" y="230" text-anchor="middle" fill="#1f2937" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="600">Execution Engine</text>
+    
+    <!-- Sub-boxes -->
+    <g filter="url(#innerShadow)">
+      <rect x="45" y="240" width="190" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="140" y="265" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11">Runner</text>
+    </g>
+    <g filter="url(#innerShadow)">
+      <rect x="255" y="240" width="190" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="350" y="265" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11">Progress Tracker</text>
+    </g>
+    <g filter="url(#innerShadow)">
+      <rect x="465" y="240" width="190" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="560" y="265" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11">Validator</text>
+    </g>
+  </g>
+  
+  <!-- Arrow 3 -->
+  <g>
+    <line x1="350" y1="290" x2="350" y2="310" stroke="#9ca3af" stroke-width="1.5"/>
+    <polygon points="344,306 350,315 356,306" fill="#9ca3af"/>
+  </g>
+  
+  <!-- Layer 4: LLM Facade -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="315" width="640" height="80" rx="6" fill="url(#layerGrad)" stroke="#e5e7eb" stroke-width="1"/>
+    <rect x="30" y="315" width="640" height="4" rx="6" fill="#f59e0b" opacity="0.7"/>
+    <text x="350" y="335" text-anchor="middle" fill="#1f2937" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="600">LLM Facade</text>
+    
+    <!-- Sub-boxes -->
+    <g filter="url(#innerShadow)">
+      <rect x="60" y="345" width="280" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="200" y="363" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="500">Claude Agent SDK</text>
+      <text x="200" y="377" text-anchor="middle" fill="#6b7280" font-family="Inter, system-ui, sans-serif" font-size="9">(Anthropic)</text>
+    </g>
+    <g filter="url(#innerShadow)">
+      <rect x="360" y="345" width="280" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="500" y="363" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="500">Codex SDK</text>
+      <text x="500" y="377" text-anchor="middle" fill="#6b7280" font-family="Inter, system-ui, sans-serif" font-size="9">(OpenAI)</text>
+    </g>
+  </g>
+  
+  <!-- Arrow 4 -->
+  <g>
+    <line x1="350" y1="395" x2="350" y2="415" stroke="#9ca3af" stroke-width="1.5"/>
+    <polygon points="344,411 350,420 356,411" fill="#9ca3af"/>
+  </g>
+  
+  <!-- Layer 5: Output & Integration -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="420" width="640" height="80" rx="6" fill="url(#layerGrad)" stroke="#e5e7eb" stroke-width="1"/>
+    <rect x="30" y="420" width="640" height="4" rx="6" fill="#64748b" opacity="0.7"/>
+    <text x="350" y="440" text-anchor="middle" fill="#1f2937" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="600">Output &amp; Integration</text>
+    
+    <!-- Sub-boxes -->
+    <g filter="url(#innerShadow)">
+      <rect x="45" y="450" width="190" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="140" y="475" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11">Stream Renderer</text>
+    </g>
+    <g filter="url(#innerShadow)">
+      <rect x="255" y="450" width="190" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="350" y="475" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11">Git Integration</text>
+    </g>
+    <g filter="url(#innerShadow)">
+      <rect x="465" y="450" width="190" height="40" rx="4" fill="url(#subBoxGrad)" stroke="#d1d5db" stroke-width="1"/>
+      <text x="560" y="475" text-anchor="middle" fill="#374151" font-family="Inter, system-ui, sans-serif" font-size="11">UI Utilities</text>
+    </g>
+  </g>
+</svg>
