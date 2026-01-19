@@ -1,0 +1,5 @@
+=== COMMIT 01:alpha ===
+chore(alpha): add notes for multi-repo demo
+
+=== COMMIT 01:beta ===
+chore(beta): add notes for multi-repo demo

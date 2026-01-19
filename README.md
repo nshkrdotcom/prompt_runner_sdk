@@ -372,6 +372,21 @@ mix run ../../run_prompts.exs --config runner_config.exs --run 01
 mix run ../../run_prompts.exs --config runner_config.exs --run 02
 ```
 
+The `examples/multi_repo_dummy` directory demonstrates a single prompt that targets
+two dummy repos and commits to each repo separately:
+
+```bash
+# Create dummy repos
+cd examples/multi_repo_dummy
+bash setup.sh
+
+# Run the multi-repo prompt
+mix run ../../run_prompts.exs --config runner_config.exs --run 01
+
+# Clean up
+bash cleanup.sh
+```
+
 ## Stream Renderer Output
 
 ### Compact Mode Legend

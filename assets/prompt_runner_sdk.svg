@@ -107,8 +107,9 @@
   <!-- Center glow -->
   <ellipse cx="100" cy="100" rx="70" ry="70" fill="url(#glowCenter)"/>
   
-  <!-- Terminal/Code window background -->
-  <g transform="translate(45, 55)">
+  <!-- Terminal/Code window background - centered in hexagon -->
+  <!-- Hexagon center is at (100, 100), terminal is 110x75, so translate to (45, 62.5) for perfect centering -->
+  <g transform="translate(45, 62.5)">
     <rect x="0" y="0" width="110" height="75" rx="6" ry="6" 
           fill="url(#codeBlockGradient)" 
           stroke="#475569" 
@@ -157,33 +158,33 @@
     </g>
   </g>
   
-  <!-- Flowing data streams around the terminal -->
+  <!-- Flowing data streams around the terminal - adjusted for new terminal position -->
   <g opacity="0.7">
     <!-- Left stream -->
-    <path d="M30 70 Q25 100 35 130" stroke="url(#streamGradient)" stroke-width="2" fill="none" stroke-linecap="round">
+    <path d="M30 77 Q25 100 35 137" stroke="url(#streamGradient)" stroke-width="2" fill="none" stroke-linecap="round">
       <animate attributeName="stroke-dasharray" values="0 100;50 50;100 0" dur="2s" repeatCount="indefinite"/>
     </path>
     
     <!-- Right stream -->
-    <path d="M170 70 Q175 100 165 130" stroke="url(#streamGradient)" stroke-width="2" fill="none" stroke-linecap="round">
+    <path d="M170 77 Q175 100 165 137" stroke="url(#streamGradient)" stroke-width="2" fill="none" stroke-linecap="round">
       <animate attributeName="stroke-dasharray" values="0 100;50 50;100 0" dur="2s" repeatCount="indefinite" begin="0.5s"/>
     </path>
   </g>
   
-  <!-- Runner arrow/chevron indicators -->
+  <!-- Runner arrow/chevron indicators - positioned below terminal (terminal ends at y=137.5) -->
   <g filter="url(#pulse)">
     <!-- Top chevron -->
-    <path d="M100 150 L108 158 L100 158 L92 158 Z" fill="url(#runnerPath)" opacity="0.9">
+    <path d="M100 148 L108 156 L100 156 L92 156 Z" fill="url(#runnerPath)" opacity="0.9">
       <animate attributeName="opacity" values="0.5;1;0.5" dur="1.5s" repeatCount="indefinite"/>
     </path>
     
     <!-- Second chevron -->
-    <path d="M100 160 L106 166 L100 166 L94 166 Z" fill="url(#runnerPath)" opacity="0.7">
+    <path d="M100 158 L106 164 L100 164 L94 164 Z" fill="url(#runnerPath)" opacity="0.7">
       <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.5s" repeatCount="indefinite" begin="0.2s"/>
     </path>
     
     <!-- Third chevron -->
-    <path d="M100 170 L104 174 L100 174 L96 174 Z" fill="url(#runnerPath)" opacity="0.5">
+    <path d="M100 166 L104 170 L100 170 L96 170 Z" fill="url(#runnerPath)" opacity="0.5">
       <animate attributeName="opacity" values="0.2;0.6;0.2" dur="1.5s" repeatCount="indefinite" begin="0.4s"/>
     </path>
   </g>

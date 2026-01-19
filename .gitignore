@@ -28,6 +28,7 @@ prompt_runner_sdk-*.tar
 /logs/
 /examples/**/logs/
 /examples/**/.progress
+/examples/**/repos/
 
 # Dialyzer PLT files
 /priv/plts/
