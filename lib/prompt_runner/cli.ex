@@ -194,7 +194,7 @@ defmodule PromptRunner.CLI do
     IO.puts("      ],")
     IO.puts("")
     IO.puts("      llm: %{")
-    IO.puts("        sdk: \"claude_code_sdk\",")
+    IO.puts("        sdk: \"claude_agent_sdk\",")
     IO.puts("        model: \"sonnet\",")
     IO.puts("        prompt_overrides: %{")
     IO.puts("          \"02\" => %{sdk: \"codex_sdk\", model: \"gpt-5.1-codex\"}")

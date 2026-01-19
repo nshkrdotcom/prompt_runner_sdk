@@ -1,1 +1,1 @@
-Confirm you are responding via Claude Code SDK and reply with exactly: OK
+Confirm you are responding via Claude Agent SDK and reply with exactly: OK

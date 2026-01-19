@@ -108,7 +108,7 @@
   <ellipse cx="100" cy="100" rx="70" ry="70" fill="url(#glowCenter)"/>
   
   <!-- Terminal/Code window background -->
-  <g transform="translate(45, 50)">
+  <g transform="translate(45, 55)">
     <rect x="0" y="0" width="110" height="75" rx="6" ry="6" 
           fill="url(#codeBlockGradient)" 
           stroke="#475569" 
@@ -125,7 +125,7 @@
     <circle cx="36" cy="8" r="3.5" fill="#22c55e"/>
     
     <!-- Terminal title -->
-    <text x="55" y="11" font-family="monospace" font-size="6" fill="#94a3b8" text-anchor="middle">prompt_runner</text>
+    <text x="75" y="11" font-family="monospace" font-size="6" fill="#94a3b8" text-anchor="middle">prompt_runner</text>
     
     <!-- Prompt lines with streaming effect -->
     <g transform="translate(8, 24)">
@@ -173,17 +173,17 @@
   <!-- Runner arrow/chevron indicators -->
   <g filter="url(#pulse)">
     <!-- Top chevron -->
-    <path d="M100 140 L108 148 L100 148 L92 148 Z" fill="url(#runnerPath)" opacity="0.9">
+    <path d="M100 150 L108 158 L100 158 L92 158 Z" fill="url(#runnerPath)" opacity="0.9">
       <animate attributeName="opacity" values="0.5;1;0.5" dur="1.5s" repeatCount="indefinite"/>
     </path>
     
     <!-- Second chevron -->
-    <path d="M100 150 L106 156 L100 156 L94 156 Z" fill="url(#runnerPath)" opacity="0.7">
+    <path d="M100 160 L106 166 L100 166 L94 166 Z" fill="url(#runnerPath)" opacity="0.7">
       <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.5s" repeatCount="indefinite" begin="0.2s"/>
     </path>
     
     <!-- Third chevron -->
-    <path d="M100 160 L104 164 L100 164 L96 164 Z" fill="url(#runnerPath)" opacity="0.5">
+    <path d="M100 170 L104 174 L100 174 L96 174 Z" fill="url(#runnerPath)" opacity="0.5">
       <animate attributeName="opacity" values="0.2;0.6;0.2" dur="1.5s" repeatCount="indefinite" begin="0.4s"/>
     </path>
   </g>

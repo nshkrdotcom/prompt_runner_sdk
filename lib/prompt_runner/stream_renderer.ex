@@ -1,7 +1,7 @@
 defmodule PromptRunner.StreamRenderer do
   @moduledoc false
 
-  alias ClaudeCodeSDK.Message
+  alias ClaudeAgentSDK.Message
 
   @red "\e[0;31m"
   @green "\e[0;32m"

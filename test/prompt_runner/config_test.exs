@@ -32,7 +32,7 @@ defmodule PromptRunner.ConfigTest do
         log_dir: "logs",
         model: "sonnet",
         llm: %{
-          sdk: "claude_code_sdk",
+          sdk: "claude_agent_sdk",
           prompt_overrides: %{
             2 => %{sdk: "codex_sdk", model: "gpt-5.1-codex"}
           }

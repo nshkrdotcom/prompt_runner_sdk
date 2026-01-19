@@ -12,7 +12,7 @@
   events_mode: :compact,
   phase_names: %{1 => "Example"},
   llm: %{
-    sdk: "claude_code_sdk",
+    sdk: "claude_agent_sdk",
     model: "sonnet",
     prompt_overrides: %{
       "02" => %{sdk: "codex_sdk", model: "gpt-5.1-codex"}

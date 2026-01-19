@@ -32,7 +32,7 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      {:claude_code_sdk, "~> 0.2.2"},
+      {:claude_agent_sdk, "~> 0.9.0"},
       {:codex_sdk, "~> 0.5.0"},
       {:jason, "~> 1.4"},
       {:mox, "~> 1.1", only: :test},
@@ -45,7 +45,7 @@ defmodule PromptRunner.MixProject do
   defp description do
     """
     Prompt Runner SDK - An Elixir toolkit for orchestrating multi-step prompt
-    executions with Claude Code SDK and Codex SDK. Features streaming output,
+    executions with Claude Agent SDK and Codex SDK. Features streaming output,
     progress tracking, multi-repository support, and automatic git integration.
     """
   end

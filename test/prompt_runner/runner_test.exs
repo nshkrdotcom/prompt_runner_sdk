@@ -36,7 +36,7 @@ defmodule PromptRunner.RunnerTest do
         progress_file: ".progress",
         log_dir: "logs",
         model: "sonnet",
-        llm: %{sdk: "claude_code_sdk"}
+        llm: %{sdk: "claude_agent_sdk"}
       }
       """
     )

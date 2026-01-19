@@ -14,8 +14,6 @@ defmodule PromptRunner.LLMFacade do
   def normalize_sdk(v) when is_binary(v) do
     case v |> String.trim() |> String.downcase() do
       "claude" -> :claude
-      "claude_code" -> :claude
-      "claude_code_sdk" -> :claude
       "claude_agent" -> :claude
       "claude_agent_sdk" -> :claude
       "codex" -> :codex
@@ -38,13 +36,13 @@ defmodule PromptRunner.LLMFacade do
       |> maybe_put(:cwd, llm[:cwd])
       |> Keyword.merge(normalize_kw(llm[:claude_opts]))
 
-    options = ClaudeCodeSDK.Options.new(opts_kw)
+    options = ClaudeAgentSDK.Options.new(opts_kw)
 
-    with {:ok, session} <- ClaudeCodeSDK.Streaming.start_session(options) do
-      stream = ClaudeCodeSDK.Streaming.send_message(session, prompt)
+    with {:ok, session} <- ClaudeAgentSDK.Streaming.start_session(options) do
+      stream = ClaudeAgentSDK.Streaming.send_message(session, prompt)
 
       close_fun = fn ->
-        safe_apply(fn -> ClaudeCodeSDK.Streaming.close_session(session) end)
+        safe_apply(fn -> ClaudeAgentSDK.Streaming.close_session(session) end)
       end
 
       {:ok, stream, close_fun, %{sdk: :claude, model: llm[:model], cwd: llm[:cwd]}}
@@ -118,7 +116,7 @@ defmodule PromptRunner.LLMFacade do
   defp sandbox_from_permission_mode(_), do: nil
 
   defp ensure_started(:claude) do
-    _ = Application.ensure_all_started(:claude_code_sdk)
+    _ = Application.ensure_all_started(:claude_agent_sdk)
     :ok
   end
 

@@ -5,7 +5,7 @@
 <h1 align="center">Prompt Runner SDK</h1>
 
 <p align="center">
-  <strong>A comprehensive Elixir toolkit for orchestrating multi-step prompt executions with Claude Code SDK and Codex SDK</strong>
+  <strong>A comprehensive Elixir toolkit for orchestrating multi-step prompt executions with Claude Agent SDK and Codex SDK</strong>
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 
 ### Why Prompt Runner SDK?
 
-- **Multi-LLM Support**: Seamlessly switch between Claude Code SDK and Codex SDK, even within the same prompt sequence
+- **Multi-LLM Support**: Seamlessly switch between Claude Agent SDK and Codex SDK, even within the same prompt sequence
 - **Real-time Streaming**: Watch AI responses stream in real-time with rich terminal formatting
 - **Progress Persistence**: Resume interrupted sessions exactly where you left off
 - **Multi-Repository**: Execute prompts that span multiple git repositories with coordinated commits
@@ -33,7 +33,7 @@
 
 ### 🚀 Dual LLM Backend Support
 
-Prompt Runner SDK provides a unified facade for both **Claude Code SDK** (Anthropic) and **Codex SDK** (OpenAI), allowing you to:
+Prompt Runner SDK provides a unified facade for both **Claude Agent SDK** (Anthropic) and **Codex SDK** (OpenAI), allowing you to:
 
 - Configure a default LLM backend at the project level
 - Override the LLM on a per-prompt basis
@@ -42,7 +42,7 @@ Prompt Runner SDK provides a unified facade for both **Claude Code SDK** (Anthro
 ```elixir
 %{
   llm: %{
-    sdk: "claude_code_sdk",
+    sdk: "claude_agent_sdk",
     model: "sonnet",
     prompt_overrides: %{
       "02" => %{sdk: "codex_sdk", model: "gpt-5.1-codex"}
@@ -138,7 +138,7 @@ Create `runner_config.exs` in your project:
   project_dir: "/path/to/your/project",
   
   llm: %{
-    sdk: "claude_code_sdk",
+    sdk: "claude_agent_sdk",
     model: "sonnet",
     permission_mode: :accept_edits,
     allowed_tools: ["Read", "Write", "Bash"]
@@ -262,7 +262,7 @@ mix run run_prompts.exs --config runner_config.exs --run --continue
   
   # LLM configuration
   llm: %{
-    sdk: "claude_code_sdk",        # or "codex_sdk"
+    sdk: "claude_agent_sdk",        # or "codex_sdk"
     model: "sonnet",               # model identifier
     permission_mode: :accept_edits, # :plan, :accept_edits, :bypass_permissions
     allowed_tools: ["Read", "Write", "Bash", "Computer"],
@@ -336,7 +336,7 @@ mix run run_prompts.exs --config runner_config.exs --run --continue
 ┌─────────────────────────────────────────────────────────────────┐
 │                       LLM Facade                                │
 │  ┌────────────────────────┐  ┌────────────────────────────────┐ │
-│  │    Claude Code SDK     │  │        Codex SDK               │ │
+│  │    Claude Agent SDK    │  │        Codex SDK               │ │
 │  │    (Anthropic)         │  │        (OpenAI)                │ │
 │  └────────────────────────┘  └────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
@@ -435,7 +435,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- [Claude Code SDK](https://hex.pm/packages/claude_code_sdk) - Anthropic's Claude integration for Elixir
+- [Claude Agent SDK](https://hex.pm/packages/claude_agent_sdk) - Anthropic's Claude integration for Elixir
 - [Codex SDK](https://hex.pm/packages/codex_sdk) - OpenAI's Codex integration for Elixir
 - The Elixir community for their excellent tooling and ecosystem
 
