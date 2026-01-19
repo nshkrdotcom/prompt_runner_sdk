@@ -5,7 +5,7 @@
 <h1 align="center">Prompt Runner SDK</h1>
 
 <p align="center">
-  <strong>A comprehensive Elixir toolkit for orchestrating multi-step prompt executions with Claude Agent SDK and Codex SDK</strong>
+  <strong>An Elixir toolkit for orchestrating multi-step prompt executions with Claude Agent SDK and Codex SDK</strong>
 </p>
 
 <p align="center">
@@ -18,19 +18,49 @@
 
 ## Overview
 
-**Prompt Runner SDK** is a powerful Elixir-based command-line tool and library for managing and executing sequences of AI prompts across multiple LLM backends. Whether you're building complex multi-step code generation pipelines, automating development workflows, or orchestrating AI-assisted refactoring tasks, Prompt Runner SDK provides the infrastructure to run prompts reliably with real-time streaming output and persistent progress tracking.
+**Prompt Runner SDK** is a CLI-first Elixir tool for running ordered prompt sets with
+streaming output, repeatable configuration, and per-prompt git commits. It supports
+both Claude Agent SDK and Codex SDK through a single facade.
 
-### Why Prompt Runner SDK?
+### Start Here (Recommended)
 
-- **Multi-LLM Support**: Seamlessly switch between Claude Agent SDK and Codex SDK, even within the same prompt sequence
-- **Real-time Streaming**: Watch AI responses stream in real-time with rich terminal formatting
-- **Progress Persistence**: Resume interrupted sessions exactly where you left off
-- **Multi-Repository**: Execute prompts that span multiple git repositories with coordinated commits
-- **Production Ready**: Comprehensive logging, validation, and error handling for production use
+Use the multi-repo example as the reference implementation. It shows the full
+structure (config + prompts + commit messages) and runs against two dummy repos:
+
+```bash
+cd /home/home/p/g/n/prompt_runner_sdk
+bash examples/multi_repo_dummy/setup.sh
+mix run run_prompts.exs --config examples/multi_repo_dummy/runner_config.exs --run 01
+mix run run_prompts.exs --config examples/multi_repo_dummy/runner_config.exs --run 02
+```
+
+Read the walkthrough in `examples/multi_repo_dummy/README.md`.
+
+### What You Create
+
+You provide three files plus the prompt markdown files:
+
+```
+runner_config.exs         # settings + LLM defaults
+prompts.txt               # prompt list (order, file, repo targets)
+commit-messages.txt       # per-prompt commit messages
+001-setup.md              # actual prompt content
+002-feature.md
+...
+```
+
+All paths in `runner_config.exs` are relative to the config file.
+
+### How Prompt Runner Uses Them
+
+- `runner_config.exs`: overall settings, default LLM, repo paths, logging.
+- `prompts.txt`: ordered list of prompts with file names and optional repo targets.
+- `commit-messages.txt`: the commit message for each prompt (per-repo if needed).
+- `NNN-*.md`: the actual prompt instructions that the LLM executes.
 
 ## Features
 
-### 🚀 Dual LLM Backend Support
+### Dual LLM Backend Support
 
 Prompt Runner SDK provides a unified facade for both **Claude Agent SDK** (Anthropic) and **Codex SDK** (OpenAI), allowing you to:
 
@@ -50,7 +80,7 @@ Prompt Runner SDK provides a unified facade for both **Claude Agent SDK** (Anthr
 }
 ```
 
-### 📡 Real-time Streaming Output
+### Real-time Streaming Output
 
 Experience AI responses as they're generated with our advanced streaming renderer:
 
@@ -59,7 +89,7 @@ Experience AI responses as they're generated with our advanced streaming rendere
 - **Color-coded Output**: Instantly distinguish between roles, tools, and status
 - **Event Logging**: Capture all events in JSON format for post-processing
 
-### 📊 Persistent Progress Tracking
+### Persistent Progress Tracking
 
 Never lose your place in a long-running prompt sequence:
 
@@ -68,7 +98,7 @@ Never lose your place in a long-running prompt sequence:
 - Handles partial successes when working with multiple repositories
 - Status markers: `[ ]` pending, `[/]` in-progress, `[x]` completed, `[!]` failed
 
-### 🔀 Multi-Repository Support
+### Multi-Repository Support
 
 Execute prompts that affect multiple codebases simultaneously:
 
@@ -84,7 +114,7 @@ Execute prompts that affect multiple codebases simultaneously:
 
 Each prompt can specify which repositories it should modify, with automatic git commit coordination.
 
-### 📝 Automatic Git Integration
+### Automatic Git Integration
 
 Streamline your development workflow with built-in git operations:
 
@@ -93,7 +123,7 @@ Streamline your development workflow with built-in git operations:
 - Automatic staging and committing after successful prompt execution
 - `--no-commit` option for dry runs and testing
 
-### 🎯 Phase-Based Organization
+### Phase-Based Organization
 
 Organize complex prompt sequences into logical phases:
 
@@ -126,85 +156,68 @@ Then run:
 mix deps.get
 ```
 
-## Quick Start
+## Configuration Structure (Essentials)
 
-### 1. Create a Configuration File
-
-Create `runner_config.exs` in your project:
+### runner_config.exs
 
 ```elixir
 %{
-  project_dir: "/path/to/your/project",
-  
-  llm: %{
-    sdk: "claude_agent_sdk",
-    model: "sonnet",
-    permission_mode: :accept_edits,
-    allowed_tools: ["Read", "Write", "Bash"]
-  },
-  
+  project_dir: "/path/to/workspace",
   prompts_file: "prompts.txt",
   commit_messages_file: "commit-messages.txt",
   progress_file: ".progress",
   log_dir: "logs",
-  
-  phase_names: %{
-    1 => "Foundation",
-    2 => "Core Features",
-    3 => "Integration"
+  model: "sonnet",
+  allowed_tools: ["Read", "Write", "Bash"],
+  permission_mode: :accept_edits,
+  target_repos: [
+    %{name: "app", path: "/path/to/app", default: true},
+    %{name: "lib", path: "/path/to/lib"}
+  ],
+  llm: %{
+    sdk: "claude_agent_sdk",
+    model: "sonnet",
+    prompt_overrides: %{
+      "02" => %{sdk: "codex_sdk", model: "gpt-5.1-codex"}
+    }
   }
 }
 ```
 
-### 2. Define Your Prompts
+### prompts.txt
 
-Create `prompts.txt`:
+Format: `NUM|PHASE|SP|NAME|FILE[|TARGET_REPOS]`
 
 ```
 01|1|5|Initial Setup|001-setup.md
-02|1|8|Core Module|002-core.md
-03|2|13|Feature Implementation|003-feature.md
+02|1|8|Core Module|002-core.md|app,lib
 ```
 
-### 3. Create Commit Messages
+### commit-messages.txt
 
-Create `commit-messages.txt`:
+Single-repo:
 
 ```
 === COMMIT 01 ===
-feat(init): set up project structure and dependencies
-
-=== COMMIT 02 ===
-feat(core): implement core module with basic functionality
-
-=== COMMIT 03 ===
-feat(feature): add main feature implementation
+feat(init): set up project structure
 ```
 
-### 4. Write Your Prompts
+Multi-repo:
 
-Create individual prompt files (e.g., `001-setup.md`, `002-core.md`, etc.) with your AI instructions.
+```
+=== COMMIT 02:app ===
+feat(app): implement core module
 
-### 5. Run!
+=== COMMIT 02:lib ===
+feat(lib): update shared utilities
+```
+
+### Run prompts
 
 ```bash
-# List all prompts with their status
 mix run run_prompts.exs --config runner_config.exs --list
-
-# Preview what would execute (dry-run)
-mix run run_prompts.exs --config runner_config.exs --dry-run 01
-
-# Execute a single prompt
 mix run run_prompts.exs --config runner_config.exs --run 01
-
-# Execute all prompts in a phase
-mix run run_prompts.exs --config runner_config.exs --run --phase 1
-
-# Execute all prompts
 mix run run_prompts.exs --config runner_config.exs --run --all
-
-# Continue from where you left off
-mix run run_prompts.exs --config runner_config.exs --run --continue
 ```
 
 ## CLI Reference
@@ -214,7 +227,7 @@ mix run run_prompts.exs --config runner_config.exs --run --continue
 | Command | Description |
 |---------|-------------|
 | `--list` | Display all prompts with their current status |
-| `--validate` | Run comprehensive configuration validation |
+| `--validate` | Run full configuration validation |
 | `--dry-run TARGET` | Preview execution without running |
 | `--plan-only` | Generate execution plan only |
 | `--run TARGET` | Execute prompts with streaming output |
@@ -315,40 +328,23 @@ mix run run_prompts.exs --config runner_config.exs --run --continue
 
 Each example has its own README under `examples/`. Start with `examples/README.md`.
 
-The `examples/simple` directory contains a two-prompt demonstration that writes
-files into the repo (Claude for prompt 01, Codex for prompt 02):
+**Recommended:** `examples/multi_repo_dummy` is the full reference example. It shows
+multi-repo targeting, per-repo commits, and SDK overrides:
 
 ```bash
-# Navigate to the examples directory
-cd examples/simple
-
-# View the configuration
-cat runner_config.exs
-
-# List prompts
-mix run ../../run_prompts.exs --config runner_config.exs --list
-
-# Run the first prompt (Claude writes examples/simple/claude-output.txt)
-mix run ../../run_prompts.exs --config runner_config.exs --run 01
-
-# Run the second prompt (Codex writes examples/simple/codex-output.txt)
-mix run ../../run_prompts.exs --config runner_config.exs --run 02
-```
-
-The `examples/multi_repo_dummy` directory demonstrates a single prompt that targets
-two dummy repos and commits to each repo separately:
-
-```bash
-# Create dummy repos
 cd examples/multi_repo_dummy
 bash setup.sh
-
-# Run the multi-repo prompts (01 = Codex, 02 = Claude)
 mix run ../../run_prompts.exs --config runner_config.exs --run 01
 mix run ../../run_prompts.exs --config runner_config.exs --run 02
-
-# Clean up
 bash cleanup.sh
+```
+
+`examples/simple` is a minimal two-prompt demo that writes small files into the repo:
+
+```bash
+cd examples/simple
+mix run ../../run_prompts.exs --config runner_config.exs --run 01
+mix run ../../run_prompts.exs --config runner_config.exs --run 02
 ```
 
 ## Stream Renderer Output
@@ -421,5 +417,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 <p align="center">
-  Made with 💜 by <a href="https://github.com/nshkrdotcom">nshkrdotcom</a>
+  Made with 💚 by <a href="https://github.com/nshkrdotcom">nshkrdotcom</a>
 </p>

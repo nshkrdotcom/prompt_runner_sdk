@@ -60,9 +60,23 @@ defmodule PromptRunner.MixProject do
       assets: %{"assets" => "assets"},
       logo: "assets/prompt_runner_sdk.svg",
       extras: [
-        "README.md",
+        {"README.md", filename: "readme", title: "Prompt Runner SDK"},
         "CHANGELOG.md",
-        "LICENSE"
+        "LICENSE",
+        # Examples
+        {"examples/README.md", filename: "examples", title: "Examples Overview"},
+        {"examples/simple/README.md", filename: "example-simple", title: "Simple Example"},
+        {"examples/multi_repo_dummy/README.md",
+         filename: "example-multi-repo", title: "Multi-Repo Example"}
+      ],
+      groups_for_extras: [
+        Introduction: ["readme"],
+        Guides: ["CHANGELOG.md", "LICENSE"],
+        Examples: [
+          "examples",
+          "example-simple",
+          "example-multi-repo"
+        ]
       ],
       groups_for_modules: [
         "Core API": [PromptRunner, PromptRunner.Runner, PromptRunner.CLI],
@@ -79,11 +93,10 @@ defmodule PromptRunner.MixProject do
     [
       name: "prompt_runner_sdk",
       description: description(),
-      files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE assets),
+      files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE),
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
-        "Online documentation" => "https://hexdocs.pm/prompt_runner_sdk",
         "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"
       },
       maintainers: ["nshkrdotcom"],

@@ -108,17 +108,17 @@
   <ellipse cx="100" cy="100" rx="70" ry="70" fill="url(#glowCenter)"/>
   
   <!-- Terminal/Code window background - centered in hexagon -->
-  <!-- Hexagon center is at (100, 100), terminal is 110x75, so translate to (45, 62.5) for perfect centering -->
-  <g transform="translate(45, 62.5)">
-    <rect x="0" y="0" width="110" height="75" rx="6" ry="6" 
+  <!-- Hexagon center is at (100, 100), terminal is 120x75, so translate to (40, 60) for perfect centering -->
+  <g transform="translate(40, 60)">
+    <rect x="0" y="0" width="120" height="75" rx="6" ry="6" 
           fill="url(#codeBlockGradient)" 
           stroke="#475569" 
           stroke-width="1.5"
           filter="url(#terminalGlow)"/>
     
     <!-- Terminal title bar -->
-    <rect x="0" y="0" width="110" height="16" rx="6" ry="6" fill="#334155"/>
-    <rect x="0" y="10" width="110" height="6" fill="#334155"/>
+    <rect x="0.5" y="0" width="119" height="16" rx="6" ry="6" fill="#334155"/>
+    <rect x="0.5" y="10" width="119" height="6" fill="#334155"/>
     
     <!-- Traffic light buttons -->
     <circle cx="12" cy="8" r="3.5" fill="#ef4444"/>
@@ -126,10 +126,10 @@
     <circle cx="36" cy="8" r="3.5" fill="#22c55e"/>
     
     <!-- Terminal title -->
-    <text x="75" y="11" font-family="monospace" font-size="6" fill="#94a3b8" text-anchor="middle">prompt_runner</text>
+    <text x="80" y="10" font-family="monospace" font-size="6" fill="#94a3b8" text-anchor="middle">prompt_runner</text>
     
     <!-- Prompt lines with streaming effect -->
-    <g transform="translate(8, 24)">
+    <g transform="translate(10, 28)">
       <!-- Line 1: Prompt indicator -->
       <text font-family="monospace" font-size="7" fill="#a78bfa">❯</text>
       <text x="10" y="0" font-family="monospace" font-size="6" fill="#67e8f9">run</text>
