@@ -1,0 +1,231 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <!-- Background gradient - deep tech blue to purple -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f0c29"/>
+      <stop offset="50%" stop-color="#302b63"/>
+      <stop offset="100%" stop-color="#24243e"/>
+    </linearGradient>
+    
+    <!-- Hexagon fill gradient - electric blue -->
+    <linearGradient id="hexFill" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#667eea"/>
+      <stop offset="30%" stop-color="#764ba2"/>
+      <stop offset="70%" stop-color="#6B73FF"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+    
+    <!-- Glow effect gradient -->
+    <radialGradient id="glowCenter" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.6"/>
+      <stop offset="50%" stop-color="#6366f1" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#1e1b4b" stop-opacity="0"/>
+    </radialGradient>
+    
+    <!-- Prompt stream gradient -->
+    <linearGradient id="streamGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0"/>
+      <stop offset="20%" stop-color="#06b6d4"/>
+      <stop offset="80%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#67e8f9" stop-opacity="0"/>
+    </linearGradient>
+    
+    <!-- Code block gradient -->
+    <linearGradient id="codeBlockGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    
+    <!-- Runner path gradient -->
+    <linearGradient id="runnerPath" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f472b6"/>
+      <stop offset="50%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+    
+    <!-- Terminal glow -->
+    <filter id="terminalGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Outer glow filter -->
+    <filter id="outerGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feFlood flood-color="#8b5cf6" flood-opacity="0.5"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Pulse animation -->
+    <filter id="pulse" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Data stream dots pattern -->
+    <pattern id="dataStream" patternUnits="userSpaceOnUse" width="8" height="8">
+      <circle cx="2" cy="2" r="1" fill="#22d3ee" opacity="0.7"/>
+    </pattern>
+    
+    <!-- Circuit pattern for tech feel -->
+    <pattern id="circuitPattern" patternUnits="userSpaceOnUse" width="20" height="20">
+      <path d="M0 10 L8 10 L8 5 L12 5 L12 10 L20 10" stroke="#4338ca" stroke-width="0.5" fill="none" opacity="0.3"/>
+      <path d="M10 0 L10 8 L15 8 L15 12 L10 12 L10 20" stroke="#4338ca" stroke-width="0.5" fill="none" opacity="0.3"/>
+      <circle cx="8" cy="5" r="1" fill="#6366f1" opacity="0.5"/>
+      <circle cx="15" cy="12" r="1" fill="#6366f1" opacity="0.5"/>
+    </pattern>
+    
+    <!-- Hexagon clip path -->
+    <clipPath id="hexClip">
+      <polygon points="100,8 184,54 184,146 100,192 16,146 16,54"/>
+    </clipPath>
+  </defs>
+  
+  <!-- Background hexagon with gradient -->
+  <polygon points="100,8 184,54 184,146 100,192 16,146 16,54" 
+           fill="url(#hexFill)" 
+           stroke="url(#runnerPath)" 
+           stroke-width="3"
+           filter="url(#outerGlow)"/>
+  
+  <!-- Inner circuit pattern overlay -->
+  <polygon points="100,8 184,54 184,146 100,192 16,146 16,54" 
+           fill="url(#circuitPattern)" 
+           opacity="0.4"
+           clip-path="url(#hexClip)"/>
+  
+  <!-- Center glow -->
+  <ellipse cx="100" cy="100" rx="70" ry="70" fill="url(#glowCenter)"/>
+  
+  <!-- Terminal/Code window background -->
+  <g transform="translate(45, 50)">
+    <rect x="0" y="0" width="110" height="75" rx="6" ry="6" 
+          fill="url(#codeBlockGradient)" 
+          stroke="#475569" 
+          stroke-width="1.5"
+          filter="url(#terminalGlow)"/>
+    
+    <!-- Terminal title bar -->
+    <rect x="0" y="0" width="110" height="16" rx="6" ry="6" fill="#334155"/>
+    <rect x="0" y="10" width="110" height="6" fill="#334155"/>
+    
+    <!-- Traffic light buttons -->
+    <circle cx="12" cy="8" r="3.5" fill="#ef4444"/>
+    <circle cx="24" cy="8" r="3.5" fill="#eab308"/>
+    <circle cx="36" cy="8" r="3.5" fill="#22c55e"/>
+    
+    <!-- Terminal title -->
+    <text x="55" y="11" font-family="monospace" font-size="6" fill="#94a3b8" text-anchor="middle">prompt_runner</text>
+    
+    <!-- Prompt lines with streaming effect -->
+    <g transform="translate(8, 24)">
+      <!-- Line 1: Prompt indicator -->
+      <text font-family="monospace" font-size="7" fill="#a78bfa">❯</text>
+      <text x="10" y="0" font-family="monospace" font-size="6" fill="#67e8f9">run</text>
+      <text x="25" y="0" font-family="monospace" font-size="6" fill="#94a3b8">--stream</text>
+      
+      <!-- Line 2: Claude indicator -->
+      <g transform="translate(0, 12)">
+        <text font-family="monospace" font-size="6" fill="#f472b6">◆</text>
+        <text x="10" y="0" font-family="monospace" font-size="6" fill="#c4b5fd">Claude</text>
+        <rect x="40" y="-5" width="50" height="6" fill="url(#streamGradient)" opacity="0.8" rx="1"/>
+      </g>
+      
+      <!-- Line 3: Codex indicator -->
+      <g transform="translate(0, 24)">
+        <text font-family="monospace" font-size="6" fill="#60a5fa">◇</text>
+        <text x="10" y="0" font-family="monospace" font-size="6" fill="#93c5fd">Codex</text>
+        <rect x="38" y="-5" width="45" height="6" fill="url(#streamGradient)" opacity="0.6" rx="1"/>
+      </g>
+      
+      <!-- Line 4: Progress -->
+      <g transform="translate(0, 36)">
+        <text font-family="monospace" font-size="6" fill="#22c55e">✓</text>
+        <text x="10" y="0" font-family="monospace" font-size="6" fill="#4ade80">01/05</text>
+        <text x="35" y="0" font-family="monospace" font-size="5" fill="#64748b">streaming...</text>
+      </g>
+    </g>
+  </g>
+  
+  <!-- Flowing data streams around the terminal -->
+  <g opacity="0.7">
+    <!-- Left stream -->
+    <path d="M30 70 Q25 100 35 130" stroke="url(#streamGradient)" stroke-width="2" fill="none" stroke-linecap="round">
+      <animate attributeName="stroke-dasharray" values="0 100;50 50;100 0" dur="2s" repeatCount="indefinite"/>
+    </path>
+    
+    <!-- Right stream -->
+    <path d="M170 70 Q175 100 165 130" stroke="url(#streamGradient)" stroke-width="2" fill="none" stroke-linecap="round">
+      <animate attributeName="stroke-dasharray" values="0 100;50 50;100 0" dur="2s" repeatCount="indefinite" begin="0.5s"/>
+    </path>
+  </g>
+  
+  <!-- Runner arrow/chevron indicators -->
+  <g filter="url(#pulse)">
+    <!-- Top chevron -->
+    <path d="M100 140 L108 148 L100 148 L92 148 Z" fill="url(#runnerPath)" opacity="0.9">
+      <animate attributeName="opacity" values="0.5;1;0.5" dur="1.5s" repeatCount="indefinite"/>
+    </path>
+    
+    <!-- Second chevron -->
+    <path d="M100 150 L106 156 L100 156 L94 156 Z" fill="url(#runnerPath)" opacity="0.7">
+      <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.5s" repeatCount="indefinite" begin="0.2s"/>
+    </path>
+    
+    <!-- Third chevron -->
+    <path d="M100 160 L104 164 L100 164 L96 164 Z" fill="url(#runnerPath)" opacity="0.5">
+      <animate attributeName="opacity" values="0.2;0.6;0.2" dur="1.5s" repeatCount="indefinite" begin="0.4s"/>
+    </path>
+  </g>
+  
+  <!-- Corner accent nodes -->
+  <g opacity="0.8">
+    <!-- Top-left node -->
+    <circle cx="35" cy="45" r="4" fill="#8b5cf6" filter="url(#terminalGlow)"/>
+    <circle cx="35" cy="45" r="2" fill="#c4b5fd"/>
+    
+    <!-- Top-right node -->
+    <circle cx="165" cy="45" r="4" fill="#06b6d4" filter="url(#terminalGlow)"/>
+    <circle cx="165" cy="45" r="2" fill="#67e8f9"/>
+    
+    <!-- Bottom-left node -->
+    <circle cx="35" cy="155" r="4" fill="#f472b6" filter="url(#terminalGlow)"/>
+    <circle cx="35" cy="155" r="2" fill="#fbcfe8"/>
+    
+    <!-- Bottom-right node -->
+    <circle cx="165" cy="155" r="4" fill="#22c55e" filter="url(#terminalGlow)"/>
+    <circle cx="165" cy="155" r="2" fill="#86efac"/>
+  </g>
+  
+  <!-- Connection lines between nodes -->
+  <g stroke="#6366f1" stroke-width="0.5" opacity="0.4">
+    <line x1="35" y1="45" x2="45" y2="50"/>
+    <line x1="165" y1="45" x2="155" y2="50"/>
+    <line x1="35" y1="155" x2="45" y2="125"/>
+    <line x1="165" y1="155" x2="155" y2="125"/>
+  </g>
+  
+  <!-- Hexagon border highlight -->
+  <polygon points="100,8 184,54 184,146 100,192 16,146 16,54" 
+           fill="none" 
+           stroke="url(#runnerPath)" 
+           stroke-width="1"
+           opacity="0.6"/>
+  
+  <!-- Inner hexagon accent -->
+  <polygon points="100,20 172,60 172,140 100,180 28,140 28,60" 
+           fill="none" 
+           stroke="#4338ca" 
+           stroke-width="0.5"
+           opacity="0.3"/>
+</svg>
