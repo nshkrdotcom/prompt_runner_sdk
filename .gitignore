@@ -28,3 +28,20 @@ prompt_runner_sdk-*.tar
 /logs/
 /examples/**/logs/
 /examples/**/.progress
+
+# Dialyzer PLT files
+/priv/plts/
+*.plt
+*.plt.hash
+
+# Editor artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+*.bak
