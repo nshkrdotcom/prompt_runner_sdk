@@ -1,9 +1,9 @@
 defmodule PromptRunner.LLM.CodexNormalizerTest do
   use ExUnit.Case, async: true
 
-  alias PromptRunner.LLM.CodexNormalizer
   alias Codex.Events
   alias Codex.Items
+  alias PromptRunner.LLM.CodexNormalizer
 
   test "normalizes message deltas and turn boundaries" do
     events = [

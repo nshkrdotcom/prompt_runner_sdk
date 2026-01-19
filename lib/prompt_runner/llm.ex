@@ -1,5 +1,10 @@
 defmodule PromptRunner.LLM do
-  @moduledoc false
+  @moduledoc """
+  Behaviour and types for LLM integrations.
+
+  This module defines the common interface for LLM backends (Claude and Codex)
+  and the shared types used across the prompt runner.
+  """
 
   @type sdk :: :claude | :codex
   @type stream_event :: map()

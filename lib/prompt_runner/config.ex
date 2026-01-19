@@ -3,6 +3,7 @@ defmodule PromptRunner.Config do
   Loads and normalizes configuration for the prompt runner.
   """
 
+  alias PromptRunner.LLM
   alias PromptRunner.LLMFacade
   alias PromptRunner.UI
 
@@ -17,7 +18,7 @@ defmodule PromptRunner.Config do
           commit_messages_file: String.t(),
           progress_file: String.t(),
           log_dir: String.t(),
-          llm_sdk: LLMFacade.sdk(),
+          llm_sdk: LLM.sdk(),
           model: String.t(),
           prompt_overrides: map(),
           allowed_tools: list() | nil,

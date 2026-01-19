@@ -126,13 +126,11 @@ defmodule PromptRunner.LLMFacade do
   end
 
   defp safe_apply(fun) do
-    try do
-      fun.()
-    rescue
-      _ -> :ok
-    catch
-      _, _ -> :ok
-    end
+    fun.()
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
   end
 
   defp normalize_map(nil), do: %{}

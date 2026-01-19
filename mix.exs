@@ -60,7 +60,8 @@ defmodule PromptRunner.MixProject do
       assets: %{"assets" => "assets"},
       logo: "assets/prompt_runner_sdk.svg",
       extras: [
-        "README.md"
+        "README.md",
+        "LICENSE"
       ],
       groups_for_modules: [
         "Core API": [PromptRunner, PromptRunner.Runner, PromptRunner.CLI],

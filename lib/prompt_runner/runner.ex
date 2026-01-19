@@ -352,19 +352,17 @@ defmodule PromptRunner.Runner do
          log_config,
          skip_commit
        ) do
-    try do
-      write_session_header(loggers, config, llm, llm_meta, prompt_path)
+    write_session_header(loggers, config, llm, llm_meta, prompt_path)
 
-      result =
-        StreamRenderer.stream(stream, loggers, %{prompt: prompt, llm: llm_meta}, log_config)
+    result =
+      StreamRenderer.stream(stream, loggers, %{prompt: prompt, llm: llm_meta}, log_config)
 
-      StreamRenderer.emit_line(loggers, "")
-      finalize_stream_result(result, config, prompt, llm, skip_commit)
-    after
-      close_llm.()
-      File.close(loggers.text_io)
-      File.close(loggers.events_io)
-    end
+    StreamRenderer.emit_line(loggers, "")
+    finalize_stream_result(result, config, prompt, llm, skip_commit)
+  after
+    close_llm.()
+    File.close(loggers.text_io)
+    File.close(loggers.events_io)
   end
 
   defp handle_stream_result(
