@@ -145,7 +145,7 @@ Add `prompt_runner_sdk` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.1.0"}
+    {:prompt_runner_sdk, "~> 0.1.1"}
   ]
 end
 ```
