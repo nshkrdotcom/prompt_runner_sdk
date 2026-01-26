@@ -32,8 +32,8 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      {:claude_agent_sdk, "~> 0.9.0"},
-      {:codex_sdk, "~> 0.5.0"},
+      {:claude_agent_sdk, "~> 0.9.1"},
+      {:codex_sdk, "~> 0.6.0"},
       {:jason, "~> 1.4"},
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.38", only: :dev, runtime: false},

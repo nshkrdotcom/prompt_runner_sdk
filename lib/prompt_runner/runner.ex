@@ -438,7 +438,8 @@ defmodule PromptRunner.Runner do
     if length(target_repos) > 1 do
       Git.commit_multi_repo(config, prompt.num, target_repos)
     else
-      Git.commit_single_repo(config, prompt.num)
+      [{repo_name, repo_path}] = target_repos
+      Git.commit_single_repo(config, prompt.num, repo_name, repo_path)
     end
   end
 

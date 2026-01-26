@@ -21,16 +21,25 @@ defmodule PromptRunner.Git do
     end)
   end
 
-  @spec commit_single_repo(PromptRunner.Config.t(), String.t()) ::
+  @spec commit_single_repo(PromptRunner.Config.t(), String.t(), String.t(), String.t() | nil) ::
           {:ok, String.t()} | {:skip, atom()} | {:error, atom()}
-  def commit_single_repo(config, num) do
-    msg = CommitMessages.get_message(config, num)
+  def commit_single_repo(config, num, repo_name \\ "default", repo_path \\ nil) do
+    path = repo_path || config.project_dir
+
+    # Try repo-specific message first, fall back to generic
+    msg =
+      if repo_name != "default" do
+        CommitMessages.get_message(config, num, repo_name) ||
+          CommitMessages.get_message(config, num)
+      else
+        CommitMessages.get_message(config, num)
+      end
 
     unless msg do
       raise "Commit message not found for prompt #{num}"
     end
 
-    commit_repo(config.project_dir, msg, num, "default")
+    commit_repo(path, msg, num, repo_name)
   end
 
   @spec commit_repo(String.t(), String.t(), String.t(), String.t()) ::
