@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.2] - 2026-01-26
+
+### Added
+
+- New `RepoTargets` module for expanding repo group references in target_repos.
+  Groups are defined in config as `repo_groups: %{"pipeline" => ["command", "flowstone"]}`
+  and referenced in prompts.txt as `@pipeline`.
+- Support for nested group references (e.g., `@portfolio` containing `@pipeline`).
+- Cycle detection for repo group definitions with clear error messages.
+- Validator now checks repo-specific commit messages for default repo when prompt
+  has no explicit target_repos.
+- Test suites for `RepoTargets` and `Validator` modules.
+
+### Changed
+
+- `Runner` now expands repo group references before resolving target repositories.
+- `Validator` expands repo groups when checking commit messages and repo references.
+- Improved error handling when target repos cannot be resolved.
+
 ## [0.1.1] - 2026-01-26
 
 ### Fixed

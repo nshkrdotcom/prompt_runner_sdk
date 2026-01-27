@@ -130,7 +130,7 @@ mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --run 01
 
 ```elixir
 def deps do
-  [{:prompt_runner_sdk, "~> 0.1.1"}]
+  [{:prompt_runner_sdk, "~> 0.1.2"}]
 end
 ```
 

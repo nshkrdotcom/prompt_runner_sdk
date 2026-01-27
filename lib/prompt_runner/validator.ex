@@ -3,6 +3,7 @@ defmodule PromptRunner.Validator do
 
   alias PromptRunner.CommitMessages
   alias PromptRunner.Prompts
+  alias PromptRunner.RepoTargets
   alias PromptRunner.UI
 
   @spec validate_all(PromptRunner.Config.t()) :: :ok | {:error, list()}
@@ -66,7 +67,17 @@ defmodule PromptRunner.Validator do
   defp check_prompt_commit_messages(config, prompt, acc) do
     case prompt.target_repos do
       nil ->
-        if CommitMessages.get_message(config, prompt.num) do
+        msg =
+          case default_repo_name(config) do
+            nil ->
+              CommitMessages.get_message(config, prompt.num)
+
+            repo ->
+              CommitMessages.get_message(config, prompt.num, repo) ||
+                CommitMessages.get_message(config, prompt.num)
+          end
+
+        if msg do
           IO.puts("   #{UI.green("OK")} Prompt #{prompt.num}: commit message found")
           acc
         else
@@ -75,7 +86,10 @@ defmodule PromptRunner.Validator do
         end
 
       repos when is_list(repos) ->
-        Enum.reduce(repos, acc, fn repo_name, inner_acc ->
+        {resolved_repos, target_errors} = RepoTargets.expand(repos, config.repo_groups)
+        acc = record_repo_target_errors(prompt, target_errors, acc)
+
+        Enum.reduce(resolved_repos, acc, fn repo_name, inner_acc ->
           check_repo_commit_message(config, prompt, repo_name, inner_acc)
         end)
     end
@@ -119,17 +133,20 @@ defmodule PromptRunner.Validator do
       end
 
     Enum.reduce(prompts, errors, fn prompt, acc ->
-      check_prompt_repo_refs(prompt, configured_repos, acc)
+      check_prompt_repo_refs(config, prompt, configured_repos, acc)
     end)
   end
 
-  defp check_prompt_repo_refs(prompt, configured_repos, acc) do
+  defp check_prompt_repo_refs(config, prompt, configured_repos, acc) do
     case prompt.target_repos do
       nil ->
         acc
 
       repos when is_list(repos) ->
-        Enum.reduce(repos, acc, fn repo_name, inner_acc ->
+        {resolved_repos, target_errors} = RepoTargets.expand(repos, config.repo_groups)
+        acc = record_repo_target_errors(prompt, target_errors, acc)
+
+        Enum.reduce(resolved_repos, acc, fn repo_name, inner_acc ->
           check_repo_ref(prompt, repo_name, configured_repos, inner_acc)
         end)
     end
@@ -142,6 +159,29 @@ defmodule PromptRunner.Validator do
     else
       IO.puts("   #{UI.red("ERR")} Prompt #{prompt.num} -> #{repo_name}: not configured")
       [{prompt.num, repo_name, "repo not configured in target_repos"} | acc]
+    end
+  end
+
+  defp record_repo_target_errors(_prompt, [], acc), do: acc
+
+  defp record_repo_target_errors(prompt, errors, acc) do
+    Enum.reduce(errors, acc, fn error, inner_acc ->
+      msg = RepoTargets.format_error(error)
+      IO.puts("   #{UI.red("ERR")} Prompt #{prompt.num}: #{msg}")
+      [{prompt.num, nil, msg} | inner_acc]
+    end)
+  end
+
+  defp default_repo_name(config) do
+    case config.target_repos do
+      repos when is_list(repos) ->
+        case Enum.find(repos, &(&1.default == true)) || List.first(repos) do
+          %{name: name} when is_binary(name) -> name
+          _ -> nil
+        end
+
+      _ ->
+        nil
     end
   end
 

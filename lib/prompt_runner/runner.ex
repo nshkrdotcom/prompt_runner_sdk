@@ -6,6 +6,7 @@ defmodule PromptRunner.Runner do
   alias PromptRunner.Git
   alias PromptRunner.Progress
   alias PromptRunner.Prompts
+  alias PromptRunner.RepoTargets
   alias PromptRunner.StreamRenderer
   alias PromptRunner.UI
   alias PromptRunner.Validator
@@ -209,7 +210,13 @@ defmodule PromptRunner.Runner do
       repos when is_list(repos) ->
         IO.puts("   - target_repos: #{Enum.join(repos, ", ")}")
 
-        Enum.each(repos, fn repo_name ->
+        {resolved_repos, errors} = RepoTargets.expand(repos, config.repo_groups)
+
+        Enum.each(errors, fn error ->
+          IO.puts("     - #{UI.red("ERR")} #{RepoTargets.format_error(error)}")
+        end)
+
+        Enum.each(resolved_repos, fn repo_name ->
           repo_path = get_repo_path(config, repo_name)
           IO.puts("     - #{repo_name}: #{repo_path || "(not configured)"}")
         end)
@@ -234,7 +241,13 @@ defmodule PromptRunner.Runner do
         print_single_commit_message(config, prompt)
 
       repos when is_list(repos) ->
-        Enum.each(repos, &print_repo_commit_message(config, prompt, &1))
+        {resolved_repos, errors} = RepoTargets.expand(repos, config.repo_groups)
+
+        Enum.each(errors, fn error ->
+          IO.puts("   #{UI.red("ERR")} #{RepoTargets.format_error(error)}")
+        end)
+
+        Enum.each(resolved_repos, &print_repo_commit_message(config, prompt, &1))
     end
   end
 
@@ -452,10 +465,27 @@ defmodule PromptRunner.Runner do
         end
 
       repos when is_list(repos) ->
-        Enum.map(repos, fn repo_name ->
-          path = get_repo_path(config, repo_name)
-          {repo_name, path || config.project_dir}
-        end)
+        unless is_list(config.target_repos) do
+          raise "Prompt #{prompt.num} defines target_repos but config.target_repos is not configured"
+        end
+
+        resolved_repos =
+          repos
+          |> RepoTargets.expand!(config.repo_groups)
+          |> List.wrap()
+
+        if resolved_repos == [] do
+          raise "Prompt #{prompt.num} did not resolve any target repos from: #{Enum.join(repos, ", ")}"
+        end
+
+        Enum.map(resolved_repos, &resolve_repo_name_path(&1, config, prompt))
+    end
+  end
+
+  defp resolve_repo_name_path(repo_name, config, prompt) do
+    case get_repo_path(config, repo_name) do
+      nil -> raise "Repo not configured for prompt #{prompt.num}: #{repo_name}"
+      path -> {repo_name, path}
     end
   end
 
