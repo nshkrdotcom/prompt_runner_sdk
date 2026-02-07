@@ -30,11 +30,11 @@ defmodule PromptRunner.ConfigTest do
         commit_messages_file: "commit-messages.txt",
         progress_file: ".progress",
         log_dir: "logs",
-        model: "sonnet",
+        model: "haiku",
         llm: %{
           sdk: "claude_agent_sdk",
           prompt_overrides: %{
-            2 => %{sdk: "codex_sdk", model: "gpt-5.1-codex"}
+            2 => %{sdk: "codex_sdk", model: "gpt-5.3-codex"}
           }
         }
       }
@@ -43,13 +43,13 @@ defmodule PromptRunner.ConfigTest do
 
     assert {:ok, config} = Config.load(config_path)
     assert config.llm_sdk == :claude
-    assert config.model == "sonnet"
+    assert config.model == "haiku"
     assert config.prompt_overrides["02"].sdk == :codex
 
     prompt = %Prompt{num: "02", phase: 1, sp: 1, name: "Beta", file: "002.md", target_repos: nil}
     llm = Config.llm_for_prompt(config, prompt)
 
     assert llm.sdk == :codex
-    assert llm.model == "gpt-5.1-codex"
+    assert llm.model == "gpt-5.3-codex"
   end
 end

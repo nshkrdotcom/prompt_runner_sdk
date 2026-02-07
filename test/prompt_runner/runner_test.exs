@@ -35,7 +35,7 @@ defmodule PromptRunner.RunnerTest do
         commit_messages_file: "commit-messages.txt",
         progress_file: ".progress",
         log_dir: "logs",
-        model: "sonnet",
+        model: "haiku",
         llm: %{sdk: "claude_agent_sdk"}
       }
       """

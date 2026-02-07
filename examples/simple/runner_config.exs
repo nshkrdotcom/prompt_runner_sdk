@@ -4,7 +4,7 @@
   commit_messages_file: "commit-messages.txt",
   progress_file: ".progress",
   log_dir: "logs",
-  model: "sonnet",
+  model: "haiku",
   allowed_tools: ["Bash"],
   permission_mode: :bypass_permissions,
   log_mode: :compact,
@@ -13,9 +13,9 @@
   phase_names: %{1 => "Example"},
   llm: %{
     sdk: "claude_agent_sdk",
-    model: "sonnet",
+    model: "haiku",
     prompt_overrides: %{
-      "02" => %{sdk: "codex_sdk", model: "gpt-5.1-codex"}
+      "02" => %{sdk: "codex_sdk", model: "gpt-5.3-codex"}
     }
   }
 }

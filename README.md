@@ -39,7 +39,7 @@ You have one codebase. Prompts run against it. Commits go to it.
   commit_messages_file: "commit-messages.txt",
   progress_file: ".progress",
   log_dir: "logs",
-  model: "sonnet",
+  model: "haiku",
   llm: %{sdk: "claude_agent_sdk"}
 }
 ```
@@ -83,7 +83,7 @@ You have multiple codebases. Each prompt specifies which repos it modifies.
   commit_messages_file: "commit-messages.txt",
   progress_file: ".progress",
   log_dir: "logs",
-  model: "sonnet",
+  model: "haiku",
   llm: %{sdk: "claude_agent_sdk"}
 }
 ```
@@ -164,9 +164,9 @@ Switch between Claude and Codex per-prompt:
 %{
   llm: %{
     sdk: "claude_agent_sdk",  # default
-    model: "sonnet",
+    model: "haiku",
     prompt_overrides: %{
-      "03" => %{sdk: "codex_sdk", model: "gpt-5.1-codex"}
+      "03" => %{sdk: "codex_sdk", model: "gpt-5.3-codex"}
     }
   }
 }
@@ -202,7 +202,7 @@ Multi repo: `=== COMMIT NN:repo_name ===`
   commit_messages_file: "commit-messages.txt",
   progress_file: ".progress",
   log_dir: "logs",
-  model: "sonnet",
+  model: "haiku",
 
   # Optional: multi-repo support
   target_repos: [
@@ -213,7 +213,7 @@ Multi repo: `=== COMMIT NN:repo_name ===`
   # Optional: LLM configuration
   llm: %{
     sdk: "claude_agent_sdk",
-    model: "sonnet",
+    model: "haiku",
     permission_mode: :accept_edits,
     allowed_tools: ["Read", "Write", "Bash"],
     prompt_overrides: %{}
