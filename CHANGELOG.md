@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.2.0] - 2026-02-08
+
+### Added
+
+- Added `PromptRunner.Application` OTP supervision tree with:
+  - `PromptRunner.TaskSupervisor` for run execution tasks.
+  - `PromptRunner.SessionSupervisor` for adapter/store process lifecycle.
+- Added `PromptRunner.Session` as the AgentSessionManager bridge layer.
+- Added support for provider alias `amp` (`amp_sdk`) in LLM normalization.
+- Added `adapter_opts` config support at both root and `llm` scopes.
+- **Normalized adapter options passthrough** — Session now forwards these config keys to all adapters:
+  - `permission_mode` — `:default`, `:accept_edits`, `:plan`, `:full_auto`, or `:dangerously_skip_permissions`
+  - `max_turns` — integer turn limit (Claude: unlimited by default, Codex: SDK default 10, Amp: no-op)
+  - `system_prompt` — system-level instructions (Claude: `system_prompt`, Codex: `base_instructions`, Amp: stored only)
+  - `sdk_opts` — keyword list of arbitrary provider-specific SDK options (normalized options take precedence)
+- **Claude `cwd` passthrough** — Session passes `project_dir` as `cwd` to the Claude adapter, so the Claude CLI runs in the correct working directory.
+
+### Changed
+
+- Migrated runtime execution from direct SDK integration to `agent_session_manager`.
+- Reworked `PromptRunner.LLMFacade` into a thin delegator to `PromptRunner.Session`.
+- Updated config normalization to accept both `provider` and legacy `sdk` keys.
+- Updated examples and CLI help text to use `provider` in config snippets.
+- Updated README guidance from dual-SDK to multi-provider terminology.
+
+### Removed
+
+- Removed direct `PromptRunner.LLM.CodexNormalizer` integration and tests.
+- Removed direct `claude_agent_sdk` and `codex_sdk` dependency declarations.
+
+### Dependencies
+
+- Added `agent_session_manager ~> 0.6.0`.
+
 ## [0.1.2] - 2026-01-26
 
 ### Added

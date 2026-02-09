@@ -5,7 +5,7 @@
 <h1 align="center">Prompt Runner SDK</h1>
 
 <p align="center">
-  <strong>Run ordered prompt sequences with streaming output, automatic git commits, and dual LLM support</strong>
+  <strong>Run ordered prompt sequences with streaming output, automatic git commits, and multi-provider LLM support</strong>
 </p>
 
 <p align="center">
@@ -18,36 +18,45 @@
 
 ## What It Does
 
-Prompt Runner SDK executes a sequence of LLM prompts against your codebase, with:
+Prompt Runner SDK executes a sequence of LLM prompts against your codebase. Each prompt is sent to an LLM provider, the response is streamed in real time, and the resulting changes are committed to git automatically.
 
-- **Streaming output** - See responses as they're generated
-- **Automatic git commits** - Each prompt gets its own commit
-- **Dual LLM support** - Claude Agent SDK and Codex SDK through one interface
+- **Streaming output** - See responses as they're generated (compact or verbose mode)
+- **Automatic git commits** - Each prompt gets its own commit with a predefined message
+- **Multi-provider support** - Claude, Codex, and Amp through [AgentSessionManager](https://hex.pm/packages/agent_session_manager)
 - **Progress tracking** - Resume interrupted runs with `--continue`
+- **Multi-repository** - Orchestrate prompts across multiple repos with per-repo commits
+- **Per-prompt overrides** - Switch providers, models, or tool permissions for individual prompts
+- **Validation** - Check config, prompt files, commit messages, and repo references before running
 
-## Two Use Cases
+## Installation
 
-### Use Case 1: Single Repository (Most Common)
+```elixir
+def deps do
+  [{:prompt_runner_sdk, "~> 0.2.0"}]
+end
+```
 
-You have one codebase. Prompts run against it. Commits go to it.
+The SDK starts an OTP supervision tree automatically (`PromptRunner.Application`) with supervisors for task execution and adapter lifecycle.
+
+## Quick Example
 
 ```elixir
 # runner_config.exs
 %{
-  project_dir: "/path/to/your/project",
+  project_dir: File.cwd!(),
   prompts_file: "prompts.txt",
   commit_messages_file: "commit-messages.txt",
   progress_file: ".progress",
   log_dir: "logs",
   model: "haiku",
-  llm: %{sdk: "claude_agent_sdk"}
+  llm: %{provider: "claude"}
 }
 ```
 
 ```
-# prompts.txt
-01|1|5|Setup database|001-setup.md
-02|1|8|Add API layer|002-api.md
+# prompts.txt — format: NUM|PHASE|SP|NAME|FILE
+01|1|1|Setup database|001-setup.md
+02|1|3|Add API layer|002-api.md
 ```
 
 ```
@@ -59,189 +68,145 @@ feat: setup database schema
 feat: add API layer
 ```
 
-Run it:
 ```bash
 mix run run_prompts.exs -c runner_config.exs --run 01
-mix run run_prompts.exs -c runner_config.exs --run 02
 ```
 
-**Example:** `examples/simple/`
-
-### Use Case 2: Multiple Repositories
-
-You have multiple codebases. Each prompt specifies which repos it modifies.
-
-```elixir
-# runner_config.exs
-%{
-  project_dir: "/path/to/workspace",  # LLM working directory
-  target_repos: [
-    %{name: "frontend", path: "/path/to/frontend", default: true},
-    %{name: "backend", path: "/path/to/backend"}
-  ],
-  prompts_file: "prompts.txt",
-  commit_messages_file: "commit-messages.txt",
-  progress_file: ".progress",
-  log_dir: "logs",
-  model: "haiku",
-  llm: %{sdk: "claude_agent_sdk"}
-}
-```
-
-```
-# prompts.txt (add TARGET_REPOS column)
-01|1|5|Setup both|001-setup.md|frontend,backend
-02|1|8|Frontend only|002-frontend.md|frontend
-03|1|8|Backend only|003-backend.md|backend
-```
-
-```
-# commit-messages.txt (use repo-specific markers)
-=== COMMIT 01:frontend ===
-feat(frontend): initial setup
-
-=== COMMIT 01:backend ===
-feat(backend): initial setup
-
-=== COMMIT 02:frontend ===
-feat(frontend): add components
-
-=== COMMIT 03:backend ===
-feat(backend): add API routes
-```
-
-**Example:** `examples/multi_repo_dummy/`
-
-## Quick Start
+## CLI
 
 ```bash
-# Clone and setup
-git clone https://github.com/nshkrdotcom/prompt_runner_sdk.git
-cd prompt_runner_sdk
-mix deps.get
+# Info
+mix run run_prompts.exs -c config.exs --list              # List prompts + status
+mix run run_prompts.exs -c config.exs --validate           # Validate config, files, repos
+mix run run_prompts.exs -c config.exs --dry-run 01         # Preview without executing
 
-# Run the multi-repo example (recommended starting point)
-bash examples/multi_repo_dummy/setup.sh
-mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --list
-mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --run 01
+# Run
+mix run run_prompts.exs -c config.exs --run 01             # Run one prompt
+mix run run_prompts.exs -c config.exs --run --all          # Run all prompts
+mix run run_prompts.exs -c config.exs --run --continue     # Resume from last completed
+mix run run_prompts.exs -c config.exs --run --phase 2      # Run all prompts in phase 2
+
+# Options
+--no-commit                  # Skip git commits
+--project-dir DIR            # Override project_dir
+--repo-override name:path    # Override a repo path (repeatable)
+--log-mode compact|verbose   # Output mode (default: compact)
+--log-meta none|full         # Metadata in log output (default: none)
+--events-mode compact|full|off  # JSONL event logging (default: compact)
 ```
 
-## Installation
+## Multi-Provider Support
 
-```elixir
-def deps do
-  [{:prompt_runner_sdk, "~> 0.1.2"}]
-end
-```
-
-## CLI Commands
-
-```bash
-# List prompts and their status
-mix run run_prompts.exs -c config.exs --list
-
-# Preview what would run (no execution)
-mix run run_prompts.exs -c config.exs --dry-run 01
-
-# Run a single prompt
-mix run run_prompts.exs -c config.exs --run 01
-
-# Run all prompts
-mix run run_prompts.exs -c config.exs --run --all
-
-# Resume from last completed
-mix run run_prompts.exs -c config.exs --run --continue
-
-# Run without committing
-mix run run_prompts.exs -c config.exs --run 01 --no-commit
-```
-
-## Dual LLM Support
-
-Switch between Claude and Codex per-prompt:
+Switch between Claude, Codex, and Amp. Override per-prompt:
 
 ```elixir
 %{
   llm: %{
-    sdk: "claude_agent_sdk",  # default
+    provider: "claude",
     model: "haiku",
+    allowed_tools: ["Read", "Write", "Bash"],
+    permission_mode: :accept_edits,
     prompt_overrides: %{
-      "03" => %{sdk: "codex_sdk", model: "gpt-5.3-codex"}
+      "03" => %{provider: "codex", model: "gpt-5.3-codex"},
+      "05" => %{provider: "amp"}
     }
   }
 }
 ```
 
-## File Format Reference
+Normalized options that work across all providers:
 
-### prompts.txt
+```elixir
+llm: %{
+  provider: "claude",
+  permission_mode: :dangerously_skip_permissions,
+  max_turns: 10,
+  system_prompt: "Be concise.",
+  sdk_opts: [verbose: true],       # arbitrary provider-specific SDK options
+  adapter_opts: %{max_tokens: 16384}  # passed to adapter directly
+}
+```
 
-Format: `NUM|PHASE|SP|NAME|FILE[|TARGET_REPOS]`
+## Multi-Repository Support
 
-| Field | Description |
-|-------|-------------|
-| NUM | Prompt number (01, 02, ...) |
-| PHASE | Phase grouping (1-5) |
-| SP | Story points (for tracking) |
-| NAME | Display name |
-| FILE | Markdown file with prompt content |
-| TARGET_REPOS | Optional: comma-separated repo names |
-
-### commit-messages.txt
-
-Single repo: `=== COMMIT NN ===`
-Multi repo: `=== COMMIT NN:repo_name ===`
-
-### runner_config.exs
+Target prompts at specific repos. Define repo groups with `@` references:
 
 ```elixir
 %{
-  # Required
-  project_dir: "/path/to/project",
-  prompts_file: "prompts.txt",
-  commit_messages_file: "commit-messages.txt",
-  progress_file: ".progress",
-  log_dir: "logs",
-  model: "haiku",
-
-  # Optional: multi-repo support
   target_repos: [
-    %{name: "app", path: "/path/to/app", default: true},
-    %{name: "lib", path: "/path/to/lib"}
+    %{name: "frontend", path: "/path/to/frontend", default: true},
+    %{name: "backend", path: "/path/to/backend"}
   ],
-
-  # Optional: LLM configuration
-  llm: %{
-    sdk: "claude_agent_sdk",
-    model: "haiku",
-    permission_mode: :accept_edits,
-    allowed_tools: ["Read", "Write", "Bash"],
-    prompt_overrides: %{}
-  },
-
-  # Optional: display
-  log_mode: :compact,
-  phase_names: %{1 => "Setup", 2 => "Implementation"}
+  repo_groups: %{
+    "all" => ["frontend", "backend"]
+  }
 }
+```
+
+```
+# prompts.txt — 6th field is TARGET_REPOS
+01|1|5|Setup both|001-setup.md|@all
+02|1|8|Frontend only|002-frontend.md|frontend
+```
+
+```
+# commit-messages.txt — repo-qualified markers
+=== COMMIT 01:frontend ===
+feat(frontend): initial setup
+
+=== COMMIT 01:backend ===
+feat(backend): initial setup
 ```
 
 ## Architecture
 
-<p align="center">
-  <img src="assets/architecture.svg" alt="Prompt Runner SDK Architecture" width="700">
-</p>
+```
+run_prompts.exs
+       |
+  PromptRunner.CLI           -- parse args, route commands
+       |
+  PromptRunner.Config        -- load, normalize, validate config
+       |
+  PromptRunner.Runner        -- orchestrate prompt sequence
+       |
+  PromptRunner.LLMFacade     -- thin delegator (LLM behaviour)
+       |
+  PromptRunner.Session       -- AgentSessionManager bridge
+       |                        starts store + adapter per prompt,
+       |                        normalizes events to common format
+  AgentSessionManager
+   +-- ClaudeAdapter
+   +-- CodexAdapter
+   +-- AmpAdapter
+```
+
+Supporting modules: `Prompts` (parse prompts.txt), `CommitMessages` (parse commit messages), `Progress` (track completion), `Git` (commit changes), `StreamRenderer` (render + log events), `Validator` (pre-run checks), `RepoTargets` (expand `@group` references).
 
 ## Examples
 
 | Example | Description |
 |---------|-------------|
-| `examples/simple/` | Single repo, dual LLM (Claude + Codex) |
-| `examples/multi_repo_dummy/` | Multiple repos, per-repo commits |
+| `examples/simple/` | Single repo, provider override (Claude default, Codex for prompt 02) |
+| `examples/multi_repo_dummy/` | Two repos (alpha, beta), per-repo commits, provider switching |
+
+```bash
+# Try the multi-repo example
+bash examples/multi_repo_dummy/setup.sh
+mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --list
+mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --run 01
+```
+
+## Guides
+
+- **[Getting Started](guides/getting-started.md)** - Installation, prerequisites, first run
+- **[Configuration Reference](guides/configuration.md)** - All config keys and file formats
+- **[Multi-Provider Setup](guides/providers.md)** - Claude, Codex, Amp configuration
+- **[Multi-Repository Workflows](guides/multi-repo.md)** - Cross-repo orchestration and repo groups
 
 ## Development
 
 ```bash
-mix test          # Run tests
+mix test           # Run tests
 mix credo --strict # Lint
 mix dialyzer       # Type check
 mix docs           # Generate docs
@@ -250,9 +215,3 @@ mix docs           # Generate docs
 ## License
 
 MIT - see [LICENSE](LICENSE)
-
----
-
-<p align="center">
-  Made with 💚 by <a href="https://github.com/nshkrdotcom">nshkrdotcom</a>
-</p>

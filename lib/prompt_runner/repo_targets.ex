@@ -1,5 +1,9 @@
 defmodule PromptRunner.RepoTargets do
-  @moduledoc false
+  @moduledoc """
+  Expands repo group references (`@group_name`) in target repo lists.
+
+  Handles nested groups, cycle detection, and error reporting.
+  """
 
   @type error ::
           {:unknown_group, String.t()}

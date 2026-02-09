@@ -1,11 +1,19 @@
 defmodule PromptRunner.Validator do
-  @moduledoc false
+  @moduledoc """
+  Validates prompt runner configuration.
+
+  Checks prompt files, commit messages, target repo references, and repo group
+  expansion for consistency.
+  """
 
   alias PromptRunner.CommitMessages
   alias PromptRunner.Prompts
   alias PromptRunner.RepoTargets
   alias PromptRunner.UI
 
+  @doc """
+  Runs all validation checks against the given configuration.
+  """
   @spec validate_all(PromptRunner.Config.t()) :: :ok | {:error, list()}
   def validate_all(config) do
     prompts = Prompts.list(config)

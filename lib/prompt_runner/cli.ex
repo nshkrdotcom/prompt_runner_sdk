@@ -91,7 +91,7 @@ defmodule PromptRunner.CLI do
   end
 
   defp handle_config_error({:error, {:invalid_llm_sdk, reason}}) do
-    IO.puts(UI.red("ERROR: Invalid llm_sdk: #{inspect(reason)}"))
+    IO.puts(UI.red("ERROR: Invalid llm provider/sdk: #{inspect(reason)}"))
     System.halt(1)
   end
 
@@ -194,10 +194,10 @@ defmodule PromptRunner.CLI do
     IO.puts("      ],")
     IO.puts("")
     IO.puts("      llm: %{")
-    IO.puts(~S|        sdk: "claude_agent_sdk",|)
+    IO.puts(~S|        provider: "claude",|)
     IO.puts(~S|        model: "haiku",|)
     IO.puts("        prompt_overrides: %{")
-    IO.puts(~S|          "02" => %{sdk: "codex_sdk", model: "gpt-5.3-codex"}|)
+    IO.puts(~S|          "02" => %{provider: "codex", model: "gpt-5.3-codex"}|)
     IO.puts("        }")
     IO.puts("      },")
     IO.puts("")

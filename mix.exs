@@ -1,7 +1,7 @@
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.1.2"
+  @version "0.2.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
 
   def project do
@@ -26,14 +26,14 @@ defmodule PromptRunner.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :inets]
+      extra_applications: [:logger, :inets],
+      mod: {PromptRunner.Application, []}
     ]
   end
 
   defp deps do
     [
-      {:claude_agent_sdk, "~> 0.11.0"},
-      {:codex_sdk, "~> 0.7.1"},
+      {:agent_session_manager, "~> 0.6.0"},
       {:jason, "~> 1.4"},
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
@@ -45,8 +45,8 @@ defmodule PromptRunner.MixProject do
   defp description do
     """
     Prompt Runner SDK - An Elixir toolkit for orchestrating multi-step prompt
-    executions with Claude Agent SDK and Codex SDK. Features streaming output,
-    progress tracking, multi-repository support, and automatic git integration.
+    executions through AgentSessionManager with streaming output, progress
+    tracking, multi-repository support, and automatic git integration.
     """
   end
 
@@ -63,6 +63,11 @@ defmodule PromptRunner.MixProject do
         {"README.md", filename: "readme", title: "Prompt Runner SDK"},
         "CHANGELOG.md",
         "LICENSE",
+        # Guides
+        {"guides/getting-started.md", filename: "getting-started", title: "Getting Started"},
+        {"guides/configuration.md", filename: "configuration", title: "Configuration Reference"},
+        {"guides/providers.md", filename: "providers", title: "Multi-Provider Setup"},
+        {"guides/multi-repo.md", filename: "multi-repo", title: "Multi-Repository Workflows"},
         # Examples
         {"examples/README.md", filename: "examples", title: "Examples Overview"},
         {"examples/simple/README.md", filename: "example-simple", title: "Simple Example"},
@@ -71,7 +76,13 @@ defmodule PromptRunner.MixProject do
       ],
       groups_for_extras: [
         Introduction: ["readme"],
-        Guides: ["CHANGELOG.md", "LICENSE"],
+        Guides: [
+          "getting-started",
+          "configuration",
+          "providers",
+          "multi-repo"
+        ],
+        Reference: ["CHANGELOG.md", "LICENSE"],
         Examples: [
           "examples",
           "example-simple",
@@ -79,12 +90,17 @@ defmodule PromptRunner.MixProject do
         ]
       ],
       groups_for_modules: [
-        "Core API": [PromptRunner, PromptRunner.Runner, PromptRunner.CLI],
+        "Core API": [
+          PromptRunner,
+          PromptRunner.Application,
+          PromptRunner.Runner,
+          PromptRunner.CLI
+        ],
         Configuration: [PromptRunner.Config, PromptRunner.Prompts, PromptRunner.Prompt],
-        "LLM Integration": [PromptRunner.LLM, PromptRunner.LLMFacade],
+        "LLM Integration": [PromptRunner.LLM, PromptRunner.LLMFacade, PromptRunner.Session],
         "Progress & Git": [PromptRunner.Progress, PromptRunner.Git, PromptRunner.CommitMessages],
         Rendering: [PromptRunner.StreamRenderer, PromptRunner.UI],
-        Utilities: [PromptRunner.Validator]
+        Utilities: [PromptRunner.Validator, PromptRunner.RepoTargets]
       ]
     ]
   end

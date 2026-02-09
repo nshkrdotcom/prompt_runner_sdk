@@ -1,5 +1,7 @@
 defmodule PromptRunner.Git do
-  @moduledoc false
+  @moduledoc """
+  Git commit helpers for single-repo and multi-repo prompt runs.
+  """
 
   alias PromptRunner.CommitMessages
   alias PromptRunner.UI

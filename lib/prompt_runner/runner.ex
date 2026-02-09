@@ -180,21 +180,24 @@ defmodule PromptRunner.Runner do
 
   defp print_execution_info(config, prompt, llm) do
     IO.puts(UI.yellow("2. Execution:"))
-    IO.puts("   LLM SDK: #{llm.sdk}")
+    IO.puts("   LLM provider: #{llm.sdk}")
     IO.puts("   - model: #{llm.model}")
     IO.puts("   - cwd: #{llm.cwd}")
 
-    if llm.sdk == :claude do
-      tools_label =
-        if is_list(llm.allowed_tools) do
-          Enum.join(llm.allowed_tools, ", ")
-        else
-          "default"
-        end
+    if is_list(llm.allowed_tools) do
+      IO.puts("   - allowed_tools: #{Enum.join(llm.allowed_tools, ", ")}")
+    end
 
-      IO.puts("   - tools: #{tools_label}")
+    if llm.permission_mode != nil do
       IO.puts("   - permission_mode: #{llm.permission_mode}")
-    else
+    end
+
+    if is_map(llm[:adapter_opts]) and map_size(llm.adapter_opts) > 0 do
+      IO.puts("   - adapter_opts: #{inspect(llm.adapter_opts)}")
+    end
+
+    if llm.sdk == :codex and is_map(llm[:codex_thread_opts]) and
+         map_size(llm.codex_thread_opts) > 0 do
       IO.puts("   - codex_thread_opts: #{inspect(llm.codex_thread_opts)}")
     end
 
@@ -402,7 +405,7 @@ defmodule PromptRunner.Runner do
   defp write_session_header(loggers, config, llm, llm_meta, prompt_path) do
     if config.log_mode == :compact do
       tools_label =
-        if llm.sdk == :claude and is_list(llm.allowed_tools) do
+        if is_list(llm.allowed_tools) and llm.allowed_tools != [] do
           Enum.join(llm.allowed_tools, ",")
         else
           "n/a"

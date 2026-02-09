@@ -1,7 +1,10 @@
 defmodule PromptRunner.StreamRenderer do
-  @moduledoc false
+  @moduledoc """
+  Renders a normalized event stream to the terminal and log files.
 
-  alias ClaudeAgentSDK.Message
+  Supports `:compact` and `:verbose` display modes with ANSI colour output,
+  and writes structured JSON event logs.
+  """
 
   @red "\e[0;31m"
   @green "\e[0;32m"
@@ -33,7 +36,6 @@ defmodule PromptRunner.StreamRenderer do
       current_tool: nil,
       current_tool_id: nil,
       last_stop_reason: nil,
-      last_message_token: nil,
       log_mode: log_config.mode,
       log_meta: log_config.meta
     }
@@ -55,6 +57,9 @@ defmodule PromptRunner.StreamRenderer do
     end
   end
 
+  @doc """
+  Returns a single-line ANSI legend for compact-mode token symbols.
+  """
   def compact_legend_line do
     compact_join([
       dim_text("legend:"),
@@ -265,23 +270,6 @@ defmodule PromptRunner.StreamRenderer do
     %{state | in_text: false, in_message: false, last_stop_reason: nil}
   end
 
-  defp handle_event_compact(
-         %{type: :message, message: %Message{} = message} = event,
-         state,
-         loggers
-       ) do
-    state = compact_end_stream(state, loggers)
-    raw_token = compact_message_token_raw(message)
-
-    if raw_token == "" or raw_token == state.last_message_token do
-      state
-    else
-      token = compact_message_token(message) <> compact_meta_suffix(event, state.log_meta)
-      state = compact_emit_token(loggers, state, token)
-      %{state | last_message_token: raw_token}
-    end
-  end
-
   defp handle_event_compact(%{type: :error, error: error} = event, state, loggers) do
     state = compact_end_stream(state, loggers)
     token = token_error("!" <> inspect(error)) <> compact_meta_suffix(event, state.log_meta)
@@ -480,21 +468,6 @@ defmodule PromptRunner.StreamRenderer do
     %{state | in_text: false, last_stop_reason: nil}
   end
 
-  defp handle_event_verbose(
-         %{type: :message, message: %Message{} = message} = event,
-         state,
-         loggers
-       ) do
-    state = maybe_break_line(state, loggers)
-
-    emit_line(
-      loggers,
-      "[message] type=#{message.type} subtype=#{inspect(message.subtype)}#{format_meta(event, state.log_meta)}"
-    )
-
-    state
-  end
-
   defp handle_event_verbose(%{type: :error, error: error} = event, state, loggers) do
     state = maybe_break_line(state, loggers)
     emit_line(loggers, "[error] #{inspect(error)}#{format_meta(event, state.log_meta)}")
@@ -541,17 +514,6 @@ defmodule PromptRunner.StreamRenderer do
         entry = compact_event_entry(event)
         IO.binwrite(loggers.events_io, Jason.encode!(entry) <> "\n")
     end
-  end
-
-  defp sanitize_event(%{message: %Message{} = msg} = event) do
-    message = %{
-      type: msg.type,
-      subtype: msg.subtype,
-      data: msg.data,
-      raw: msg.raw
-    }
-
-    Map.put(event, :message, message)
   end
 
   defp sanitize_event(event), do: event
@@ -661,17 +623,6 @@ defmodule PromptRunner.StreamRenderer do
     %{
       "t" => short_event_type(:message_stop),
       "sr" => short_reason(reason)
-    }
-    |> drop_nil_values()
-  end
-
-  defp compact_event(%{type: :message, message: %Message{} = message}) do
-    {type_label, subtype_label} = message_type_labels(message)
-
-    %{
-      "t" => short_event_type(:message),
-      "mt" => type_label,
-      "st" => if(subtype_label == "", do: nil, else: subtype_label)
     }
     |> drop_nil_values()
   end
@@ -848,44 +799,11 @@ defmodule PromptRunner.StreamRenderer do
     ])
   end
 
-  defp compact_message_token(%Message{} = message) do
-    {type_label, subtype_label} = message_type_labels(message)
-    token_msg("m:") <> token_role(type_label) <> dim_text(subtype_label)
-  end
-
-  defp compact_message_token_raw(%Message{} = message) do
-    {type_label, subtype_label} = message_type_labels(message)
-
-    if type_label == "" do
-      ""
-    else
-      "m:#{type_label}#{subtype_label}"
-    end
-  end
-
-  defp message_type_labels(%Message{type: type, subtype: subtype}) do
-    type_label = short_message_type(type)
-    subtype_label = if subtype in [nil, ""], do: "", else: ":#{subtype}"
-    {type_label, subtype_label}
-  end
-
   defp short_role(nil), do: ""
   defp short_role(role) when is_atom(role), do: short_role(Atom.to_string(role))
 
   defp short_role(role) when is_binary(role) do
     case String.downcase(role) do
-      "assistant" -> "a"
-      "user" -> "u"
-      "system" -> "s"
-      other -> String.first(other) || ""
-    end
-  end
-
-  defp short_message_type(nil), do: ""
-  defp short_message_type(type) when is_atom(type), do: short_message_type(Atom.to_string(type))
-
-  defp short_message_type(type) when is_binary(type) do
-    case String.downcase(type) do
       "assistant" -> "a"
       "user" -> "u"
       "system" -> "s"

@@ -36,7 +36,7 @@ defmodule PromptRunner.RunnerTest do
         progress_file: ".progress",
         log_dir: "logs",
         model: "haiku",
-        llm: %{sdk: "claude_agent_sdk"}
+        llm: %{provider: "claude"}
       }
       """
     )

@@ -6,6 +6,7 @@ defmodule PromptRunner.Config do
   alias PromptRunner.LLM
   alias PromptRunner.LLMFacade
   alias PromptRunner.UI
+  alias AgentSessionManager.PermissionMode
 
   @type repo_config :: %{name: String.t(), path: String.t(), default: boolean()}
 
@@ -23,6 +24,7 @@ defmodule PromptRunner.Config do
           prompt_overrides: map(),
           allowed_tools: list() | nil,
           permission_mode: atom() | nil,
+          adapter_opts: map(),
           claude_opts: map(),
           codex_opts: map(),
           codex_thread_opts: map(),
@@ -46,6 +48,7 @@ defmodule PromptRunner.Config do
     :prompt_overrides,
     :allowed_tools,
     :permission_mode,
+    :adapter_opts,
     :claude_opts,
     :codex_opts,
     :codex_thread_opts,
@@ -76,14 +79,20 @@ defmodule PromptRunner.Config do
     |> maybe_override_events_mode(opts[:events_mode])
   end
 
+  @doc """
+  Builds the LLM configuration map for a specific prompt by deep-merging
+  root-level defaults with per-prompt overrides.
+  """
   @spec llm_for_prompt(t(), map()) :: map()
   def llm_for_prompt(config, prompt) do
     base = %{
       sdk: config.llm_sdk,
+      provider: config.llm_sdk,
       model: config.model,
       cwd: config.project_dir,
       allowed_tools: config.allowed_tools,
       permission_mode: config.permission_mode,
+      adapter_opts: config.adapter_opts || %{},
       claude_opts: config.claude_opts || %{},
       codex_opts: config.codex_opts || %{},
       codex_thread_opts: config.codex_thread_opts || %{}
@@ -93,16 +102,22 @@ defmodule PromptRunner.Config do
     merged = deep_merge(base, override)
 
     sdk =
-      case LLMFacade.normalize_sdk(merged[:sdk]) do
+      case LLMFacade.normalize_provider(merged[:provider] || merged[:sdk]) do
         {:error, _} -> base.sdk
         other -> other
       end
 
-    %{merged | sdk: sdk}
+    merged
+    |> Map.put(:sdk, sdk)
+    |> Map.put(:provider, sdk)
+    |> Map.update(:permission_mode, nil, &normalize_permission_mode/1)
   end
 
   defp normalize_llm_sdk(llm_section, config) do
-    case LLMFacade.normalize_sdk(llm_section[:sdk] || config[:llm_sdk] || config[:sdk]) do
+    case LLMFacade.normalize_provider(
+           llm_section[:provider] || llm_section[:sdk] || config[:llm_sdk] || config[:provider] ||
+             config[:sdk]
+         ) do
       {:error, reason} -> {:error, {:invalid_llm_sdk, reason}}
       sdk -> {:ok, sdk}
     end
@@ -137,8 +152,11 @@ defmodule PromptRunner.Config do
       llm_sdk: llm_sdk,
       model: coalesce([llm_section[:model], config[:model]], nil),
       prompt_overrides: prompt_overrides,
-      allowed_tools: config[:allowed_tools],
-      permission_mode: config[:permission_mode],
+      allowed_tools: coalesce([llm_section[:allowed_tools], config[:allowed_tools]], nil),
+      permission_mode:
+        coalesce([llm_section[:permission_mode], config[:permission_mode]], nil)
+        |> normalize_permission_mode(),
+      adapter_opts: coalesce([llm_section[:adapter_opts], config[:adapter_opts]], %{}),
       claude_opts: coalesce([llm_section[:claude_opts], config[:claude_opts]], %{}),
       codex_opts: coalesce([llm_section[:codex_opts], config[:codex_opts]], %{}),
       codex_thread_opts:
@@ -281,7 +299,7 @@ defmodule PromptRunner.Config do
       end)
 
     sdk =
-      case LLMFacade.normalize_sdk(map[:sdk] || map[:llm_sdk] || map[:provider]) do
+      case LLMFacade.normalize_provider(map[:provider] || map[:sdk] || map[:llm_sdk]) do
         {:error, _} -> nil
         other -> other
       end
@@ -289,14 +307,25 @@ defmodule PromptRunner.Config do
     if sdk do
       map
       |> Map.put(:sdk, sdk)
+      |> Map.put(:provider, sdk)
       |> Map.delete(:llm_sdk)
-      |> Map.delete(:provider)
     else
       map
     end
   end
 
   defp normalize_prompt_override(_), do: %{}
+
+  defp normalize_permission_mode(nil), do: nil
+  defp normalize_permission_mode(:bypass_permissions), do: :full_auto
+  defp normalize_permission_mode("bypass_permissions"), do: :full_auto
+
+  defp normalize_permission_mode(mode) do
+    case PermissionMode.normalize(mode) do
+      {:ok, normalized} -> normalized
+      {:error, _reason} -> mode
+    end
+  end
 
   defp deep_merge(left, right) when is_map(left) and is_map(right) do
     Map.merge(left, right, fn _k, l, r ->

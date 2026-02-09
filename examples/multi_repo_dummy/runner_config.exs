@@ -9,7 +9,7 @@ beta_dir = Path.join(repos_dir, "beta")
   commit_messages_file: "commit-messages.txt",
   progress_file: ".progress",
   log_dir: "logs",
-  model: "haiku",
+  model: "sonnet",
   allowed_tools: ["Read", "Write", "Bash"],
   permission_mode: :accept_edits,
   log_mode: :compact,
@@ -22,7 +22,7 @@ beta_dir = Path.join(repos_dir, "beta")
   ],
   llm: %{
     sdk: "codex_sdk",
-    model: "gpt-5.3-codex",
+    model: "gpt-5.1-codex",
     codex_thread_opts: %{
       sandbox: :workspace_write,
       ask_for_approval: :never
@@ -30,7 +30,7 @@ beta_dir = Path.join(repos_dir, "beta")
     prompt_overrides: %{
       "02" => %{
         sdk: "claude_agent_sdk",
-        model: "haiku",
+        model: "sonnet",
         permission_mode: :bypass_permissions,
         allowed_tools: ["Bash"]
       }
