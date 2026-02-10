@@ -6,6 +6,7 @@ defmodule PromptRunner.Config do
   alias AgentSessionManager.PermissionMode
   alias PromptRunner.LLM
   alias PromptRunner.LLMFacade
+  alias PromptRunner.RepoTargets
   alias PromptRunner.UI
 
   @type repo_config :: %{name: String.t(), path: String.t(), default: boolean()}
@@ -28,6 +29,7 @@ defmodule PromptRunner.Config do
           claude_opts: map(),
           codex_opts: map(),
           codex_thread_opts: map(),
+          timeout: pos_integer() | nil,
           log_mode: :compact | :verbose,
           log_meta: :none | :full,
           events_mode: :compact | :full | :off,
@@ -52,6 +54,7 @@ defmodule PromptRunner.Config do
     :claude_opts,
     :codex_opts,
     :codex_thread_opts,
+    :timeout,
     :log_mode,
     :log_meta,
     :events_mode,
@@ -85,33 +88,121 @@ defmodule PromptRunner.Config do
   """
   @spec llm_for_prompt(t(), map()) :: map()
   def llm_for_prompt(config, prompt) do
+    prompt_repo_paths = resolve_prompt_repo_paths(config, prompt)
+    cwd = List.first(prompt_repo_paths) || config.project_dir
+
+    codex_thread_opts =
+      enrich_codex_thread_opts(config.codex_thread_opts || %{}, prompt_repo_paths, cwd)
+
     base = %{
       sdk: config.llm_sdk,
       provider: config.llm_sdk,
       model: config.model,
-      cwd: config.project_dir,
+      cwd: cwd,
       allowed_tools: config.allowed_tools,
       permission_mode: config.permission_mode,
+      timeout: config.timeout,
       adapter_opts: config.adapter_opts || %{},
       claude_opts: config.claude_opts || %{},
       codex_opts: config.codex_opts || %{},
-      codex_thread_opts: config.codex_thread_opts || %{}
+      codex_thread_opts: codex_thread_opts
     }
 
     override = Map.get(config.prompt_overrides || %{}, prompt.num, %{})
     merged = deep_merge(base, override)
 
-    sdk =
-      case LLMFacade.normalize_provider(merged[:provider] || merged[:sdk]) do
-        {:error, _} -> base.sdk
-        other -> other
-      end
+    merged =
+      Map.update(merged, :codex_thread_opts, %{}, fn opts ->
+        enrich_codex_thread_opts(opts, prompt_repo_paths, merged[:cwd])
+      end)
+
+    sdk = resolve_merged_sdk(merged, base.sdk)
 
     merged
     |> Map.put(:sdk, sdk)
     |> Map.put(:provider, sdk)
     |> Map.update(:permission_mode, nil, &normalize_permission_mode/1)
   end
+
+  defp resolve_merged_sdk(merged, fallback) do
+    case LLMFacade.normalize_provider(merged[:provider] || merged[:sdk]) do
+      {:error, _} -> fallback
+      other -> other
+    end
+  end
+
+  defp resolve_prompt_repo_paths(config, prompt) do
+    prompt
+    |> resolve_target_repo_names(config)
+    |> Enum.map(&resolve_repo_path(config, &1))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  defp resolve_target_repo_names(%{target_repos: repos}, config) when is_list(repos) do
+    {resolved, _errors} = RepoTargets.expand(repos, config.repo_groups || %{})
+    resolved
+  end
+
+  defp resolve_target_repo_names(_prompt, config) do
+    case default_repo_path(config) do
+      nil -> []
+      _path -> [default_repo_name(config)]
+    end
+  end
+
+  defp resolve_repo_path(config, repo_name) do
+    case config.target_repos do
+      repos when is_list(repos) ->
+        case Enum.find(repos, &(&1.name == repo_name)) do
+          %{path: path} -> path
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp default_repo_path(config) do
+    case config.target_repos do
+      repos when is_list(repos) -> find_default_repo_field(repos, :path)
+      _ -> nil
+    end
+  end
+
+  defp default_repo_name(config) do
+    case config.target_repos do
+      repos when is_list(repos) -> find_default_repo_field(repos, :name)
+      _ -> nil
+    end
+  end
+
+  defp find_default_repo_field(repos, field) do
+    repo = Enum.find(repos, &(&1.default == true)) || List.first(repos)
+    if repo, do: Map.get(repo, field)
+  end
+
+  defp enrich_codex_thread_opts(opts, prompt_repo_paths, cwd) when is_map(opts) do
+    additional_directories =
+      prompt_repo_paths
+      |> Enum.reject(&(&1 == cwd))
+
+    merged_dirs =
+      opts
+      |> Map.get(:additional_directories, [])
+      |> normalize_additional_dirs()
+      |> Kernel.++(additional_directories)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    Map.put(opts, :additional_directories, merged_dirs)
+  end
+
+  defp enrich_codex_thread_opts(opts, _prompt_repo_paths, _cwd), do: opts
+
+  defp normalize_additional_dirs(dirs) when is_list(dirs), do: dirs
+  defp normalize_additional_dirs(_), do: []
 
   defp normalize_llm_sdk(llm_section, config) do
     case LLMFacade.normalize_provider(
@@ -161,6 +252,7 @@ defmodule PromptRunner.Config do
       codex_opts: coalesce([llm_section[:codex_opts], config[:codex_opts]], %{}),
       codex_thread_opts:
         coalesce([llm_section[:codex_thread_opts], config[:codex_thread_opts]], %{}),
+      timeout: coalesce([llm_section[:timeout], config[:timeout]], nil),
       log_mode: log_settings.log_mode,
       log_meta: log_settings.log_meta,
       events_mode: log_settings.events_mode,
@@ -412,6 +504,7 @@ defmodule PromptRunner.Config do
       |> require_value(config.progress_file, :progress_file)
       |> require_value(config.log_dir, :log_dir)
       |> require_value(config.model, :model)
+      |> maybe_invalid_timeout(config.timeout)
       |> maybe_missing_path(config.project_dir, :project_dir)
       |> maybe_missing_path(config.prompts_file, :prompts_file)
       |> maybe_missing_path(config.commit_messages_file, :commit_messages_file)
@@ -438,4 +531,13 @@ defmodule PromptRunner.Config do
       [{key, {:path_not_found, path}} | errors]
     end
   end
+
+  defp maybe_invalid_timeout(errors, nil), do: errors
+
+  defp maybe_invalid_timeout(errors, timeout)
+       when is_integer(timeout) and timeout > 0,
+       do: errors
+
+  defp maybe_invalid_timeout(errors, timeout),
+    do: [{:timeout, {:invalid_timeout, timeout}} | errors]
 end

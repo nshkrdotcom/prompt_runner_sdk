@@ -19,6 +19,8 @@ defmodule PromptRunner.Session do
   alias PromptRunner.LLMFacade
 
   @agent_id "prompt-runner"
+  @default_stream_idle_timeout 120_000
+  @stream_idle_timeout_buffer 30_000
 
   @type provider :: PromptRunner.LLM.provider()
   @type llm_config :: map()
@@ -35,13 +37,17 @@ defmodule PromptRunner.Session do
     with {:ok, provider} <- normalize_provider(llm_config),
          {:ok, adapter_spec} <- build_adapter_spec(provider, llm_config) do
       run_opts = build_run_opts(llm_config)
+      idle_timeout = resolve_stream_idle_timeout(llm_config)
 
-      case StreamSession.start(
-             adapter: adapter_spec,
-             input: %{messages: [%{role: "user", content: prompt}]},
-             agent_id: @agent_id,
-             run_opts: run_opts
-           ) do
+      stream_opts =
+        []
+        |> maybe_put(:adapter, adapter_spec)
+        |> maybe_put(:input, %{messages: [%{role: "user", content: prompt}]})
+        |> maybe_put(:agent_id, @agent_id)
+        |> maybe_put(:run_opts, run_opts)
+        |> maybe_put(:idle_timeout, idle_timeout)
+
+      case StreamSession.start(stream_opts) do
         {:ok, stream, close_fun, _stream_meta} ->
           meta = %{
             sdk: provider,
@@ -117,10 +123,35 @@ defmodule PromptRunner.Session do
   # -- Run opts
 
   defp build_run_opts(llm_config) do
-    []
-    |> maybe_put(:context, llm_config[:context])
-    |> maybe_put(:continuation, llm_config[:continuation])
-    |> maybe_put(:continuation_opts, llm_config[:continuation_opts])
+    run_opts =
+      []
+      |> maybe_put(:context, llm_config[:context])
+      |> maybe_put(:continuation, llm_config[:continuation])
+      |> maybe_put(:continuation_opts, llm_config[:continuation_opts])
+
+    case llm_config[:timeout] do
+      timeout when is_integer(timeout) and timeout > 0 ->
+        Keyword.put(run_opts, :adapter_opts, timeout: timeout)
+
+      _ ->
+        run_opts
+    end
+  end
+
+  defp resolve_stream_idle_timeout(llm_config) do
+    cond do
+      positive_timeout?(llm_config[:stream_idle_timeout]) ->
+        llm_config[:stream_idle_timeout]
+
+      positive_timeout?(llm_config[:idle_timeout]) ->
+        llm_config[:idle_timeout]
+
+      positive_timeout?(llm_config[:timeout]) ->
+        max(@default_stream_idle_timeout, llm_config[:timeout] + @stream_idle_timeout_buffer)
+
+      true ->
+        nil
+    end
   end
 
   # -- Helpers
@@ -154,6 +185,7 @@ defmodule PromptRunner.Session do
   defp normalize_opts(opts) when is_list(opts), do: opts
   defp normalize_opts(opts) when is_map(opts), do: Enum.into(opts, [])
   defp normalize_opts(_opts), do: []
+  defp positive_timeout?(value), do: is_integer(value) and value > 0
 
   defp ensure_option(opts, key, value) do
     if Keyword.get(opts, key) in [nil, ""] do

@@ -1,22 +1,45 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
 ## [0.3.0] - 2026-02-09
 
 ### Changed
 
-- **Migrated session lifecycle to `AgentSessionManager.StreamSession`** — `PromptRunner.Session` now delegates stream creation, task management, and cleanup to `StreamSession.start/1` instead of hand-rolling the ~200-line boilerplate (Stream.resource, receive loop, error event constructors, task shutdown, child cleanup)
-- `Session.start_stream/2` signature and return type unchanged — existing callers work without modification
-- `start_adapter` replaced with `build_adapter_spec` returning `{Module, opts}` tuples instead of starting processes directly
-- `PromptRunner.Application` simplified — removed `PromptRunner.TaskSupervisor` and `PromptRunner.SessionSupervisor` (StreamSession manages its own lifecycle)
+- **Migrated rendering to `AgentSessionManager.Rendering`** — `Runner` now builds a renderer/sink pipeline from config instead of calling `StreamRenderer.stream/4`. Uses `CompactRenderer` or `VerboseRenderer` with `TTYSink`, `FileSink`, `JSONLSink`, and `CallbackSink`.
+- **Migrated session lifecycle to `AgentSessionManager.StreamSession`** — `Session` now delegates stream creation, task management, and cleanup to `StreamSession.start/1` instead of hand-rolling ~200 lines of `Stream.resource`, receive loop, error event constructors, task shutdown, and child cleanup.
+- **Canonical event format** — `Session` no longer normalizes ASM events. Canonical events (`:run_started`, `:message_streamed`, `:tool_call_started`, `:tool_call_completed`, `:run_completed`, etc.) pass through directly to the rendering pipeline.
+- `Session.start_stream/2` signature and return type unchanged — existing callers work without modification.
+- `start_adapter` replaced with `build_adapter_spec` returning `{Module, opts}` tuples instead of starting processes directly.
+- `PromptRunner.Application` simplified — removed `PromptRunner.TaskSupervisor` and `PromptRunner.SessionSupervisor` (StreamSession manages its own lifecycle).
+- Error tracking changed from `StreamRenderer` return value to `CallbackSink` with process dictionary (`Process.put/:prompt_runner_stream_result`).
+- Session header now written directly to log file IO device via `IO.binwrite` instead of through `StreamRenderer.emit_line`.
+- Tests updated to emit canonical ASM events instead of previously-normalized types.
+- **Examples now use isolated workspace directories** — each example has `setup.sh` / `cleanup.sh` scripts and a standalone `run_prompts.exs` using `Mix.install`, so examples no longer operate within the SDK repository itself.
+- Updated documentation (providers.md, getting-started.md, configuration.md, README) to reflect canonical event format, removed supervisors, new rendering pipeline, and example isolation.
 
 ### Removed
 
-- Removed `build_stream_session`, `build_event_stream`, `next_stream_events`, `done_error_events`, `run_once`, `start_store`, `stop_task`, `await_task_exit`, `cleanup_children`, `terminate_child`, `start_supervised_child`, `ensure_runtime_started` from `PromptRunner.Session` (all replaced by StreamSession)
-- Removed `PromptRunner.TaskSupervisor` and `PromptRunner.SessionSupervisor` process tree entries
+- **Deleted `PromptRunner.StreamRenderer`** (935 lines) — all rendering now handled by `AgentSessionManager.Rendering`.
+- Removed `normalize_event/1` and all event normalization functions from `Session` (`:message_start`, `:text_delta`, `:tool_use_start`, `:tool_complete`, `:message_stop`, etc. mappings).
+- Removed `build_stream_session`, `build_event_stream`, `next_stream_events`, `done_error_events`, `run_once`, `start_store`, `stop_task`, `await_task_exit`, `cleanup_children`, `terminate_child`, `start_supervised_child`, `ensure_runtime_started` from `Session` (all replaced by StreamSession).
+- Removed `PromptRunner.TaskSupervisor` and `PromptRunner.SessionSupervisor` process tree entries.
+- Removed `examples/simple/claude-output.txt` (examples now write to workspace directories).
+
+### Added
+
+- Standalone `run_prompts.exs` scripts for simple and multi-repo-dummy examples (use `Mix.install` for self-contained execution).
+- `setup.sh` and `cleanup.sh` for the simple example to manage an isolated git workspace.
+- `workspace/` added to `.gitignore` for example directories.
 
 ### Dependencies
 
-- Requires `agent_session_manager ~> 0.7.0` (StreamSession module)
+- Requires `agent_session_manager ~> 0.7.0` (StreamSession and Rendering modules).
 
 ## [0.2.0] - 2026-02-08
 
@@ -94,3 +117,10 @@
 - Claude Agent SDK and Codex SDK support via a unified facade.
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
+
+[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.1.2...v0.2.0
+[0.1.2]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/releases/tag/v0.1.0

@@ -1,6 +1,6 @@
-You are running in the prompt_runner_sdk repo.
+You are running in a workspace directory.
 
-Create or update `examples/simple/codex-output.txt` with exactly one line:
+Create or update `codex-output.txt` with exactly one line:
 
 codex ok
 

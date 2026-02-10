@@ -1,5 +1,8 @@
+base_dir = __DIR__
+workspace_dir = Path.join(base_dir, "workspace")
+
 %{
-  project_dir: "../..",
+  project_dir: workspace_dir,
   prompts_file: "prompts.txt",
   commit_messages_file: "commit-messages.txt",
   progress_file: ".progress",

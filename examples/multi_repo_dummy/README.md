@@ -11,19 +11,12 @@ This example demonstrates two prompts that target the same two repositories
 Run the setup script. It creates two git repos under `examples/multi_repo_dummy/repos`.
 
 ```bash
-cd /home/home/p/g/n/prompt_runner_sdk
 bash examples/multi_repo_dummy/setup.sh
 ```
 
-## 2) Inspect the config
+## 2) Run the prompts
 
-```bash
-cat examples/multi_repo_dummy/runner_config.exs
-cat examples/multi_repo_dummy/prompts.txt
-cat examples/multi_repo_dummy/commit-messages.txt
-```
-
-## 3) Run the prompts
+**From the project root:**
 
 ```bash
 mix run run_prompts.exs --config examples/multi_repo_dummy/runner_config.exs --list
@@ -31,12 +24,21 @@ mix run run_prompts.exs --config examples/multi_repo_dummy/runner_config.exs --r
 mix run run_prompts.exs --config examples/multi_repo_dummy/runner_config.exs --run 02
 ```
 
+**From the example directory (standalone):**
+
+```bash
+cd examples/multi_repo_dummy
+elixir run_prompts.exs --list
+elixir run_prompts.exs --run 01
+elixir run_prompts.exs --run 02
+```
+
 After each run, you should see:
 - `examples/multi_repo_dummy/repos/alpha/NOTES.md`
 - `examples/multi_repo_dummy/repos/beta/NOTES.md`
 - separate commits in each repo
 
-## 4) Clean up
+## 3) Clean up
 
 ```bash
 bash examples/multi_repo_dummy/cleanup.sh
