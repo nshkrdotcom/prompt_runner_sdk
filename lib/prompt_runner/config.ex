@@ -3,10 +3,10 @@ defmodule PromptRunner.Config do
   Loads and normalizes configuration for the prompt runner.
   """
 
+  alias AgentSessionManager.PermissionMode
   alias PromptRunner.LLM
   alias PromptRunner.LLMFacade
   alias PromptRunner.UI
-  alias AgentSessionManager.PermissionMode
 
   @type repo_config :: %{name: String.t(), path: String.t(), default: boolean()}
 

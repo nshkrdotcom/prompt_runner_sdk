@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0] - 2026-02-09
+
+### Changed
+
+- **Migrated session lifecycle to `AgentSessionManager.StreamSession`** — `PromptRunner.Session` now delegates stream creation, task management, and cleanup to `StreamSession.start/1` instead of hand-rolling the ~200-line boilerplate (Stream.resource, receive loop, error event constructors, task shutdown, child cleanup)
+- `Session.start_stream/2` signature and return type unchanged — existing callers work without modification
+- `start_adapter` replaced with `build_adapter_spec` returning `{Module, opts}` tuples instead of starting processes directly
+- `PromptRunner.Application` simplified — removed `PromptRunner.TaskSupervisor` and `PromptRunner.SessionSupervisor` (StreamSession manages its own lifecycle)
+
+### Removed
+
+- Removed `build_stream_session`, `build_event_stream`, `next_stream_events`, `done_error_events`, `run_once`, `start_store`, `stop_task`, `await_task_exit`, `cleanup_children`, `terminate_child`, `start_supervised_child`, `ensure_runtime_started` from `PromptRunner.Session` (all replaced by StreamSession)
+- Removed `PromptRunner.TaskSupervisor` and `PromptRunner.SessionSupervisor` process tree entries
+
+### Dependencies
+
+- Requires `agent_session_manager ~> 0.7.0` (StreamSession module)
+
 ## [0.2.0] - 2026-02-08
 
 ### Added
@@ -32,7 +50,7 @@
 
 ### Dependencies
 
-- Added `agent_session_manager ~> 0.6.0`.
+- Added `agent_session_manager ~> 0.6.0` (now `~> 0.7.0` as of 0.3.0).
 
 ## [0.1.2] - 2026-01-26
 

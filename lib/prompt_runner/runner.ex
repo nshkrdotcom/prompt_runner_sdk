@@ -1,13 +1,15 @@
 defmodule PromptRunner.Runner do
   @moduledoc false
 
+  alias AgentSessionManager.Rendering
+  alias AgentSessionManager.Rendering.Renderers.{CompactRenderer, VerboseRenderer}
+  alias AgentSessionManager.Rendering.Sinks.{CallbackSink, FileSink, JSONLSink, TTYSink}
   alias PromptRunner.CommitMessages
   alias PromptRunner.Config
   alias PromptRunner.Git
   alias PromptRunner.Progress
   alias PromptRunner.Prompts
   alias PromptRunner.RepoTargets
-  alias PromptRunner.StreamRenderer
   alias PromptRunner.UI
   alias PromptRunner.Validator
 
@@ -337,10 +339,7 @@ defmodule PromptRunner.Runner do
           IO.puts(UI.yellow("Starting #{llm.sdk} session..."))
           IO.puts("")
 
-          {:ok, log_io} = File.open(log_file, [:write, :binary])
-          {:ok, events_io} = File.open(events_file, [:write, :binary])
-          loggers = %{text_io: log_io, events_io: events_io, events_mode: config.events_mode}
-          log_config = %{mode: config.log_mode, meta: config.log_meta}
+          {:ok, log_io} = File.open(log_file, [:write, :utf8])
 
           llm_module().start_stream(llm, prompt_content)
           |> handle_stream_result(
@@ -348,8 +347,7 @@ defmodule PromptRunner.Runner do
             prompt,
             prompt_path,
             llm,
-            loggers,
-            log_config,
+            {log_io, events_file},
             skip_commit
           )
         else
@@ -364,21 +362,24 @@ defmodule PromptRunner.Runner do
          prompt,
          prompt_path,
          llm,
-         loggers,
-         log_config,
+         {log_io, events_file},
          skip_commit
        ) do
-    write_session_header(loggers, config, llm, llm_meta, prompt_path)
+    write_session_header(log_io, config, llm, llm_meta, prompt_path)
 
-    result =
-      StreamRenderer.stream(stream, loggers, %{prompt: prompt, llm: llm_meta}, log_config)
+    renderer = renderer_for_config(config)
+    sinks = build_sinks(config, log_io, events_file)
 
-    StreamRenderer.emit_line(loggers, "")
+    Rendering.stream(stream, renderer: renderer, sinks: sinks)
+
+    result = Process.get(:prompt_runner_stream_result, :ok)
+    Process.delete(:prompt_runner_stream_result)
+
+    IO.puts("")
     finalize_stream_result(result, config, prompt, llm, skip_commit)
   after
     close_llm.()
-    File.close(loggers.text_io)
-    File.close(loggers.events_io)
+    File.close(log_io)
   end
 
   defp handle_stream_result(
@@ -387,12 +388,10 @@ defmodule PromptRunner.Runner do
          prompt,
          _prompt_path,
          _llm,
-         loggers,
-         _log_config,
+         {log_io, _events_file},
          _skip_commit
        ) do
-    File.close(loggers.text_io)
-    File.close(loggers.events_io)
+    File.close(log_io)
     return_error(config, prompt.num, {:start_failed, reason})
   end
 
@@ -402,31 +401,55 @@ defmodule PromptRunner.Runner do
     {:error, reason}
   end
 
-  defp write_session_header(loggers, config, llm, llm_meta, prompt_path) do
-    if config.log_mode == :compact do
-      tools_label =
-        if is_list(llm.allowed_tools) and llm.allowed_tools != [] do
-          Enum.join(llm.allowed_tools, ",")
-        else
-          "n/a"
-        end
-
-      StreamRenderer.emit_line(
-        loggers,
-        "Session: sdk=#{llm_meta.sdk} model=#{llm_meta.model} tools=[#{tools_label}] cwd=#{llm_meta.cwd}"
-      )
-    else
-      StreamRenderer.emit_line(loggers, "Session: #{inspect(llm_meta)}")
+  defp renderer_for_config(config) do
+    case config.log_mode do
+      :verbose -> {VerboseRenderer, []}
+      _ -> {CompactRenderer, []}
     end
+  end
 
-    StreamRenderer.emit_line(loggers, "Prompt: #{prompt_path}")
-    StreamRenderer.emit_line(loggers, "Project: #{llm.cwd}")
+  defp build_sinks(config, log_io, events_file) do
+    sinks = [
+      {TTYSink, []},
+      {FileSink, [io: log_io]},
+      {CallbackSink, [callback: &error_tracking_callback/2]}
+    ]
 
-    if config.log_mode == :compact do
-      StreamRenderer.emit_line(loggers, StreamRenderer.compact_legend_line())
+    if config.events_mode != :off do
+      sinks ++ [{JSONLSink, [path: events_file, mode: config.events_mode]}]
     else
-      StreamRenderer.emit_line(loggers, "")
+      sinks
     end
+  end
+
+  defp error_tracking_callback(event, _iodata) do
+    case event.type do
+      type when type in [:error_occurred, :run_failed] ->
+        msg = get_in(event, [:data, :error_message]) || "unknown error"
+        Process.put(:prompt_runner_stream_result, {:error, msg})
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp write_session_header(log_io, config, llm, llm_meta, prompt_path) do
+    header =
+      if config.log_mode == :compact do
+        tools_label =
+          if is_list(llm.allowed_tools) and llm.allowed_tools != [] do
+            Enum.join(llm.allowed_tools, ",")
+          else
+            "n/a"
+          end
+
+        "Session: sdk=#{llm_meta.sdk} model=#{llm_meta.model} tools=[#{tools_label}] cwd=#{llm_meta.cwd}\n"
+      else
+        "Session: #{inspect(llm_meta)}\n"
+      end
+
+    header = header <> "Prompt: #{prompt_path}\nProject: #{llm.cwd}\n\n"
+    IO.binwrite(log_io, header)
   end
 
   defp finalize_stream_result(:ok, config, prompt, llm, skip_commit) do

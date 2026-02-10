@@ -142,32 +142,34 @@ llm: %{
 
 `adapter_opts` can be set at both the root config level and within the `llm` section. The `llm` value takes precedence.
 
-## Event Normalization
+## Event Format
 
-`PromptRunner.Session` normalizes AgentSessionManager events into a common format consumed by `PromptRunner.StreamRenderer`:
+`PromptRunner.Session` passes canonical AgentSessionManager events directly to the rendering pipeline. The rendering system (`AgentSessionManager.Rendering`) handles all event types uniformly regardless of which provider is in use:
 
-| ASM Event | Normalized Type | Key Fields |
-|-----------|----------------|------------|
-| `:run_started` | `:message_start` | `model`, `role`, `session_id` |
-| `:message_streamed` | `:text_delta` | `text` |
-| `:tool_call_started` | `:tool_use_start` | `name`, `id` (+ optional `:tool_input_delta`) |
-| `:tool_call_completed` | `:tool_complete` | `tool_name`, `result` |
-| `:token_usage_updated` | `:message_delta` | `usage` (input/output tokens) |
-| `:run_completed` | `:message_stop` | `stop_reason` |
-| `:run_failed` | `:error` | `error_type`, `error` |
-| `:error_occurred` | `:error` | `error_type`, `error` |
-
-This means the same `StreamRenderer` and logging pipeline works regardless of which provider is in use.
+| Canonical Event | Description |
+|----------------|-------------|
+| `:run_started` | Session started (model, session_id) |
+| `:message_streamed` | Text content delta |
+| `:tool_call_started` | Tool invocation started (tool_name, tool_input) |
+| `:tool_call_completed` | Tool invocation finished (tool_name, tool_output) |
+| `:token_usage_updated` | Token counts (input_tokens, output_tokens) |
+| `:message_received` | Complete message received |
+| `:run_completed` | Session completed (stop_reason) |
+| `:run_failed` | Session failed (error_code, error_message) |
+| `:run_cancelled` | Session cancelled |
+| `:error_occurred` | Error during session (error_code, error_message) |
 
 ## Session Lifecycle
 
 For each prompt execution, `Session.start_stream/2`:
 
-1. Ensures the OTP application is started
-2. Starts an `InMemorySessionStore` under `PromptRunner.SessionSupervisor`
-3. Starts the appropriate adapter (Claude/Codex/Amp) under `PromptRunner.SessionSupervisor`
-4. Spawns a task under `PromptRunner.TaskSupervisor` that calls `SessionManager.run_once/4`
-5. Returns a lazy stream that receives events via message passing (120s idle timeout)
+1. Resolves the provider and builds an adapter spec (`{Module, opts}` tuple)
+2. Delegates to `AgentSessionManager.StreamSession.start/1` which:
+   - Starts an `InMemorySessionStore` automatically
+   - Starts the adapter from the spec
+   - Launches a task that calls `SessionManager.run_once/4`
+   - Returns a lazy event stream with 120s idle timeout
+3. Returns `{:ok, stream, close_fun, meta}`
 
 The returned `close_fun` terminates the task, adapter, and store. There is no session persistence across prompts — each prompt gets a fresh session.
 

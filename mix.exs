@@ -1,7 +1,7 @@
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
 
   def project do
@@ -33,7 +33,7 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      {:agent_session_manager, "~> 0.6.0"},
+      {:agent_session_manager, path: "../agent_session_manager-stream-session"},
       {:jason, "~> 1.4"},
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
@@ -99,7 +99,7 @@ defmodule PromptRunner.MixProject do
         Configuration: [PromptRunner.Config, PromptRunner.Prompts, PromptRunner.Prompt],
         "LLM Integration": [PromptRunner.LLM, PromptRunner.LLMFacade, PromptRunner.Session],
         "Progress & Git": [PromptRunner.Progress, PromptRunner.Git, PromptRunner.CommitMessages],
-        Rendering: [PromptRunner.StreamRenderer, PromptRunner.UI],
+        UI: [PromptRunner.UI],
         Utilities: [PromptRunner.Validator, PromptRunner.RepoTargets]
       ]
     ]

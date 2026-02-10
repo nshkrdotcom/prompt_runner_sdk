@@ -151,9 +151,9 @@ See the [Multi-Repository Workflows](multi-repo.md) guide for full details.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `log_mode` | atom | `:compact` | `:compact` (abbreviated tokens) or `:verbose` (one event per line). |
-| `log_meta` | atom | `:none` | `:none` or `:full` (include metadata in log tokens). |
-| `events_mode` | atom | `:compact` | `:compact`, `:full`, or `:off`. Controls JSONL event file detail level. |
+| `log_mode` | atom | `:compact` | `:compact` (abbreviated tokens via `CompactRenderer`) or `:verbose` (one event per line via `VerboseRenderer`). |
+| `log_meta` | atom | `:none` | Reserved for future use. Currently accepted but ignored. |
+| `events_mode` | atom | `:compact` | `:compact`, `:full`, or `:off`. Controls JSONL event file detail level via `JSONLSink`. |
 | `phase_names` | map | `%{}` | Map of phase number (integer) to display name (string). |
 
 ## File Formats

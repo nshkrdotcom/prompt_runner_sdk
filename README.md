@@ -180,7 +180,7 @@ run_prompts.exs
    +-- AmpAdapter
 ```
 
-Supporting modules: `Prompts` (parse prompts.txt), `CommitMessages` (parse commit messages), `Progress` (track completion), `Git` (commit changes), `StreamRenderer` (render + log events), `Validator` (pre-run checks), `RepoTargets` (expand `@group` references).
+Supporting modules: `Prompts` (parse prompts.txt), `CommitMessages` (parse commit messages), `Progress` (track completion), `Git` (commit changes), `Validator` (pre-run checks), `RepoTargets` (expand `@group` references). Rendering is handled by `AgentSessionManager.Rendering`.
 
 ## Examples
 

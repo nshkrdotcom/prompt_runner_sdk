@@ -49,9 +49,9 @@ defmodule PromptRunner.RunnerTest do
     PromptRunner.LLMMock
     |> expect(:start_stream, fn llm, _prompt ->
       stream = [
-        %{type: :message_start, model: llm.model, role: "assistant"},
-        %{type: :text_delta, text: "ok"},
-        %{type: :message_stop, stop_reason: "end_turn"}
+        %{type: :run_started, data: %{model: llm.model}},
+        %{type: :message_streamed, data: %{delta: "ok"}},
+        %{type: :run_completed, data: %{stop_reason: "end_turn"}}
       ]
 
       {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}

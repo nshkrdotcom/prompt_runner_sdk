@@ -16,12 +16,7 @@ Then fetch dependencies:
 mix deps.get
 ```
 
-The SDK starts an OTP supervision tree automatically via `PromptRunner.Application`. It registers two supervisors:
-
-- `PromptRunner.TaskSupervisor` - spawns prompt execution tasks
-- `PromptRunner.SessionSupervisor` - manages adapter and session store processes
-
-No manual setup is needed.
+The SDK starts an OTP application via `PromptRunner.Application`. Session lifecycle (stores, adapters, tasks) is managed by `AgentSessionManager.StreamSession` — no manual setup is needed.
 
 ## Prerequisites
 
@@ -103,7 +98,7 @@ The SDK will:
 1. Load and validate your config (`PromptRunner.Config.load/1`)
 2. Read your prompt from `001-hello.md`
 3. Start an adapter for the configured provider via AgentSessionManager
-4. Stream events through `PromptRunner.StreamRenderer` (you see output in real time)
+4. Stream events through the rendering pipeline (you see output in real time)
 5. Log output to `logs/` (plain text + JSONL events)
 6. Commit changes with your commit message via `PromptRunner.Git`
 7. Record completion in `.progress`
@@ -137,7 +132,7 @@ The SDK will:
 --project-dir DIR            # Override project_dir from config
 --repo-override name:path    # Override a repo's path (repeatable)
 --log-mode compact|verbose   # Streaming output format (default: compact)
---log-meta none|full         # Include metadata in log tokens (default: none)
+--log-meta none|full         # Reserved for future use (currently ignored)
 --events-mode compact|full|off  # JSONL event logging detail (default: compact)
 ```
 
@@ -159,19 +154,21 @@ The progress file (`.progress` by default) tracks prompt completion:
 **Compact mode** (default) uses abbreviated tokens with ANSI colors:
 
 ```
-m+su(haiku) >>Hello world<< t+Write {...} t-Write m-
+r+ haiku >> Hello world t+Write t-Write tr:ok r-:end
+5 events, 1 tools
 ```
 
-Run `--help` to see the legend, or call `PromptRunner.StreamRenderer.compact_legend_line/0`.
+Token legend: `r+` run started, `r-` run completed, `t+`/`t-` tool start/end, `>>` text stream, `tk:` token usage, `!` error.
 
 **Verbose mode** shows one event per line:
 
 ```
-[message_start] model=haiku role=assistant
-[text_delta] Hello world
-[tool_use_start] name=Write id=tool_1
-[tool_complete] tool_name=Write result=...
-[message_stop] stop_reason=end_turn
+[run_started] model=haiku session_id=ses_123
+Hello world
+[tool_call_started] name=Write id=tu_001 input={"path":"hello.txt"}
+[tool_call_completed] name=Write output=ok
+[run_completed] stop_reason=end_turn
+--- 5 events, 1 tools ---
 ```
 
 ## Next Steps
