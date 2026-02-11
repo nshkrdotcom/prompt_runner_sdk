@@ -6,7 +6,7 @@ Add `prompt_runner_sdk` to your `mix.exs` dependencies:
 
 ```elixir
 def deps do
-  [{:prompt_runner_sdk, "~> 0.2.0"}]
+  [{:prompt_runner_sdk, "~> 0.4.0"}]
 end
 ```
 
@@ -131,9 +131,12 @@ The SDK will:
 --no-commit                  # Execute prompt but skip the git commit step
 --project-dir DIR            # Override project_dir from config
 --repo-override name:path    # Override a repo's path (repeatable)
---log-mode compact|verbose   # Streaming output format (default: compact)
+--log-mode compact|verbose|studio  # Streaming output format (default: compact)
 --log-meta none|full         # Reserved for future use (currently ignored)
 --events-mode compact|full|off  # JSONL event logging detail (default: compact)
+--tool-output summary|preview|full  # Studio tool verbosity (default: summary)
+--cli-confirmation off|warn|require  # Codex CLI model confirmation policy
+--require-cli-confirmation   # Shortcut for --cli-confirmation require
 ```
 
 ### Progress and Resumption
@@ -171,8 +174,24 @@ Hello world
 --- 5 events, 1 tools ---
 ```
 
+**Studio mode** (`--log-mode studio`) produces clean, human-readable output with status symbols and tool summaries:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Prompt 01: Hello world
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ● haiku session started
+  ✓ Write hello.txt (1 line)
+  ● Session complete (end_turn) — 123/45 tokens, 1 tools
+  ✓ Prompt 01 completed
+```
+
+Control tool output verbosity with `--tool-output summary|preview|full`. See the [Rendering Modes](rendering.md) guide for details.
+
 ## Next Steps
 
 - [Configuration Reference](configuration.md) - All config keys, file formats, and defaults
+- [Rendering Modes](rendering.md) - Compact, verbose, and studio output modes
 - [Multi-Provider Setup](providers.md) - Configure Claude, Codex, or Amp with per-prompt overrides
 - [Multi-Repository Workflows](multi-repo.md) - Target prompts at multiple repos with repo groups

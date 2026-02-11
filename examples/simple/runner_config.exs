@@ -1,3 +1,13 @@
+# Simple Example Configuration
+#
+# SDK dependencies required by this example:
+#   - claude_agent_sdk (prompt 01 uses Claude)
+#   - codex_sdk (prompt 02 uses Codex)
+#
+# When running standalone via run_prompts.exs, these are pulled automatically.
+# When using prompt_runner_sdk as a Hex dependency, add them to your mix.exs.
+# See guides/providers.md for details.
+
 base_dir = __DIR__
 workspace_dir = Path.join(base_dir, "workspace")
 

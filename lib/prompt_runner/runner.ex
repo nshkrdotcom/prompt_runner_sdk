@@ -2,7 +2,7 @@ defmodule PromptRunner.Runner do
   @moduledoc false
 
   alias AgentSessionManager.Rendering
-  alias AgentSessionManager.Rendering.Renderers.{CompactRenderer, VerboseRenderer}
+  alias AgentSessionManager.Rendering.Renderers.{CompactRenderer, StudioRenderer, VerboseRenderer}
   alias AgentSessionManager.Rendering.Sinks.{CallbackSink, FileSink, JSONLSink, TTYSink}
   alias PromptRunner.CommitMessages
   alias PromptRunner.Config
@@ -14,6 +14,14 @@ defmodule PromptRunner.Runner do
   alias PromptRunner.Validator
 
   @prompt_preview_lines 10
+
+  # Maps each provider to {otp_app, primary_module, extra_modules}.
+  # Module checks match what ASM adapters guard on at compile time.
+  @provider_deps %{
+    claude: {:claude_agent_sdk, ClaudeAgentSDK, []},
+    codex: {:codex_sdk, Codex, [Codex.Events]},
+    amp: {:amp_sdk, AmpSdk, []}
+  }
 
   @spec run(Config.t(), keyword(), list()) :: :ok | {:error, term()}
   def run(config, opts, remaining) do
@@ -341,25 +349,18 @@ defmodule PromptRunner.Runner do
   end
 
   defp execute_prompt_stream(config, num, prompt, prompt_path, llm, sdk_info, skip_commit) do
-    IO.puts("")
-    IO.puts(UI.blue(String.duplicate("=", 60)))
-    IO.puts(UI.bold("Prompt #{num}: #{prompt.name}"))
-    IO.puts(UI.blue(String.duplicate("=", 60)))
-    IO.puts("")
-    IO.puts("Prompt: #{prompt_path}")
-    IO.puts("Project: #{llm.cwd}")
-    IO.puts("LLM: #{llm_summary(llm)}")
-    maybe_print_sdk_preflight(sdk_info)
-    IO.puts("")
-
     File.mkdir_p!(config.log_dir)
     timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%d-%H%M%S")
     log_file = Path.join(config.log_dir, "prompt-#{num}-#{timestamp}.log")
     events_file = Path.join(config.log_dir, "prompt-#{num}-#{timestamp}.events.jsonl")
 
-    IO.puts("Log: #{log_file}")
-    IO.puts("Events: #{events_file}")
-    IO.puts("")
+    print_prompt_header(config, prompt, llm, log_file)
+    maybe_print_sdk_preflight(sdk_info)
+
+    if config.log_mode != :studio do
+      IO.puts("Events: #{events_file}")
+      IO.puts("")
+    end
 
     prompt_content = File.read!(prompt_path)
 
@@ -372,8 +373,11 @@ defmodule PromptRunner.Runner do
 
     IO.puts("  ...")
     IO.puts("")
-    IO.puts(UI.yellow("Starting #{llm.sdk} session..."))
-    IO.puts("")
+
+    if config.log_mode != :studio do
+      IO.puts(UI.yellow("Starting #{llm.sdk} session..."))
+      IO.puts("")
+    end
 
     {:ok, log_io} = File.open(log_file, [:write, :utf8])
 
@@ -453,8 +457,41 @@ defmodule PromptRunner.Runner do
 
   defp renderer_for_config(config) do
     case config.log_mode do
+      :studio -> {StudioRenderer, studio_opts(config)}
       :verbose -> {VerboseRenderer, []}
       _ -> {CompactRenderer, []}
+    end
+  end
+
+  defp studio_opts(config) do
+    opts = [tool_output: config.tool_output]
+    if config.log_mode == :studio, do: opts, else: []
+  end
+
+  defp print_prompt_header(config, prompt, llm, log_file) do
+    IO.puts("")
+
+    if config.log_mode == :studio do
+      bar = UI.dim(String.duplicate("━", 60))
+      IO.puts(bar)
+      IO.puts(UI.bold("  Prompt #{prompt.num}: #{prompt.name}"))
+      IO.puts(bar)
+      IO.puts("")
+      IO.puts("  #{UI.dim("Prompt")}   #{Path.join(config.config_dir, prompt.file)}")
+      IO.puts("  #{UI.dim("Project")}  #{llm.cwd}")
+      IO.puts("  #{UI.dim("LLM")}      #{llm.sdk} / #{llm.model}")
+      IO.puts("  #{UI.dim("Log")}      #{log_file}")
+      IO.puts("")
+    else
+      IO.puts(UI.blue(String.duplicate("=", 60)))
+      IO.puts(UI.bold("Prompt #{prompt.num}: #{prompt.name}"))
+      IO.puts(UI.blue(String.duplicate("=", 60)))
+      IO.puts("")
+      IO.puts("Prompt: #{Path.join(config.config_dir, prompt.file)}")
+      IO.puts("Project: #{llm.cwd}")
+      IO.puts("LLM: #{llm_summary(llm)}")
+      IO.puts("")
+      IO.puts("Log: #{log_file}")
     end
   end
 
@@ -647,27 +684,57 @@ defmodule PromptRunner.Runner do
 
   defp preflight_llm_dependency(_), do: {:ok, nil}
 
-  defp do_preflight(:codex, _llm) do
-    if Code.ensure_loaded?(Codex) do
-      {:ok,
-       %{
-         package: "codex_sdk",
-         version: app_vsn(:codex_sdk),
-         module: "Codex"
-       }}
-    else
-      {:error,
-       {:provider_dependency_missing,
-        %{
-          provider: :codex,
-          package: :codex_sdk,
-          missing_module: "Codex",
-          hint: "Add {:codex_sdk, \"== 0.8.0\"} to the entrypoint dependency set."
-        }}}
+  defp do_preflight(provider, _llm) do
+    case Map.fetch(@provider_deps, provider) do
+      {:ok, {otp_app, primary_mod, extra_mods}} ->
+        all_mods = [primary_mod | extra_mods]
+
+        if Enum.all?(all_mods, &Code.ensure_loaded?/1) do
+          {:ok,
+           %{
+             package: Atom.to_string(otp_app),
+             version: app_vsn(otp_app),
+             module: inspect(primary_mod)
+           }}
+        else
+          missing =
+            all_mods
+            |> Enum.reject(&Code.ensure_loaded?/1)
+            |> Enum.map_join(", ", &inspect/1)
+
+          {:error,
+           {:provider_dependency_missing,
+            %{
+              provider: provider,
+              package: otp_app,
+              missing_module: missing,
+              hint: dep_hint(otp_app)
+            }}}
+        end
+
+      :error ->
+        {:ok, nil}
     end
   end
 
-  defp do_preflight(_provider, _llm), do: {:ok, nil}
+  defp dep_hint(otp_app) do
+    version_spec =
+      case app_vsn(otp_app) do
+        "unknown" -> dep_fallback_spec(otp_app)
+        vsn -> "~> #{vsn}"
+      end
+
+    "Add {#{inspect(otp_app)}, #{inspect(version_spec)}} to the deps in your mix.exs."
+  end
+
+  defp dep_fallback_spec(:codex_sdk), do: "~> 0.9.0"
+  defp dep_fallback_spec(:claude_agent_sdk), do: "~> 0.13.0"
+  defp dep_fallback_spec(:amp_sdk), do: "~> 0.3"
+  defp dep_fallback_spec(_), do: ">= 0.0.0"
+
+  @doc false
+  @spec check_provider_dependency(atom()) :: {:ok, map() | nil} | {:error, term()}
+  def check_provider_dependency(provider), do: do_preflight(provider, %{})
 
   defp app_vsn(app) do
     case Application.spec(app, :vsn) do
@@ -828,8 +895,6 @@ defmodule PromptRunner.Runner do
   end
 
   defp finalize_stream_result(:ok, config, prompt, llm, skip_commit) do
-    IO.puts(UI.green("LLM completed successfully"))
-
     commit_info =
       if skip_commit do
         {:skip, :no_commit}
@@ -838,7 +903,14 @@ defmodule PromptRunner.Runner do
       end
 
     Progress.mark_completed(config, prompt.num, commit_info)
-    IO.puts(UI.green("Prompt #{prompt.num} completed"))
+
+    if config.log_mode == :studio do
+      IO.puts(UI.green("  ✓ Prompt #{prompt.num} completed"))
+    else
+      IO.puts(UI.green("LLM completed successfully"))
+      IO.puts(UI.green("Prompt #{prompt.num} completed"))
+    end
+
     :ok
   end
 

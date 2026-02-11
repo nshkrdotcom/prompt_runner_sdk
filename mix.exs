@@ -1,7 +1,7 @@
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.4.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
 
   def project do
@@ -35,6 +35,11 @@ defmodule PromptRunner.MixProject do
     [
       {:agent_session_manager, path: "../agent_session_manager"},
       {:jason, "~> 1.4"},
+
+      # Agent SDKs (optional — consumers add the ones they need)
+      {:codex_sdk, "~> 0.9.0", optional: true},
+      {:claude_agent_sdk, "~> 0.13.0", optional: true},
+      {:amp_sdk, "~> 0.3", optional: true},
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -66,6 +71,7 @@ defmodule PromptRunner.MixProject do
         # Guides
         {"guides/getting-started.md", filename: "getting-started", title: "Getting Started"},
         {"guides/configuration.md", filename: "configuration", title: "Configuration Reference"},
+        {"guides/rendering.md", filename: "rendering", title: "Rendering Modes"},
         {"guides/providers.md", filename: "providers", title: "Multi-Provider Setup"},
         {"guides/multi-repo.md", filename: "multi-repo", title: "Multi-Repository Workflows"},
         # Examples
@@ -79,6 +85,7 @@ defmodule PromptRunner.MixProject do
         Guides: [
           "getting-started",
           "configuration",
+          "rendering",
           "providers",
           "multi-repo"
         ],

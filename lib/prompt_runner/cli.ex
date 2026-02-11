@@ -39,6 +39,7 @@ defmodule PromptRunner.CLI do
         log_mode: :string,
         log_meta: :string,
         events_mode: :string,
+        tool_output: :string,
         phase: :integer,
         all: :boolean,
         continue: :boolean,
@@ -159,9 +160,10 @@ defmodule PromptRunner.CLI do
 
     IO.puts("    --project-dir DIR       Override project directory (legacy single-repo)")
     IO.puts("    --repo-override N:P     Override repo path by name (repeatable)")
-    IO.puts("    --log-mode MODE         Log output mode: compact (default) or verbose")
+    IO.puts("    --log-mode MODE         Log output mode: compact (default), verbose, or studio")
     IO.puts("    --log-meta MODE         Event metadata: none (default) or full")
     IO.puts("    --events-mode MODE      Events log: compact (default), full, or off")
+    IO.puts("    --tool-output MODE      Studio tool output: summary (default), preview, or full")
     IO.puts("")
 
     IO.puts(UI.yellow("Branch Strategy:"))
@@ -219,6 +221,7 @@ defmodule PromptRunner.CLI do
     IO.puts("      log_mode: :compact,")
     IO.puts("      log_meta: :none,")
     IO.puts("      events_mode: :compact,")
+    IO.puts("      tool_output: :summary,")
     IO.puts(~S|      phase_names: %{1 => "Phase One"}|)
     IO.puts("    }")
     IO.puts("")

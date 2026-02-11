@@ -1,3 +1,13 @@
+# Multi-Repo Dummy Example Configuration
+#
+# SDK dependencies required by this example:
+#   - codex_sdk (default provider)
+#   - claude_agent_sdk (prompt 02 override)
+#
+# When running standalone via run_prompts.exs, these are pulled automatically.
+# When using prompt_runner_sdk as a Hex dependency, add them to your mix.exs.
+# See guides/providers.md for details.
+
 base_dir = __DIR__
 repos_dir = Path.join(base_dir, "repos")
 alpha_dir = Path.join(repos_dir, "alpha")

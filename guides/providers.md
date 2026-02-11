@@ -8,6 +8,33 @@ Prompt Runner SDK supports three LLM providers through [AgentSessionManager](htt
 | Codex | `:codex` | `CodexAdapter` | OpenAI Codex models |
 | Amp | `:amp` | `AmpAdapter` | Amp models |
 
+## Required Dependencies
+
+Prompt Runner SDK declares the three provider SDKs as **optional** dependencies.
+You must add the SDK(s) you intend to use to your own `mix.exs`:
+
+```elixir
+# mix.exs
+defp deps do
+  [
+    {:prompt_runner_sdk, "~> 0.4"},
+
+    # Add the provider(s) you use:
+    {:claude_agent_sdk, "~> 0.13.0"},   # for provider: "claude"
+    {:codex_sdk, "~> 0.9.0"},           # for provider: "codex"
+    {:amp_sdk, "~> 0.3"},               # for provider: "amp"
+  ]
+end
+```
+
+If a required SDK is missing at runtime, the runner prints an actionable error
+with the exact dependency to add.
+
+> **Standalone examples:** The example scripts in `examples/` use `Mix.install`
+> with a path dependency, which pulls all transitive deps (including the optional
+> SDKs) automatically. No extra deps are needed when running examples from the
+> source tree.
+
 ## Choosing a Provider
 
 Set the `provider` key in the `llm` section:
@@ -84,12 +111,28 @@ llm: %{
     # Options passed to CodexAdapter
   },
   codex_thread_opts: %{
-    # Thread-level options (sandbox, approval settings, etc.)
+    reasoning_effort: :xhigh  # Reasoning effort level
+    # Plus sandbox, approval settings, etc.
   }
 }
 ```
 
 Both `codex_opts` and `codex_thread_opts` are merged into the adapter options, with `adapter_opts` applied last.
+
+#### CLI Confirmation
+
+When `reasoning_effort` is configured, the runner can verify that the Codex CLI is actually using it. Set `cli_confirmation` to control the response:
+
+```elixir
+llm: %{
+  provider: "codex",
+  model: "gpt-5.3-codex",
+  cli_confirmation: :warn,  # :off | :warn (default) | :require
+  codex_thread_opts: %{reasoning_effort: :xhigh}
+}
+```
+
+With `:require`, the run fails if the CLI does not confirm the configured model and reasoning effort. Machine-readable audit lines are written to session logs for traceability. See [Configuration Reference](configuration.md#codex-cli-confirmation) for details.
 
 ### Amp
 

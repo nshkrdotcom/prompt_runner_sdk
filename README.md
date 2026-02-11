@@ -32,7 +32,7 @@ Prompt Runner SDK executes a sequence of LLM prompts against your codebase. Each
 
 ```elixir
 def deps do
-  [{:prompt_runner_sdk, "~> 0.2.0"}]
+  [{:prompt_runner_sdk, "~> 0.4.0"}]
 end
 ```
 
@@ -90,10 +90,43 @@ mix run run_prompts.exs -c config.exs --run --phase 2      # Run all prompts in 
 --no-commit                  # Skip git commits
 --project-dir DIR            # Override project_dir
 --repo-override name:path    # Override a repo path (repeatable)
---log-mode compact|verbose   # Output mode (default: compact)
+--log-mode compact|verbose|studio  # Output mode (default: compact)
 --log-meta none|full         # Metadata in log output (default: none)
 --events-mode compact|full|off  # JSONL event logging (default: compact)
+--tool-output summary|preview|full  # Studio tool verbosity (default: summary)
+--cli-confirmation off|warn|require  # Codex CLI model confirmation policy
 ```
+
+## Rendering Modes
+
+PromptRunner supports three render modes: `:compact`, `:verbose`, and `:studio`.
+For interactive terminal runs, use `:studio` (recommended) for readable tool
+summaries and status symbols, with configurable tool verbosity.
+
+```elixir
+%{
+  log_mode: :studio,
+  tool_output: :summary # :summary | :preview | :full
+}
+```
+
+## Codex CLI Confirmation
+
+When using Codex, PromptRunner can verify that the CLI is actually running the
+model and reasoning effort you configured:
+
+```elixir
+llm: %{
+  provider: "codex",
+  model: "gpt-5.3-codex",
+  cli_confirmation: :warn,  # :off | :warn | :require
+  codex_thread_opts: %{reasoning_effort: :xhigh}
+}
+```
+
+With `:warn` (default), mismatches print a warning. With `:require`, the run
+fails if the CLI does not confirm the configured settings. Audit lines are
+written to session logs for traceability.
 
 ## Multi-Provider Support
 
@@ -200,6 +233,7 @@ mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --run 01
 
 - **[Getting Started](guides/getting-started.md)** - Installation, prerequisites, first run
 - **[Configuration Reference](guides/configuration.md)** - All config keys and file formats
+- **[Rendering Modes](guides/rendering.md)** - Compact, verbose, and studio output modes
 - **[Multi-Provider Setup](guides/providers.md)** - Claude, Codex, Amp configuration
 - **[Multi-Repository Workflows](guides/multi-repo.md)** - Cross-repo orchestration and repo groups
 

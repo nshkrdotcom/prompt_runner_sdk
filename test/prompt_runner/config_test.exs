@@ -60,6 +60,113 @@ defmodule PromptRunner.ConfigTest do
     assert llm.timeout == 420_000
   end
 
+  test "accepts studio log mode" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+    File.write!(Path.join(tmp_dir, "commit-messages.txt"), "=== COMMIT 01 ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "haiku",
+        log_mode: :studio,
+        llm: %{provider: "claude"}
+      }
+      """
+    )
+
+    assert {:ok, config} = Config.load(config_path)
+    assert config.log_mode == :studio
+  end
+
+  test "accepts tool_output values and normalizes them" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+    File.write!(Path.join(tmp_dir, "commit-messages.txt"), "=== COMMIT 01 ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+
+    for mode <- [:summary, :preview, :full] do
+      config_path = Path.join(tmp_dir, "runner_config_#{mode}.exs")
+
+      File.write!(
+        config_path,
+        """
+        %{
+          project_dir: "#{tmp_dir}",
+          prompts_file: "prompts.txt",
+          commit_messages_file: "commit-messages.txt",
+          progress_file: ".progress",
+          log_dir: "logs",
+          model: "haiku",
+          tool_output: :#{mode},
+          llm: %{provider: "claude"}
+        }
+        """
+      )
+
+      assert {:ok, config} = Config.load(config_path)
+      assert config.tool_output == mode
+    end
+  end
+
+  test "returns error for invalid tool_output" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+    File.write!(Path.join(tmp_dir, "commit-messages.txt"), "=== COMMIT 01 ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "haiku",
+        tool_output: "invalid",
+        llm: %{provider: "claude"}
+      }
+      """
+    )
+
+    assert {:error, {:invalid_tool_output, "invalid"}} = Config.load(config_path)
+  end
+
+  test "supports --tool-output override via with_overrides/2" do
+    config = %Config{tool_output: :summary}
+
+    assert Config.with_overrides(config, tool_output: "preview").tool_output == :preview
+    assert Config.with_overrides(config, tool_output: :full).tool_output == :full
+  end
+
   test "rejects invalid timeout values" do
     tmp_dir =
       Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")

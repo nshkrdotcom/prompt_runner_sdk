@@ -31,9 +31,10 @@ defmodule PromptRunner.Config do
           codex_thread_opts: map(),
           cli_confirmation: :off | :warn | :require,
           timeout: pos_integer() | :unbounded | :infinity | nil,
-          log_mode: :compact | :verbose,
+          log_mode: :compact | :verbose | :studio,
           log_meta: :none | :full,
           events_mode: :compact | :full | :off,
+          tool_output: :summary | :preview | :full,
           phase_names: map()
         }
 
@@ -60,6 +61,7 @@ defmodule PromptRunner.Config do
     :log_mode,
     :log_meta,
     :events_mode,
+    :tool_output,
     :phase_names
   ]
 
@@ -82,6 +84,7 @@ defmodule PromptRunner.Config do
     |> maybe_override_log_mode(opts[:log_mode])
     |> maybe_override_log_meta(opts[:log_meta])
     |> maybe_override_events_mode(opts[:events_mode])
+    |> maybe_override_tool_output(opts[:tool_output])
     |> maybe_override_cli_confirmation(opts[:cli_confirmation])
     |> maybe_override_require_cli_confirmation(opts[:require_cli_confirmation])
   end
@@ -223,8 +226,15 @@ defmodule PromptRunner.Config do
   defp normalize_log_settings(config) do
     with {:ok, log_mode} <- normalize_log_mode(config[:log_mode]),
          {:ok, log_meta} <- normalize_log_meta(config[:log_meta], log_mode),
-         {:ok, events_mode} <- normalize_events_mode(config[:events_mode]) do
-      {:ok, %{log_mode: log_mode, log_meta: log_meta, events_mode: events_mode}}
+         {:ok, events_mode} <- normalize_events_mode(config[:events_mode]),
+         {:ok, tool_output} <- normalize_tool_output(config[:tool_output]) do
+      {:ok,
+       %{
+         log_mode: log_mode,
+         log_meta: log_meta,
+         events_mode: events_mode,
+         tool_output: tool_output
+       }}
     end
   end
 
@@ -267,6 +277,7 @@ defmodule PromptRunner.Config do
       log_mode: log_settings.log_mode,
       log_meta: log_settings.log_meta,
       events_mode: log_settings.events_mode,
+      tool_output: log_settings.tool_output,
       phase_names: coalesce([config[:phase_names]], %{})
     }
   end
@@ -316,6 +327,7 @@ defmodule PromptRunner.Config do
     case String.downcase(mode) do
       "compact" -> {:ok, :compact}
       "verbose" -> {:ok, :verbose}
+      "studio" -> {:ok, :studio}
       other -> {:error, {:invalid_log_mode, other}}
     end
   end
@@ -352,6 +364,22 @@ defmodule PromptRunner.Config do
   end
 
   defp normalize_events_mode(mode), do: {:error, {:invalid_events_mode, mode}}
+
+  defp normalize_tool_output(nil), do: {:ok, :summary}
+
+  defp normalize_tool_output(mode) when is_atom(mode),
+    do: normalize_tool_output(Atom.to_string(mode))
+
+  defp normalize_tool_output(mode) when is_binary(mode) do
+    case String.downcase(mode) do
+      "summary" -> {:ok, :summary}
+      "preview" -> {:ok, :preview}
+      "full" -> {:ok, :full}
+      other -> {:error, {:invalid_tool_output, other}}
+    end
+  end
+
+  defp normalize_tool_output(mode), do: {:error, {:invalid_tool_output, mode}}
 
   defp maybe_override_cli_confirmation(config, nil), do: config
 
@@ -543,6 +571,15 @@ defmodule PromptRunner.Config do
     case normalize_events_mode(mode) do
       {:error, _} -> config
       {:ok, normalized} -> %{config | events_mode: normalized}
+    end
+  end
+
+  defp maybe_override_tool_output(config, nil), do: config
+
+  defp maybe_override_tool_output(config, mode) do
+    case normalize_tool_output(mode) do
+      {:error, _} -> config
+      {:ok, normalized} -> %{config | tool_output: normalized}
     end
   end
 

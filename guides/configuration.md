@@ -45,6 +45,7 @@ Configuration lives in a `runner_config.exs` file — an Elixir script that eval
   log_mode: :compact,
   log_meta: :none,
   events_mode: :compact,
+  tool_output: :summary,
   phase_names: %{1 => "Setup", 2 => "Implementation"}
 }
 ```
@@ -78,7 +79,9 @@ The `llm` map controls provider selection, tool permissions, and per-prompt over
 | `adapter_opts` | map | `%{}` | Options passed to the AgentSessionManager adapter. |
 | `claude_opts` | map | `%{}` | Claude-specific adapter options (merged before `adapter_opts`). |
 | `codex_opts` | map | `%{}` | Codex-specific options (merged before `adapter_opts`). |
-| `codex_thread_opts` | map | `%{}` | Codex thread options (merged before `adapter_opts`). |
+| `codex_thread_opts` | map | `%{}` | Codex thread options (e.g., `%{reasoning_effort: :xhigh}`). Merged before `adapter_opts`. |
+| `cli_confirmation` | atom | `:warn` | Codex CLI confirmation policy: `:off`, `:warn`, or `:require`. See [Codex CLI Confirmation](#codex-cli-confirmation). |
+| `timeout` | integer/atom | `nil` | Session timeout in milliseconds. Also accepts `:unbounded` or `:infinity` (capped at 7 days internally). |
 | `prompt_overrides` | map | `%{}` | Per-prompt overrides keyed by prompt number. |
 
 ### Config Precedence
@@ -147,13 +150,51 @@ llm: %{
 
 See the [Multi-Repository Workflows](multi-repo.md) guide for full details.
 
+## Codex CLI Confirmation
+
+When using Codex, the runner can verify that the CLI is actually using the model and reasoning effort you configured. This is controlled by the `cli_confirmation` setting:
+
+| Mode | Behavior |
+|------|----------|
+| `:off` | No confirmation checking |
+| `:warn` | Print a warning if configured and confirmed settings differ (default) |
+| `:require` | Fail the run if the CLI does not confirm the configured model/reasoning |
+
+```elixir
+llm: %{
+  provider: "codex",
+  model: "gpt-5.3-codex",
+  cli_confirmation: :warn,
+  codex_thread_opts: %{reasoning_effort: :xhigh},
+  prompt_overrides: %{
+    "03" => %{cli_confirmation: :require}
+  }
+}
+```
+
+Machine-readable audit lines (`LLM_AUDIT`, `LLM_AUDIT_CONFIRMED`, `LLM_AUDIT_RESULT`) are always written to the session log file for traceability, regardless of the confirmation mode.
+
+CLI flags: `--cli-confirmation off|warn|require` and `--require-cli-confirmation` (shortcut for `require`).
+
+## Timeout Configuration
+
+The `timeout` field accepts:
+
+- Positive integer (milliseconds): `timeout: 300_000`
+- `:unbounded` or `:infinity` atoms: no practical limit (capped at 7 days internally)
+- String equivalents: `"unbounded"`, `"infinity"`, `"infinite"`, or numeric strings like `"300000"`
+- `nil` (default): uses the emergency cap (7 days)
+
+Timeout can be set at the top level, in the `llm` section, or per-prompt via `prompt_overrides`.
+
 ## Display Fields
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `log_mode` | atom | `:compact` | `:compact` (abbreviated tokens via `CompactRenderer`) or `:verbose` (one event per line via `VerboseRenderer`). |
+| `log_mode` | atom | `:compact` | `:compact` (abbreviated tokens via `CompactRenderer`), `:verbose` (one event per line), or `:studio` (CLI-grade interactive rendering via `StudioRenderer`). |
 | `log_meta` | atom | `:none` | Reserved for future use. Currently accepted but ignored. |
 | `events_mode` | atom | `:compact` | `:compact`, `:full`, or `:off`. Controls JSONL event file detail level via `JSONLSink`. |
+| `tool_output` | atom | `:summary` | Studio renderer tool output level: `:summary`, `:preview`, or `:full`. |
 | `phase_names` | map | `%{}` | Map of phase number (integer) to display name (string). |
 
 ## File Formats

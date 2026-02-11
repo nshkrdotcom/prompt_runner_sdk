@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-02-11
+
+### Added
+
+- **Studio rendering mode** (`log_mode: :studio`) — CLI-grade interactive output using AgentSessionManager's new `StudioRenderer`
+  - Human-readable tool summaries instead of raw JSON token streams
+  - Status symbols: `◐` (running), `✓` (success), `✗` (failure), `●` (info)
+  - Three tool output verbosity levels via `tool_output:` config: `:summary` (default), `:preview`, `:full`
+  - Automatic non-TTY fallback for piped/redirected output
+- New `--tool-output` CLI flag for runtime verbosity override (`summary`, `preview`, `full`)
+- New `tool_output` config key in runner configuration
+- Redesigned prompt header with box-drawing characters and aligned layout in studio mode
+- New guide: `guides/rendering.md` documenting all three rendering modes
+- **Codex CLI confirmation and model auditing** — verify that the Codex CLI is actually using the model and reasoning effort you configured
+  - New `cli_confirmation` config key (`:off`, `:warn`, `:require`) — controls response to confirmation mismatches
+  - New `--cli-confirmation MODE` CLI flag for runtime override
+  - New `--require-cli-confirmation` CLI flag (shortcut for `--cli-confirmation require`)
+  - Machine-readable audit lines written to session logs (`LLM_AUDIT`, `LLM_AUDIT_CONFIRMED`, `LLM_AUDIT_RESULT`)
+  - Mismatch and missing-confirmation warnings printed to console when `cli_confirmation: :warn` (default for Codex)
+  - Hard failure when `cli_confirmation: :require` and CLI does not confirm reasoning effort
+  - Per-prompt `cli_confirmation` override via `prompt_overrides`
+- **Unbounded and infinite timeout support** — `timeout` now accepts `:unbounded`, `:infinity`, `"unbounded"`, `"infinity"`, and `"infinite"` in addition to positive integers
+  - Sentinel values resolve to a 7-day emergency cap in the session layer
+  - Works in both top-level config and per-prompt `prompt_overrides`
+- **LLM SDK preflight checks** — Runner verifies that the required SDK module is loaded before starting a prompt (currently Codex only), with clear error messages including the missing package name
+- **Stream error handling** — `Rendering.stream/2` failures (exceptions, throws) are now caught and returned as `{:error, {:stream_failed, message}}` instead of crashing the runner
+- Codex `reasoning_effort` displayed in prompt plan output when configured via `codex_thread_opts`
+
+### Changed
+
+- Default `log_mode` remains `:compact` (studio is opt-in for this release)
+- Default `cli_confirmation` is `:warn` for Codex prompts, effectively a no-op for other providers
+- Modularized `Runner` internals — extracted helper functions for prompt header printing, permission mode display, adapter option display, and codex thread options
+- Updated `guides/configuration.md` with new rendering, timeout, and CLI confirmation options
+- Updated `guides/providers.md` with Codex reasoning effort and CLI confirmation details
+- Updated `guides/getting-started.md` with studio mode and new CLI flags
+- Updated README with rendering modes section and new CLI options
+
+### Dependencies
+
+- Requires `agent_session_manager ~> 0.8.0` (StudioRenderer module)
+- `claude_agent_sdk` updated to `~> 0.12.0`
+- `codex_sdk` updated to `~> 0.8.0`
+
 ## [0.3.0] - 2026-02-09
 
 ### Changed
@@ -118,7 +162,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
-[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.1.1...v0.1.2
