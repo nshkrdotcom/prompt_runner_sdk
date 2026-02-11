@@ -29,6 +29,7 @@ defmodule PromptRunner.Config do
           claude_opts: map(),
           codex_opts: map(),
           codex_thread_opts: map(),
+          cli_confirmation: :off | :warn | :require,
           timeout: pos_integer() | nil,
           log_mode: :compact | :verbose,
           log_meta: :none | :full,
@@ -54,6 +55,7 @@ defmodule PromptRunner.Config do
     :claude_opts,
     :codex_opts,
     :codex_thread_opts,
+    :cli_confirmation,
     :timeout,
     :log_mode,
     :log_meta,
@@ -80,6 +82,8 @@ defmodule PromptRunner.Config do
     |> maybe_override_log_mode(opts[:log_mode])
     |> maybe_override_log_meta(opts[:log_meta])
     |> maybe_override_events_mode(opts[:events_mode])
+    |> maybe_override_cli_confirmation(opts[:cli_confirmation])
+    |> maybe_override_require_cli_confirmation(opts[:require_cli_confirmation])
   end
 
   @doc """
@@ -105,7 +109,8 @@ defmodule PromptRunner.Config do
       adapter_opts: config.adapter_opts || %{},
       claude_opts: config.claude_opts || %{},
       codex_opts: config.codex_opts || %{},
-      codex_thread_opts: codex_thread_opts
+      codex_thread_opts: codex_thread_opts,
+      cli_confirmation: config.cli_confirmation
     }
 
     override = Map.get(config.prompt_overrides || %{}, prompt.num, %{})
@@ -121,6 +126,7 @@ defmodule PromptRunner.Config do
     merged
     |> Map.put(:sdk, sdk)
     |> Map.put(:provider, sdk)
+    |> Map.update(:cli_confirmation, :warn, &normalize_cli_confirmation/1)
     |> Map.update(:permission_mode, nil, &normalize_permission_mode/1)
   end
 
@@ -252,6 +258,9 @@ defmodule PromptRunner.Config do
       codex_opts: coalesce([llm_section[:codex_opts], config[:codex_opts]], %{}),
       codex_thread_opts:
         coalesce([llm_section[:codex_thread_opts], config[:codex_thread_opts]], %{}),
+      cli_confirmation:
+        coalesce([llm_section[:cli_confirmation], config[:cli_confirmation]], :warn)
+        |> normalize_cli_confirmation(),
       timeout: coalesce([llm_section[:timeout], config[:timeout]], nil),
       log_mode: log_settings.log_mode,
       log_meta: log_settings.log_meta,
@@ -341,6 +350,41 @@ defmodule PromptRunner.Config do
   end
 
   defp normalize_events_mode(mode), do: {:error, {:invalid_events_mode, mode}}
+
+  defp maybe_override_cli_confirmation(config, nil), do: config
+
+  defp maybe_override_cli_confirmation(config, value) do
+    %{config | cli_confirmation: normalize_cli_confirmation(value)}
+  end
+
+  defp maybe_override_require_cli_confirmation(config, nil), do: config
+
+  # Backward-compatible CLI alias: --require-cli-confirmation implies :require.
+  defp maybe_override_require_cli_confirmation(config, value) do
+    if truthy?(value) do
+      %{config | cli_confirmation: :require}
+    else
+      config
+    end
+  end
+
+  defp truthy?(value) when value in [true, "true", "TRUE", "1", 1], do: true
+  defp truthy?(_), do: false
+
+  defp normalize_cli_confirmation(value) when is_atom(value) do
+    normalize_cli_confirmation(Atom.to_string(value))
+  end
+
+  defp normalize_cli_confirmation(value) when is_binary(value) do
+    case value |> String.trim() |> String.downcase() do
+      "off" -> :off
+      "warn" -> :warn
+      "require" -> :require
+      _ -> :warn
+    end
+  end
+
+  defp normalize_cli_confirmation(_), do: :warn
 
   defp normalize_prompt_overrides(nil), do: %{}
 

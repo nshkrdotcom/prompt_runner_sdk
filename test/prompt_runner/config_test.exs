@@ -128,6 +128,69 @@ defmodule PromptRunner.ConfigTest do
     assert config.llm_sdk == :claude
   end
 
+  test "normalizes llm.cli_confirmation policy and supports prompt override" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    prompts_path = Path.join(tmp_dir, "prompts.txt")
+    commits_path = Path.join(tmp_dir, "commit-messages.txt")
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(prompts_path, "01|1|1|Alpha|001.md\n02|1|1|Beta|002.md\n")
+    File.write!(commits_path, "=== COMMIT 01 ===\nmsg\n=== COMMIT 02 ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+    File.write!(Path.join(tmp_dir, "002.md"), "beta\n")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.3-codex",
+        llm: %{
+          provider: "codex",
+          cli_confirmation: "warn",
+          codex_thread_opts: %{reasoning_effort: :xhigh},
+          prompt_overrides: %{
+            "02" => %{cli_confirmation: :require}
+          }
+        }
+      }
+      """
+    )
+
+    assert {:ok, config} = Config.load(config_path)
+    assert config.cli_confirmation == :warn
+
+    prompt_01 = %Prompt{
+      num: "01",
+      phase: 1,
+      sp: 1,
+      name: "Alpha",
+      file: "001.md",
+      target_repos: nil
+    }
+
+    prompt_02 = %Prompt{
+      num: "02",
+      phase: 1,
+      sp: 1,
+      name: "Beta",
+      file: "002.md",
+      target_repos: nil
+    }
+
+    assert Config.llm_for_prompt(config, prompt_01).cli_confirmation == :warn
+    assert Config.llm_for_prompt(config, prompt_02).cli_confirmation == :require
+  end
+
   test "normalizes legacy permission_mode values" do
     tmp_dir =
       Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")

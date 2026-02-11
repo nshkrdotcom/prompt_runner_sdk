@@ -32,6 +32,8 @@ defmodule PromptRunner.CLI do
         run: :boolean,
         plan_only: :boolean,
         no_commit: :boolean,
+        require_cli_confirmation: :boolean,
+        cli_confirmation: :string,
         project_dir: :string,
         repo_override: :keep,
         log_mode: :string,
@@ -149,6 +151,12 @@ defmodule PromptRunner.CLI do
 
     IO.puts(UI.yellow("Options:"))
     IO.puts("    --no-commit             Skip git commit after prompt")
+    IO.puts("    --cli-confirmation MODE Confirmation policy: off | warn | require")
+
+    IO.puts(
+      "    --require-cli-confirmation  Fail run if codex CLI does not confirm model/reasoning"
+    )
+
     IO.puts("    --project-dir DIR       Override project directory (legacy single-repo)")
     IO.puts("    --repo-override N:P     Override repo path by name (repeatable)")
     IO.puts("    --log-mode MODE         Log output mode: compact (default) or verbose")

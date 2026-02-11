@@ -184,6 +184,14 @@ defmodule PromptRunner.Runner do
     IO.puts(UI.yellow("2. Execution:"))
     IO.puts("   LLM provider: #{llm.sdk}")
     IO.puts("   - model: #{llm.model}")
+
+    if llm.sdk == :codex do
+      case configured_codex_reasoning(llm) do
+        nil -> :ok
+        reasoning -> IO.puts("   - reasoning_effort: #{reasoning}")
+      end
+    end
+
     IO.puts("   - cwd: #{llm.cwd}")
 
     if is_list(llm.allowed_tools) do
@@ -306,50 +314,57 @@ defmodule PromptRunner.Runner do
         if File.exists?(prompt_path) do
           llm = Config.llm_for_prompt(config, prompt)
 
-          IO.puts("")
-          IO.puts(UI.blue(String.duplicate("=", 60)))
-          IO.puts(UI.bold("Prompt #{num}: #{prompt.name}"))
-          IO.puts(UI.blue(String.duplicate("=", 60)))
-          IO.puts("")
-          IO.puts("Prompt: #{prompt_path}")
-          IO.puts("Project: #{llm.cwd}")
-          IO.puts("LLM: #{llm.sdk} model=#{llm.model}")
-          IO.puts("")
+          case preflight_llm_dependency(llm) do
+            {:ok, sdk_info} ->
+              IO.puts("")
+              IO.puts(UI.blue(String.duplicate("=", 60)))
+              IO.puts(UI.bold("Prompt #{num}: #{prompt.name}"))
+              IO.puts(UI.blue(String.duplicate("=", 60)))
+              IO.puts("")
+              IO.puts("Prompt: #{prompt_path}")
+              IO.puts("Project: #{llm.cwd}")
+              IO.puts("LLM: #{llm_summary(llm)}")
+              maybe_print_sdk_preflight(sdk_info)
+              IO.puts("")
 
-          File.mkdir_p!(config.log_dir)
-          timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%d-%H%M%S")
-          log_file = Path.join(config.log_dir, "prompt-#{num}-#{timestamp}.log")
-          events_file = Path.join(config.log_dir, "prompt-#{num}-#{timestamp}.events.jsonl")
+              File.mkdir_p!(config.log_dir)
+              timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%d-%H%M%S")
+              log_file = Path.join(config.log_dir, "prompt-#{num}-#{timestamp}.log")
+              events_file = Path.join(config.log_dir, "prompt-#{num}-#{timestamp}.events.jsonl")
 
-          IO.puts("Log: #{log_file}")
-          IO.puts("Events: #{events_file}")
-          IO.puts("")
+              IO.puts("Log: #{log_file}")
+              IO.puts("Events: #{events_file}")
+              IO.puts("")
 
-          prompt_content = File.read!(prompt_path)
+              prompt_content = File.read!(prompt_path)
 
-          IO.puts(UI.yellow("Prompt preview (first #{@prompt_preview_lines} lines):"))
+              IO.puts(UI.yellow("Prompt preview (first #{@prompt_preview_lines} lines):"))
 
-          prompt_content
-          |> String.split("\n")
-          |> Enum.take(@prompt_preview_lines)
-          |> Enum.each(&IO.puts("  #{&1}"))
+              prompt_content
+              |> String.split("\n")
+              |> Enum.take(@prompt_preview_lines)
+              |> Enum.each(&IO.puts("  #{&1}"))
 
-          IO.puts("  ...")
-          IO.puts("")
-          IO.puts(UI.yellow("Starting #{llm.sdk} session..."))
-          IO.puts("")
+              IO.puts("  ...")
+              IO.puts("")
+              IO.puts(UI.yellow("Starting #{llm.sdk} session..."))
+              IO.puts("")
 
-          {:ok, log_io} = File.open(log_file, [:write, :utf8])
+              {:ok, log_io} = File.open(log_file, [:write, :utf8])
 
-          llm_module().start_stream(llm, prompt_content)
-          |> handle_stream_result(
-            config,
-            prompt,
-            prompt_path,
-            llm,
-            {log_io, events_file},
-            skip_commit
-          )
+              llm_module().start_stream(llm, prompt_content)
+              |> handle_stream_result(
+                config,
+                prompt,
+                prompt_path,
+                llm,
+                {log_io, events_file},
+                skip_commit
+              )
+
+            {:error, reason} ->
+              return_error(config, num, reason)
+          end
         else
           return_error(config, num, {:prompt_file_not_found, prompt_path})
         end
@@ -366,15 +381,19 @@ defmodule PromptRunner.Runner do
          skip_commit
        ) do
     write_session_header(log_io, config, llm, llm_meta, prompt_path)
+    initialize_cli_confirmation_tracking(llm, config, log_io)
 
     renderer = renderer_for_config(config)
-    sinks = build_sinks(config, log_io, events_file)
+    sinks = build_sinks(config, log_io, events_file, llm)
 
     render_result = safe_render_stream(stream, renderer, sinks)
     callback_result = Process.get(:prompt_runner_stream_result, :ok)
     Process.delete(:prompt_runner_stream_result)
-
     result = resolve_stream_result(render_result, callback_result)
+    result = maybe_finalize_cli_confirmation(result, llm, config, log_io)
+
+    Process.delete(:prompt_runner_cli_confirmation_printed)
+    Process.delete(:prompt_runner_cli_confirmation_audit)
 
     IO.puts("")
     finalize_stream_result(result, config, prompt, llm, skip_commit)
@@ -422,11 +441,12 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  defp build_sinks(config, log_io, events_file) do
+  defp build_sinks(config, log_io, events_file, llm) do
     sinks = [
       {TTYSink, []},
       {FileSink, [io: log_io]},
-      {CallbackSink, [callback: &error_tracking_callback/2]}
+      {CallbackSink,
+       [callback: fn event, iodata -> stream_tracking_callback(event, iodata, llm, log_io) end]}
     ]
 
     if config.events_mode != :off do
@@ -436,7 +456,12 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  defp error_tracking_callback(event, _iodata) do
+  defp stream_tracking_callback(event, _iodata, llm, log_io) do
+    maybe_print_cli_confirmation(event, llm, log_io)
+    error_tracking_callback(event)
+  end
+
+  defp error_tracking_callback(event) do
     case event.type do
       type when type in [:error_occurred, :run_failed] ->
         msg = get_in(event, [:data, :error_message]) || "unknown error"
@@ -446,6 +471,313 @@ defmodule PromptRunner.Runner do
         :ok
     end
   end
+
+  defp maybe_print_cli_confirmation(%{type: :run_started} = event, %{sdk: :codex}, log_io) do
+    case extract_codex_cli_confirmation(event) do
+      %{model: model, reasoning_effort: reasoning_effort} = confirmation
+      when is_binary(model) and model != "" and not is_nil(reasoning_effort) ->
+        IO.puts("\nLLM confirmed (codex_cli): model=#{model} reasoning=#{reasoning_effort}")
+
+        audit =
+          Process.get(:prompt_runner_cli_confirmation_audit, %{})
+          |> Map.put(:confirmed_model, model)
+          |> Map.put(:confirmed_reasoning_effort, to_string(reasoning_effort))
+          |> Map.put(:confirmation_source, confirmation.source || "codex_cli.run_started")
+
+        Process.put(:prompt_runner_cli_confirmation_printed, true)
+        Process.put(:prompt_runner_cli_confirmation_audit, audit)
+
+        IO.binwrite(
+          log_io,
+          "LLM_AUDIT_CONFIRMED source=#{audit.confirmation_source} confirmed_model=#{audit.confirmed_model} confirmed_reasoning=#{audit.confirmed_reasoning_effort}\n"
+        )
+
+        :ok
+
+      %{model: model} = confirmation when is_binary(model) and model != "" ->
+        audit =
+          Process.get(:prompt_runner_cli_confirmation_audit, %{})
+          |> Map.put(:confirmed_model, model)
+          |> Map.put(:confirmation_source, confirmation.source || "codex_cli.run_started")
+
+        Process.put(:prompt_runner_cli_confirmation_audit, audit)
+
+        IO.binwrite(
+          log_io,
+          "LLM_AUDIT_CONFIRMED source=#{audit.confirmation_source} confirmed_model=#{audit.confirmed_model} confirmed_reasoning=n/a\n"
+        )
+
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp maybe_print_cli_confirmation(_event, _llm, _log_io), do: :ok
+
+  defp extract_codex_cli_confirmation(%{data: data}) when is_map(data) do
+    metadata = map_get(data, :metadata)
+    source = map_get(data, :confirmation_source) || "codex_cli.run_started"
+
+    model =
+      map_get(data, :confirmed_model) ||
+        map_get(data, :model) ||
+        map_get(metadata, :model)
+
+    reasoning_effort =
+      map_get(data, :reasoning_effort) ||
+        map_get(data, :confirmed_reasoning_effort) ||
+        map_get(metadata, :reasoning_effort) ||
+        map_get(metadata, :reasoningEffort) ||
+        case map_get(metadata, :config) do
+          config when is_map(config) ->
+            map_get(config, :model_reasoning_effort) || map_get(config, :reasoning_effort)
+
+          _ ->
+            nil
+        end
+
+    %{
+      model: model,
+      reasoning_effort: if(is_nil(reasoning_effort), do: nil, else: to_string(reasoning_effort)),
+      source: source
+    }
+  end
+
+  defp extract_codex_cli_confirmation(_), do: nil
+
+  defp llm_summary(%{sdk: :codex} = llm) do
+    case configured_codex_reasoning(llm) do
+      nil -> "codex model=#{llm.model}"
+      reasoning -> "codex model=#{llm.model} reasoning=#{reasoning} (configured)"
+    end
+  end
+
+  defp llm_summary(llm), do: "#{llm.sdk} model=#{llm.model}"
+
+  defp configured_codex_reasoning(llm) do
+    case llm[:codex_thread_opts] do
+      opts when is_map(opts) ->
+        map_get(opts, :reasoning_effort)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp map_get(map, key) when is_map(map) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
+
+  defp mismatch?(configured, confirmed)
+       when is_binary(configured) and configured != "" and is_binary(confirmed) and
+              confirmed != "" do
+    configured != confirmed
+  end
+
+  defp mismatch?(_configured, _confirmed), do: false
+
+  defp cli_confirmation_mode(llm, config) do
+    config_mode =
+      case config do
+        %{cli_confirmation: value} ->
+          value
+
+        map when is_map(map) ->
+          Map.get(map, :cli_confirmation) || Map.get(map, "cli_confirmation")
+
+        _ ->
+          nil
+      end
+
+    mode =
+      llm[:cli_confirmation] ||
+        config_mode ||
+        :warn
+
+    case mode do
+      value when value in [:off, :warn, :require] ->
+        value
+
+      value when is_binary(value) ->
+        case String.downcase(value) do
+          "off" -> :off
+          "warn" -> :warn
+          "require" -> :require
+          _ -> :warn
+        end
+
+      _ ->
+        :warn
+    end
+  end
+
+  defp maybe_print_sdk_preflight(nil), do: :ok
+
+  defp maybe_print_sdk_preflight(%{package: package, version: version, module: module}) do
+    IO.puts(
+      "LLM SDK preflight: package=#{package} version=#{version} module=#{module} loaded=true"
+    )
+  end
+
+  defp preflight_llm_dependency(%{sdk: provider} = llm) do
+    # In tests and custom integrations, a custom llm_module may fully own provider setup.
+    if llm_module() != PromptRunner.LLMFacade do
+      {:ok, nil}
+    else
+      do_preflight(provider, llm)
+    end
+  end
+
+  defp preflight_llm_dependency(_), do: {:ok, nil}
+
+  defp do_preflight(:codex, _llm) do
+    cond do
+      not Code.ensure_loaded?(Codex) ->
+        {:error,
+         {:provider_dependency_missing,
+          %{
+            provider: :codex,
+            package: :codex_sdk,
+            missing_module: "Codex",
+            hint: "Add {:codex_sdk, \"== 0.8.0\"} to the entrypoint dependency set."
+          }}}
+
+      true ->
+        {:ok,
+         %{
+           package: "codex_sdk",
+           version: app_vsn(:codex_sdk),
+           module: "Codex"
+         }}
+    end
+  end
+
+  defp do_preflight(_provider, _llm), do: {:ok, nil}
+
+  defp app_vsn(app) do
+    case Application.spec(app, :vsn) do
+      nil -> "unknown"
+      vsn when is_list(vsn) -> List.to_string(vsn)
+      vsn -> to_string(vsn)
+    end
+  end
+
+  defp maybe_print_cli_mismatch(audit, log_io) do
+    configured_model = Map.get(audit, :configured_model)
+    configured_reasoning = Map.get(audit, :configured_reasoning_effort)
+    confirmed_model = Map.get(audit, :confirmed_model)
+    confirmed_reasoning = Map.get(audit, :confirmed_reasoning_effort)
+
+    model_mismatch? =
+      is_binary(configured_model) and is_binary(confirmed_model) and
+        configured_model != confirmed_model
+
+    reasoning_mismatch? =
+      is_binary(configured_reasoning) and is_binary(confirmed_reasoning) and
+        configured_reasoning != confirmed_reasoning
+
+    if model_mismatch? or reasoning_mismatch? do
+      warning_line =
+        "WARNING: codex_cli confirmation mismatch configured_model=#{configured_model || "n/a"} configured_reasoning=#{configured_reasoning || "n/a"} confirmed_model=#{confirmed_model || "n/a"} confirmed_reasoning=#{confirmed_reasoning || "n/a"}"
+
+      IO.puts(warning_line)
+      IO.binwrite(log_io, "LLM_AUDIT_MISMATCH #{warning_line}\n")
+    end
+  end
+
+  defp initialize_cli_confirmation_tracking(%{sdk: :codex} = llm, config, log_io) do
+    configured_reasoning = configured_codex_reasoning(llm)
+    cli_confirmation = cli_confirmation_mode(llm, config)
+
+    audit = %{
+      configured_model: llm.model,
+      configured_reasoning_effort:
+        if(is_nil(configured_reasoning), do: nil, else: to_string(configured_reasoning)),
+      confirmed_model: nil,
+      confirmed_reasoning_effort: nil,
+      confirmation_source: nil,
+      cli_confirmation: cli_confirmation
+    }
+
+    Process.put(:prompt_runner_cli_confirmation_printed, false)
+    Process.put(:prompt_runner_cli_confirmation_audit, audit)
+
+    IO.binwrite(
+      log_io,
+      "LLM_AUDIT configured_model=#{audit.configured_model || "n/a"} configured_reasoning=#{audit.configured_reasoning_effort || "n/a"} cli_confirmation=#{audit.cli_confirmation}\n"
+    )
+  end
+
+  defp initialize_cli_confirmation_tracking(_llm, _config, _log_io) do
+    Process.put(:prompt_runner_cli_confirmation_printed, false)
+    Process.put(:prompt_runner_cli_confirmation_audit, %{})
+  end
+
+  defp maybe_finalize_cli_confirmation(result, %{sdk: :codex}, config, log_io) do
+    audit = Process.get(:prompt_runner_cli_confirmation_audit, %{})
+    cli_confirmation = Map.get(audit, :cli_confirmation, cli_confirmation_mode(%{}, config))
+
+    configured_reasoning = Map.get(audit, :configured_reasoning_effort)
+    configured_model = Map.get(audit, :configured_model)
+    confirmed_model = Map.get(audit, :confirmed_model)
+    confirmed_reasoning = Map.get(audit, :confirmed_reasoning_effort)
+
+    status =
+      cond do
+        mismatch?(configured_model, confirmed_model) or
+            mismatch?(configured_reasoning, confirmed_reasoning) ->
+          :mismatch
+
+        configured_reasoning != nil and confirmed_reasoning in [nil, ""] ->
+          :missing
+
+        true ->
+          :matched
+      end
+
+    details = %{
+      configured_model: configured_model,
+      configured_reasoning: configured_reasoning,
+      confirmed_model: confirmed_model,
+      confirmed_reasoning: confirmed_reasoning,
+      confirmation_source: Map.get(audit, :confirmation_source)
+    }
+
+    result =
+      case {status, cli_confirmation} do
+        {:mismatch, :require} ->
+          {:error, {:cli_confirmation_mismatch, details}}
+
+        {:missing, :require} ->
+          {:error, {:cli_confirmation_missing, details}}
+
+        {:mismatch, :warn} ->
+          maybe_print_cli_mismatch(audit, log_io)
+          result
+
+        {:missing, :warn} ->
+          warning_line =
+            "WARNING: codex_cli confirmation missing reasoning_effort configured_model=#{configured_model || "n/a"} configured_reasoning=#{configured_reasoning || "n/a"}"
+
+          IO.puts(warning_line)
+          IO.binwrite(log_io, "LLM_AUDIT_WARNING #{warning_line}\n")
+          result
+
+        _ ->
+          result
+      end
+
+    IO.binwrite(
+      log_io,
+      "LLM_AUDIT_RESULT status=#{status} configured_model=#{configured_model || "n/a"} configured_reasoning=#{configured_reasoning || "n/a"} confirmed_model=#{confirmed_model || "n/a"} confirmed_reasoning=#{confirmed_reasoning || "n/a"} source=#{Map.get(audit, :confirmation_source) || "n/a"} cli_confirmation=#{cli_confirmation}\n"
+    )
+
+    result
+  end
+
+  defp maybe_finalize_cli_confirmation(result, _llm, _config, _log_io), do: result
 
   defp write_session_header(log_io, config, llm, llm_meta, prompt_path) do
     header =

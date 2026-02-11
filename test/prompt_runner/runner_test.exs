@@ -107,10 +107,358 @@ defmodule PromptRunner.RunnerTest do
       {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
     end)
 
-    assert {:error, {:stream_failed, _}} =
-             Runner.run(config, [run: true, no_commit: true], ["01"])
+    ExUnit.CaptureIO.capture_io(fn ->
+      assert {:error, {:stream_failed, _}} =
+               Runner.run(config, [run: true, no_commit: true], ["01"])
+    end)
 
     statuses = Progress.statuses(config)
     assert statuses["01"].status == "failed"
+  end
+
+  test "prints configured and CLI-confirmed codex model/reasoning" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_runner_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+
+    File.write!(
+      Path.join(tmp_dir, "commit-messages.txt"),
+      "=== COMMIT 01 ===\nchore: demo\n"
+    )
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.3-codex",
+        llm: %{
+          provider: "codex",
+          codex_thread_opts: %{reasoning_effort: :xhigh}
+        }
+      }
+      """
+    )
+
+    {:ok, config} = Config.load(config_path)
+
+    Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
+    on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
+
+    PromptRunner.LLMMock
+    |> expect(:start_stream, fn llm, _prompt ->
+      stream = [
+        %{
+          type: :run_started,
+          data: %{
+            model: llm.model,
+            metadata: %{
+              "model" => llm.model,
+              "config" => %{"model_reasoning_effort" => "xhigh"}
+            }
+          }
+        },
+        %{type: :message_streamed, data: %{delta: "ok"}},
+        %{type: :run_completed, data: %{stop_reason: "end_turn"}}
+      ]
+
+      {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
+    end)
+
+    output =
+      ExUnit.CaptureIO.capture_io(fn ->
+        assert :ok = Runner.run(config, [run: true, no_commit: true], ["01"])
+      end)
+
+    assert output =~ "LLM: codex model=gpt-5.3-codex reasoning=xhigh (configured)"
+    assert output =~ "LLM confirmed (codex_cli): model=gpt-5.3-codex reasoning=xhigh"
+  end
+
+  test "prints warning when codex CLI confirmation does not include reasoning" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_runner_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+
+    File.write!(
+      Path.join(tmp_dir, "commit-messages.txt"),
+      "=== COMMIT 01 ===\nchore: demo\n"
+    )
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.3-codex",
+        llm: %{
+          provider: "codex",
+          codex_thread_opts: %{reasoning_effort: :xhigh}
+        }
+      }
+      """
+    )
+
+    {:ok, config} = Config.load(config_path)
+
+    Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
+    on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
+
+    PromptRunner.LLMMock
+    |> expect(:start_stream, fn llm, _prompt ->
+      stream = [
+        %{
+          type: :run_started,
+          data: %{
+            model: llm.model,
+            metadata: %{"model" => llm.model}
+          }
+        },
+        %{type: :message_streamed, data: %{delta: "ok"}},
+        %{type: :run_completed, data: %{stop_reason: "end_turn"}}
+      ]
+
+      {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
+    end)
+
+    output =
+      ExUnit.CaptureIO.capture_io(fn ->
+        assert :ok = Runner.run(config, [run: true, no_commit: true], ["01"])
+      end)
+
+    assert output =~ "LLM: codex model=gpt-5.3-codex reasoning=xhigh (configured)"
+    assert output =~ "WARNING: codex_cli confirmation missing reasoning_effort"
+  end
+
+  test "prints mismatch warning when configured and confirmed codex settings differ" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_runner_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+
+    File.write!(
+      Path.join(tmp_dir, "commit-messages.txt"),
+      "=== COMMIT 01 ===\nchore: demo\n"
+    )
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.3-codex",
+        llm: %{
+          provider: "codex",
+          codex_thread_opts: %{reasoning_effort: :xhigh}
+        }
+      }
+      """
+    )
+
+    {:ok, config} = Config.load(config_path)
+
+    Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
+    on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
+
+    PromptRunner.LLMMock
+    |> expect(:start_stream, fn llm, _prompt ->
+      stream = [
+        %{
+          type: :run_started,
+          data: %{
+            model: llm.model,
+            metadata: %{
+              "model" => llm.model,
+              "config" => %{"model_reasoning_effort" => "medium"}
+            }
+          }
+        },
+        %{type: :message_streamed, data: %{delta: "ok"}},
+        %{type: :run_completed, data: %{stop_reason: "end_turn"}}
+      ]
+
+      {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
+    end)
+
+    output =
+      ExUnit.CaptureIO.capture_io(fn ->
+        assert :ok = Runner.run(config, [run: true, no_commit: true], ["01"])
+      end)
+
+    assert output =~ "WARNING: codex_cli confirmation mismatch"
+    assert output =~ "configured_reasoning=xhigh"
+    assert output =~ "confirmed_reasoning=medium"
+  end
+
+  test "fails when --require-cli-confirmation is enabled and codex reasoning is not confirmed" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_runner_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+
+    File.write!(
+      Path.join(tmp_dir, "commit-messages.txt"),
+      "=== COMMIT 01 ===\nchore: demo\n"
+    )
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.3-codex",
+        llm: %{
+          provider: "codex",
+          codex_thread_opts: %{reasoning_effort: :xhigh}
+        }
+      }
+      """
+    )
+
+    {:ok, config} = Config.load(config_path)
+
+    Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
+    on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
+
+    PromptRunner.LLMMock
+    |> expect(:start_stream, fn llm, _prompt ->
+      stream = [
+        %{type: :run_started, data: %{model: llm.model, metadata: %{"model" => llm.model}}},
+        %{type: :message_streamed, data: %{delta: "ok"}},
+        %{type: :run_completed, data: %{stop_reason: "end_turn"}}
+      ]
+
+      {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
+    end)
+
+    captured_result =
+      ExUnit.CaptureIO.capture_io(fn ->
+        result =
+          Runner.run(config, [run: true, no_commit: true, cli_confirmation: "require"], ["01"])
+
+        send(self(), {:captured_result, result})
+      end)
+
+    assert is_binary(captured_result)
+    assert_receive {:captured_result, {:error, {:cli_confirmation_missing, details}}}
+
+    assert details.configured_model == "gpt-5.3-codex"
+    assert details.configured_reasoning == "xhigh"
+    assert details.confirmed_reasoning == nil
+
+    statuses = Progress.statuses(config)
+    assert statuses["01"].status == "failed"
+  end
+
+  test "writes machine-readable codex audit lines to session log" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_runner_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+
+    File.write!(
+      Path.join(tmp_dir, "commit-messages.txt"),
+      "=== COMMIT 01 ===\nchore: demo\n"
+    )
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.3-codex",
+        llm: %{
+          provider: "codex",
+          codex_thread_opts: %{reasoning_effort: :xhigh}
+        }
+      }
+      """
+    )
+
+    {:ok, config} = Config.load(config_path)
+
+    Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
+    on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
+
+    PromptRunner.LLMMock
+    |> expect(:start_stream, fn llm, _prompt ->
+      stream = [
+        %{
+          type: :run_started,
+          data: %{
+            model: llm.model,
+            metadata: %{
+              "model" => llm.model,
+              "config" => %{"model_reasoning_effort" => "xhigh"}
+            }
+          }
+        },
+        %{type: :message_streamed, data: %{delta: "ok"}},
+        %{type: :run_completed, data: %{stop_reason: "end_turn"}}
+      ]
+
+      {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
+    end)
+
+    assert :ok = Runner.run(config, [run: true, no_commit: true], ["01"])
+
+    [log_path] = Path.wildcard(Path.join(tmp_dir, "logs/prompt-01-*.log"))
+    log_text = File.read!(log_path)
+
+    assert log_text =~ "LLM_AUDIT configured_model=gpt-5.3-codex configured_reasoning=xhigh"
+
+    assert log_text =~
+             "LLM_AUDIT_RESULT status=matched configured_model=gpt-5.3-codex configured_reasoning=xhigh confirmed_model=gpt-5.3-codex confirmed_reasoning=xhigh"
   end
 end
