@@ -370,10 +370,11 @@ defmodule PromptRunner.Runner do
     renderer = renderer_for_config(config)
     sinks = build_sinks(config, log_io, events_file)
 
-    Rendering.stream(stream, renderer: renderer, sinks: sinks)
-
-    result = Process.get(:prompt_runner_stream_result, :ok)
+    render_result = safe_render_stream(stream, renderer, sinks)
+    callback_result = Process.get(:prompt_runner_stream_result, :ok)
     Process.delete(:prompt_runner_stream_result)
+
+    result = resolve_stream_result(render_result, callback_result)
 
     IO.puts("")
     finalize_stream_result(result, config, prompt, llm, skip_commit)
@@ -400,6 +401,19 @@ defmodule PromptRunner.Runner do
     Progress.mark_failed(config, num)
     {:error, reason}
   end
+
+  defp safe_render_stream(stream, renderer, sinks) do
+    Rendering.stream(stream, renderer: renderer, sinks: sinks)
+  rescue
+    exception ->
+      {:error, {:stream_failed, Exception.message(exception)}}
+  catch
+    kind, reason ->
+      {:error, {:stream_failed, "#{kind}: #{inspect(reason)}"}}
+  end
+
+  defp resolve_stream_result(:ok, callback_result), do: callback_result
+  defp resolve_stream_result({:error, reason}, _callback_result), do: {:error, reason}
 
   defp renderer_for_config(config) do
     case config.log_mode do

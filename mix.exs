@@ -33,7 +33,7 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      {:agent_session_manager, "~> 0.7.0"},
+      {:agent_session_manager, path: "../agent_session_manager"},
       {:jason, "~> 1.4"},
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
