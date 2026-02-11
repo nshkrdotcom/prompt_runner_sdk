@@ -21,6 +21,7 @@ defmodule PromptRunner.Session do
   @agent_id "prompt-runner"
   @default_stream_idle_timeout 120_000
   @stream_idle_timeout_buffer 30_000
+  @emergency_timeout_ms 7 * 86_400_000
 
   @type provider :: PromptRunner.LLM.provider()
   @type llm_config :: map()
@@ -123,19 +124,16 @@ defmodule PromptRunner.Session do
   # -- Run opts
 
   defp build_run_opts(llm_config) do
+    effective_timeout_ms = resolve_effective_timeout_ms(llm_config)
+
     run_opts =
       []
       |> maybe_put(:context, llm_config[:context])
       |> maybe_put(:continuation, llm_config[:continuation])
       |> maybe_put(:continuation_opts, llm_config[:continuation_opts])
+      |> maybe_put(:adapter_opts, timeout: effective_timeout_ms)
 
-    case llm_config[:timeout] do
-      timeout when is_integer(timeout) and timeout > 0 ->
-        Keyword.put(run_opts, :adapter_opts, timeout: timeout)
-
-      _ ->
-        run_opts
-    end
+    run_opts
   end
 
   defp resolve_stream_idle_timeout(llm_config) do
@@ -146,12 +144,30 @@ defmodule PromptRunner.Session do
       positive_timeout?(llm_config[:idle_timeout]) ->
         llm_config[:idle_timeout]
 
-      positive_timeout?(llm_config[:timeout]) ->
-        max(@default_stream_idle_timeout, llm_config[:timeout] + @stream_idle_timeout_buffer)
-
       true ->
-        nil
+        max(
+          @default_stream_idle_timeout,
+          resolve_effective_timeout_ms(llm_config) + @stream_idle_timeout_buffer
+        )
     end
+  end
+
+  @doc false
+  @spec effective_timeout_ms_for_config(llm_config()) :: pos_integer()
+  def effective_timeout_ms_for_config(llm_config) when is_map(llm_config) do
+    resolve_effective_timeout_ms(llm_config)
+  end
+
+  @doc false
+  @spec resolve_stream_idle_timeout_for_config(llm_config()) :: pos_integer()
+  def resolve_stream_idle_timeout_for_config(llm_config) when is_map(llm_config) do
+    resolve_stream_idle_timeout(llm_config)
+  end
+
+  @doc false
+  @spec build_run_opts_for_config(llm_config()) :: keyword()
+  def build_run_opts_for_config(llm_config) when is_map(llm_config) do
+    build_run_opts(llm_config)
   end
 
   # -- Helpers
@@ -186,6 +202,60 @@ defmodule PromptRunner.Session do
   defp normalize_opts(opts) when is_map(opts), do: Enum.into(opts, [])
   defp normalize_opts(_opts), do: []
   defp positive_timeout?(value), do: is_integer(value) and value > 0
+
+  defp resolve_effective_timeout_ms(llm_config) do
+    llm_config
+    |> configured_timeout_candidate()
+    |> normalize_timeout_candidate()
+    |> clamp_timeout()
+  end
+
+  defp configured_timeout_candidate(llm_config) do
+    llm_config[:timeout] || adapter_timeout_candidate(llm_config[:adapter_opts])
+  end
+
+  defp adapter_timeout_candidate(nil), do: nil
+
+  defp adapter_timeout_candidate(opts) when is_map(opts) do
+    Map.get(opts, :timeout) || Map.get(opts, "timeout")
+  end
+
+  defp adapter_timeout_candidate(opts) when is_list(opts) do
+    case List.keyfind(opts, :timeout, 0) || List.keyfind(opts, "timeout", 0) do
+      {_key, timeout} -> timeout
+      nil -> nil
+    end
+  end
+
+  defp adapter_timeout_candidate(_opts), do: nil
+
+  defp normalize_timeout_candidate(nil), do: @emergency_timeout_ms
+  defp normalize_timeout_candidate(timeout) when is_integer(timeout) and timeout > 0, do: timeout
+
+  defp normalize_timeout_candidate(timeout) when timeout in [:unbounded, :infinity],
+    do: @emergency_timeout_ms
+
+  defp normalize_timeout_candidate(timeout) when is_binary(timeout) do
+    case timeout |> String.trim() |> String.downcase() do
+      "unbounded" -> @emergency_timeout_ms
+      "infinity" -> @emergency_timeout_ms
+      "infinite" -> @emergency_timeout_ms
+      value -> parse_numeric_timeout(value)
+    end
+  end
+
+  defp normalize_timeout_candidate(_timeout), do: @emergency_timeout_ms
+
+  defp parse_numeric_timeout(value) do
+    case Integer.parse(value) do
+      {parsed, ""} when parsed > 0 -> parsed
+      _ -> @emergency_timeout_ms
+    end
+  end
+
+  defp clamp_timeout(timeout) when timeout > @emergency_timeout_ms, do: @emergency_timeout_ms
+  defp clamp_timeout(timeout) when timeout > 0, do: timeout
+  defp clamp_timeout(_timeout), do: @emergency_timeout_ms
 
   defp ensure_option(opts, key, value) do
     if Keyword.get(opts, key) in [nil, ""] do

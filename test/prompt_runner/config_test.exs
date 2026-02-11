@@ -94,6 +94,52 @@ defmodule PromptRunner.ConfigTest do
     assert {:timeout, {:invalid_timeout, 0}} in errors
   end
 
+  test "accepts unbounded timeout sentinel values" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    prompts_path = Path.join(tmp_dir, "prompts.txt")
+    commits_path = Path.join(tmp_dir, "commit-messages.txt")
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(prompts_path, "01|1|1|Alpha|001.md\n")
+    File.write!(commits_path, "=== COMMIT 01 ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "haiku",
+        llm: %{provider: "claude", timeout: :unbounded, prompt_overrides: %{"01" => %{timeout: "infinity"}}}
+      }
+      """
+    )
+
+    assert {:ok, config} = Config.load(config_path)
+    assert config.timeout == :unbounded
+
+    prompt = %Prompt{
+      num: "01",
+      phase: 1,
+      sp: 1,
+      name: "Alpha",
+      file: "001.md",
+      target_repos: nil
+    }
+
+    llm = Config.llm_for_prompt(config, prompt)
+    assert llm.timeout == :infinity
+  end
+
   test "accepts legacy sdk keys for backward compatibility" do
     tmp_dir =
       Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")

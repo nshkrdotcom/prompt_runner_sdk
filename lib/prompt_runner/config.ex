@@ -30,7 +30,7 @@ defmodule PromptRunner.Config do
           codex_opts: map(),
           codex_thread_opts: map(),
           cli_confirmation: :off | :warn | :require,
-          timeout: pos_integer() | nil,
+          timeout: pos_integer() | :unbounded | :infinity | nil,
           log_mode: :compact | :verbose,
           log_meta: :none | :full,
           events_mode: :compact | :full | :off,
@@ -261,7 +261,9 @@ defmodule PromptRunner.Config do
       cli_confirmation:
         coalesce([llm_section[:cli_confirmation], config[:cli_confirmation]], :warn)
         |> normalize_cli_confirmation(),
-      timeout: coalesce([llm_section[:timeout], config[:timeout]], nil),
+      timeout:
+        coalesce([llm_section[:timeout], config[:timeout]], nil)
+        |> normalize_timeout_value(),
       log_mode: log_settings.log_mode,
       log_meta: log_settings.log_meta,
       events_mode: log_settings.events_mode,
@@ -434,6 +436,11 @@ defmodule PromptRunner.Config do
         Map.put(acc, key, v)
       end)
 
+    map =
+      Map.update(map, :timeout, nil, fn timeout ->
+        normalize_timeout_value(timeout)
+      end)
+
     sdk =
       case LLMFacade.normalize_provider(map[:provider] || map[:sdk] || map[:llm_sdk]) do
         {:error, _} -> nil
@@ -578,10 +585,34 @@ defmodule PromptRunner.Config do
 
   defp maybe_invalid_timeout(errors, nil), do: errors
 
+  defp maybe_invalid_timeout(errors, timeout) when timeout in [:unbounded, :infinity], do: errors
+
   defp maybe_invalid_timeout(errors, timeout)
        when is_integer(timeout) and timeout > 0,
        do: errors
 
   defp maybe_invalid_timeout(errors, timeout),
     do: [{:timeout, {:invalid_timeout, timeout}} | errors]
+
+  defp normalize_timeout_value(nil), do: nil
+  defp normalize_timeout_value(timeout) when is_integer(timeout) and timeout > 0, do: timeout
+  defp normalize_timeout_value(timeout) when timeout in [:unbounded, :infinity], do: timeout
+
+  defp normalize_timeout_value(timeout) when is_binary(timeout) do
+    case timeout |> String.trim() |> String.downcase() do
+      "unbounded" -> :unbounded
+      "infinity" -> :infinity
+      "infinite" -> :infinity
+      value -> normalize_numeric_timeout(value, timeout)
+    end
+  end
+
+  defp normalize_timeout_value(timeout), do: timeout
+
+  defp normalize_numeric_timeout(value, original) do
+    case Integer.parse(value) do
+      {parsed, ""} when parsed > 0 -> parsed
+      _ -> original
+    end
+  end
 end
