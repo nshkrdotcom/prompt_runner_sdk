@@ -63,3 +63,13 @@ Line-by-line bracketed format for debugging:
 ## CLI Overrides
 
     elixir run_prompts.exs --log-mode studio --tool-output preview
+
+## Failure Detail Toggle
+
+Use `log_meta` to control terminal error detail:
+
+    log_meta: :none   # summary only (default)
+    log_meta: :full   # include provider stderr details when available
+
+`log_meta: :full` only affects failure rendering and does not change normal
+token/tool event rendering.

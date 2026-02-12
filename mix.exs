@@ -33,13 +33,14 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      {:agent_session_manager, path: "../agent_session_manager"},
+      {:agent_session_manager, "~> 0.8.0"},
       {:jason, "~> 1.4"},
 
       # Agent SDKs (optional — consumers add the ones they need)
-      {:codex_sdk, "~> 0.9.0", optional: true},
-      {:claude_agent_sdk, "~> 0.13.0", optional: true},
-      {:amp_sdk, "~> 0.3", optional: true},
+      {:codex_sdk, "~> 0.10.1", optional: true},
+      {:claude_agent_sdk, "~> 0.14.0", optional: true},
+      {:amp_sdk, "~> 0.4.0", optional: true},
+      {:gemini_cli_sdk, "~> 0.1.0", optional: true},
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

@@ -40,10 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default `log_mode` remains `:compact` (studio is opt-in for this release)
 - Default `cli_confirmation` is `:warn` for Codex prompts, effectively a no-op for other providers
 - Modularized `Runner` internals — extracted helper functions for prompt header printing, permission mode display, adapter option display, and codex thread options
+- Stream error tracking now preserves structured `provider_error` payloads from `:error_occurred`/`:run_failed` events instead of flattening to generic strings
+- `return_error` now renders concise summaries by default and prints provider stderr detail only when `log_meta: :full`
 - Updated `guides/configuration.md` with new rendering, timeout, and CLI confirmation options
 - Updated `guides/providers.md` with Codex reasoning effort and CLI confirmation details
 - Updated `guides/getting-started.md` with studio mode and new CLI flags
-- Updated README with rendering modes section and new CLI options
+- Updated README with rendering modes section, new CLI options, and error detail behavior
 
 ### Dependencies
 

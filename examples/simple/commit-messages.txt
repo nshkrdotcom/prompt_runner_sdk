@@ -3,3 +3,6 @@ chore(example): record claude example output
 
 === COMMIT 02 ===
 chore(example): record codex example output
+
+=== COMMIT 03 ===
+chore(example): record amp example output

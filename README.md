@@ -91,7 +91,7 @@ mix run run_prompts.exs -c config.exs --run --phase 2      # Run all prompts in 
 --project-dir DIR            # Override project_dir
 --repo-override name:path    # Override a repo path (repeatable)
 --log-mode compact|verbose|studio  # Output mode (default: compact)
---log-meta none|full         # Metadata in log output (default: none)
+--log-meta none|full         # Error detail mode; full prints provider stderr on failures
 --events-mode compact|full|off  # JSONL event logging (default: compact)
 --tool-output summary|preview|full  # Studio tool verbosity (default: summary)
 --cli-confirmation off|warn|require  # Codex CLI model confirmation policy
@@ -109,6 +109,13 @@ summaries and status symbols, with configurable tool verbosity.
   tool_output: :summary # :summary | :preview | :full
 }
 ```
+
+## Error Diagnostics
+
+PromptRunner preserves structured provider failures from AgentSessionManager
+(`provider_error`) instead of flattening everything to a generic string. Keep
+`log_meta: :none` for concise output, or set `log_meta: :full` to print
+redacted/truncated provider stderr details when available.
 
 ## Codex CLI Confirmation
 

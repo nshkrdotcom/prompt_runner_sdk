@@ -3,6 +3,7 @@
 # SDK dependencies required by this example:
 #   - codex_sdk (default provider)
 #   - claude_agent_sdk (prompt 02 override)
+#   - amp_sdk (prompt 03 override)
 #
 # When running standalone via run_prompts.exs, these are pulled automatically.
 # When using prompt_runner_sdk as a Hex dependency, add them to your mix.exs.
@@ -43,6 +44,11 @@ beta_dir = Path.join(repos_dir, "beta")
         model: "sonnet",
         permission_mode: :bypass_permissions,
         allowed_tools: ["Bash"]
+      },
+      "03" => %{
+        sdk: "amp_sdk",
+        model: "sonnet",
+        permission_mode: :dangerously_allow_all
       }
     }
   }

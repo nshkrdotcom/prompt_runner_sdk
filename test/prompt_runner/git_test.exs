@@ -6,6 +6,15 @@ defmodule PromptRunner.GitTest do
 
   @moduletag :git_tests
 
+  defp run_quiet(fun) when is_function(fun, 0) do
+    ExUnit.CaptureIO.capture_io(fn ->
+      send(self(), {:git_result, fun.()})
+    end)
+
+    assert_receive {:git_result, result}
+    result
+  end
+
   describe "commit_single_repo/2 bug" do
     setup do
       # Create unique temp directories for each test
@@ -97,7 +106,8 @@ defmodule PromptRunner.GitTest do
       File.write!(test_file, "# New file created by LLM\n")
 
       # Call commit_single_repo with explicit repo info (as runner.ex now does)
-      result = Git.commit_single_repo(config, "01", "target_repo", ctx.target_repo)
+      result =
+        run_quiet(fn -> Git.commit_single_repo(config, "01", "target_repo", ctx.target_repo) end)
 
       # Should return {:ok, sha} because we're now checking the correct directory
       assert match?({:ok, _sha}, result),
@@ -144,7 +154,9 @@ defmodule PromptRunner.GitTest do
       File.write!(test_file, "# This should be committed\n")
 
       # Run commit_single_repo with explicit repo info (as runner.ex now does)
-      result = Git.commit_single_repo(config, "01", "target_repo", ctx.target_repo)
+      result =
+        run_quiet(fn -> Git.commit_single_repo(config, "01", "target_repo", ctx.target_repo) end)
+
       assert match?({:ok, _}, result)
 
       # Check git status in target_repo - should have no uncommitted changes
@@ -189,7 +201,7 @@ defmodule PromptRunner.GitTest do
       File.write!(test_file, "# File in default project\n")
 
       # Call commit_single_repo WITHOUT explicit repo info (backward compatible call)
-      result = Git.commit_single_repo(config, "01")
+      result = run_quiet(fn -> Git.commit_single_repo(config, "01") end)
 
       # Should commit to config.project_dir (backward compatibility)
       assert match?({:ok, _sha}, result),
@@ -248,7 +260,9 @@ defmodule PromptRunner.GitTest do
 
       # Call commit_repo directly with the correct path
       result =
-        Git.commit_repo(ctx.target_repo, "test: explicit repo path commit", "01", "my_repo")
+        run_quiet(fn ->
+          Git.commit_repo(ctx.target_repo, "test: explicit repo path commit", "01", "my_repo")
+        end)
 
       assert match?({:ok, _sha}, result), "commit_repo should succeed with explicit path"
 

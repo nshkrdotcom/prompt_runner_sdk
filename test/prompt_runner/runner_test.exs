@@ -9,6 +9,15 @@ defmodule PromptRunner.RunnerTest do
 
   setup :verify_on_exit!
 
+  defp run_quiet(fun) when is_function(fun, 0) do
+    ExUnit.CaptureIO.capture_io(fn ->
+      send(self(), {:runner_result, fun.()})
+    end)
+
+    assert_receive {:runner_result, result}
+    result
+  end
+
   test "runs a prompt and records progress" do
     tmp_dir =
       Path.join(System.tmp_dir!(), "prompt_runner_runner_#{System.unique_integer([:positive])}")
@@ -57,7 +66,7 @@ defmodule PromptRunner.RunnerTest do
       {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
     end)
 
-    assert :ok = Runner.run(config, [run: true, no_commit: true], ["01"])
+    assert :ok = run_quiet(fn -> Runner.run(config, [run: true, no_commit: true], ["01"]) end)
 
     statuses = Progress.statuses(config)
     assert statuses["01"].status == "completed"
@@ -114,6 +123,149 @@ defmodule PromptRunner.RunnerTest do
 
     statuses = Progress.statuses(config)
     assert statuses["01"].status == "failed"
+  end
+
+  test "preserves provider_error from stream error events" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_runner_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+
+    File.write!(
+      Path.join(tmp_dir, "commit-messages.txt"),
+      "=== COMMIT 01 ===\nchore: demo\n"
+    )
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.3-codex",
+        llm: %{provider: "codex"}
+      }
+      """
+    )
+
+    {:ok, config} = Config.load(config_path)
+
+    Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
+    on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
+
+    PromptRunner.LLMMock
+    |> expect(:start_stream, fn llm, _prompt ->
+      stream = [
+        %{type: :run_started, data: %{model: llm.model, metadata: %{}}},
+        %{
+          type: :error_occurred,
+          data: %{
+            error_message: "legacy error message",
+            provider_error: %{
+              provider: :codex,
+              kind: :transport_exit,
+              message: "codex executable exited with status 2",
+              exit_code: 2,
+              stderr: "permission denied",
+              truncated?: false
+            }
+          }
+        }
+      ]
+
+      {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
+    end)
+
+    assert {:error, %{message: message, provider_error: provider_error}} =
+             run_quiet(fn -> Runner.run(config, [run: true, no_commit: true], ["01"]) end)
+
+    assert message == "codex executable exited with status 2"
+    assert provider_error.provider == :codex
+    assert provider_error.kind == :transport_exit
+    assert provider_error.exit_code == 2
+  end
+
+  test "prints provider stderr details only when log_meta is full" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_runner_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+
+    File.write!(
+      Path.join(tmp_dir, "commit-messages.txt"),
+      "=== COMMIT 01 ===\nchore: demo\n"
+    )
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.3-codex",
+        log_meta: :full,
+        llm: %{provider: "codex"}
+      }
+      """
+    )
+
+    {:ok, config} = Config.load(config_path)
+
+    Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
+    on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
+
+    PromptRunner.LLMMock
+    |> expect(:start_stream, fn llm, _prompt ->
+      stream = [
+        %{type: :run_started, data: %{model: llm.model, metadata: %{}}},
+        %{
+          type: :run_failed,
+          data: %{
+            error_message: "legacy error message",
+            provider_error: %{
+              provider: :codex,
+              kind: :transport_exit,
+              message: "codex executable exited with status 2",
+              exit_code: 2,
+              stderr: "permission denied\nmissing auth token",
+              truncated?: true
+            }
+          }
+        }
+      ]
+
+      {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
+    end)
+
+    output =
+      ExUnit.CaptureIO.capture_io(fn ->
+        assert {:error, %{provider_error: provider_error}} =
+                 Runner.run(config, [run: true, no_commit: true], ["01"])
+
+        assert provider_error.stderr =~ "missing auth token"
+      end)
+
+    assert output =~ "ERROR: codex executable exited with status 2"
+    assert output =~ "stderr:"
+    assert output =~ "permission denied"
   end
 
   test "uses studio renderer and respects --tool-output override" do
@@ -530,7 +682,7 @@ defmodule PromptRunner.RunnerTest do
       {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
     end)
 
-    assert :ok = Runner.run(config, [run: true, no_commit: true], ["01"])
+    assert :ok = run_quiet(fn -> Runner.run(config, [run: true, no_commit: true], ["01"]) end)
 
     [log_path] = Path.wildcard(Path.join(tmp_dir, "logs/prompt-01-*.log"))
     log_text = File.read!(log_path)

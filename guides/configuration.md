@@ -192,7 +192,7 @@ Timeout can be set at the top level, in the `llm` section, or per-prompt via `pr
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `log_mode` | atom | `:compact` | `:compact` (abbreviated tokens via `CompactRenderer`), `:verbose` (one event per line), or `:studio` (CLI-grade interactive rendering via `StudioRenderer`). |
-| `log_meta` | atom | `:none` | Reserved for future use. Currently accepted but ignored. |
+| `log_meta` | atom | `:none` | Error detail mode. `:none` prints summary errors only. `:full` additionally prints `provider_error.stderr` when available. |
 | `events_mode` | atom | `:compact` | `:compact`, `:full`, or `:off`. Controls JSONL event file detail level via `JSONLSink`. |
 | `tool_output` | atom | `:summary` | Studio renderer tool output level: `:summary`, `:preview`, or `:full`. |
 | `phase_names` | map | `%{}` | Map of phase number (integer) to display name (string). |

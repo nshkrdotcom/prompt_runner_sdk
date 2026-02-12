@@ -13,7 +13,10 @@
 Application.ensure_all_started(:inets)
 
 Mix.install([
-  {:prompt_runner_sdk, path: Path.expand("../..", __DIR__)}
+  {:prompt_runner_sdk, path: Path.expand("../..", __DIR__)},
+  {:claude_agent_sdk, "~> 0.14.0"},
+  {:codex_sdk, "~> 0.10.1"},
+  {:amp_sdk, "~> 0.4.0"}
 ])
 
 args = System.argv()

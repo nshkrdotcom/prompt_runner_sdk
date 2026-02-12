@@ -2,3 +2,4 @@
 # Format: NUM|PHASE|SP|NAME|FILE
 01|1|1|Claude Example|001-claude.md
 02|1|1|Codex Example|002-codex.md
+03|1|1|Amp Example|003-amp.md

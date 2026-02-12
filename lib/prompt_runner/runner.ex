@@ -437,7 +437,22 @@ defmodule PromptRunner.Runner do
   end
 
   defp return_error(config, num, reason) do
-    IO.puts(UI.red("ERROR: #{inspect(reason)}"))
+    {summary, stderr_detail, stderr_truncated?} = format_error_reason(reason, config)
+
+    IO.puts(UI.red("ERROR: #{summary}"))
+
+    if is_binary(stderr_detail) and stderr_detail != "" do
+      IO.puts(UI.red("stderr:"))
+
+      stderr_detail
+      |> String.split("\n", trim: false)
+      |> Enum.each(&IO.puts("  #{&1}"))
+
+      if stderr_truncated? do
+        IO.puts("  [truncated]")
+      end
+    end
+
     Progress.mark_failed(config, num)
     {:error, reason}
   end
@@ -518,13 +533,57 @@ defmodule PromptRunner.Runner do
   defp error_tracking_callback(event) do
     case event.type do
       type when type in [:error_occurred, :run_failed] ->
-        msg = get_in(event, [:data, :error_message]) || "unknown error"
-        Process.put(:prompt_runner_stream_result, {:error, msg})
+        data = map_get(event, :data) || %{}
+        provider_error = map_get(data, :provider_error)
+        details = map_get(data, :details)
+
+        summary =
+          map_get(provider_error, :message) || map_get(data, :error_message) || "unknown error"
+
+        result =
+          if is_map(provider_error) do
+            {:error, %{message: summary, provider_error: provider_error, details: details}}
+          else
+            {:error, summary}
+          end
+
+        Process.put(:prompt_runner_stream_result, result)
 
       _ ->
         :ok
     end
   end
+
+  defp format_error_reason(reason, config) do
+    provider_error = extract_provider_error(reason)
+
+    summary =
+      map_get(reason, :message) ||
+        map_get(provider_error, :message) ||
+        if(is_binary(reason), do: reason, else: inspect(reason))
+
+    stderr_detail =
+      if show_provider_stderr?(config) do
+        map_get(provider_error, :stderr)
+      else
+        nil
+      end
+
+    {summary, stderr_detail, truthy?(map_get(provider_error, :truncated?))}
+  end
+
+  defp extract_provider_error(reason) do
+    case map_get(reason, :provider_error) do
+      value when is_map(value) -> value
+      _ -> %{}
+    end
+  end
+
+  defp show_provider_stderr?(%{log_meta: :full}), do: true
+  defp show_provider_stderr?(_config), do: false
+
+  defp truthy?(value) when value in [true, "true", "TRUE", "1", 1], do: true
+  defp truthy?(_), do: false
 
   defp maybe_print_cli_confirmation(%{type: :run_started} = event, %{sdk: :codex}, log_io) do
     case extract_codex_cli_confirmation(event) do
@@ -632,6 +691,8 @@ defmodule PromptRunner.Runner do
   defp map_get(map, key) when is_map(map) do
     Map.get(map, key) || Map.get(map, Atom.to_string(key))
   end
+
+  defp map_get(_map, _key), do: nil
 
   defp mismatch?(configured, confirmed)
        when is_binary(configured) and configured != "" and is_binary(confirmed) and

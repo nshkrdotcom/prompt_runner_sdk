@@ -198,9 +198,23 @@ llm: %{
 | `:token_usage_updated` | Token counts (input_tokens, output_tokens) |
 | `:message_received` | Complete message received |
 | `:run_completed` | Session completed (stop_reason) |
-| `:run_failed` | Session failed (error_code, error_message) |
+| `:run_failed` | Session failed (`error_code`, `error_message`, optional `provider_error`) |
 | `:run_cancelled` | Session cancelled |
-| `:error_occurred` | Error during session (error_code, error_message) |
+| `:error_occurred` | Error during session (`error_code`, `error_message`, optional `provider_error`) |
+
+For backward compatibility, older events may only include `error_message`.
+When available, `provider_error` follows this contract:
+
+```elixir
+%{
+  provider: :codex | :amp | :claude | :gemini | :unknown,
+  kind: atom(),
+  message: String.t(),
+  exit_code: integer() | nil,
+  stderr: String.t() | nil,
+  truncated?: boolean() | nil
+}
+```
 
 ## Session Lifecycle
 
