@@ -14,6 +14,7 @@ defmodule PromptRunner.MixProject do
       deps: deps(),
       escript: escript(),
       docs: docs(),
+      dialyzer: [plt_add_apps: [:mix]],
       description: description(),
       package: package(),
       name: "PromptRunnerSDK",

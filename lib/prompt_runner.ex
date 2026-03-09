@@ -5,8 +5,8 @@ defmodule PromptRunner do
 
   alias PromptRunner.Plan
   alias PromptRunner.Run
-  alias PromptRunner.RunSpec
   alias PromptRunner.Runner
+  alias PromptRunner.RunSpec
   alias PromptRunner.Validator
 
   @spec plan(term(), keyword()) :: {:ok, Plan.t()} | {:error, term()}

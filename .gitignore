@@ -18,6 +18,7 @@ erl_crash.dump
 
 # Ignore package tarball (built via "mix hex.build").
 prompt_runner_sdk-*.tar
+/prompt_runner
 
 # Temporary files, for example, from tests.
 /tmp/

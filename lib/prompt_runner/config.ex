@@ -10,16 +10,17 @@ defmodule PromptRunner.Config do
   alias PromptRunner.UI
 
   @type repo_config :: %{name: String.t(), path: String.t(), default: boolean()}
+  @type optional_path :: String.t() | nil
 
   @type t :: %__MODULE__{
           config_dir: String.t(),
           project_dir: String.t() | nil,
           target_repos: [repo_config()] | nil,
           repo_groups: map(),
-          prompts_file: String.t(),
-          commit_messages_file: String.t(),
-          progress_file: String.t(),
-          log_dir: String.t(),
+          prompts_file: optional_path(),
+          commit_messages_file: optional_path(),
+          progress_file: optional_path(),
+          log_dir: optional_path(),
           llm_sdk: LLM.sdk(),
           model: String.t(),
           prompt_overrides: map(),

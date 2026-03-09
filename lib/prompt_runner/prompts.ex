@@ -1,13 +1,16 @@
 defmodule PromptRunner.Prompts do
   @moduledoc false
 
+  alias PromptRunner.Config
+  alias PromptRunner.Plan
   alias PromptRunner.Prompt
 
-  @spec list(PromptRunner.Plan.t()) :: [Prompt.t()]
-  def list(%PromptRunner.Plan{prompts: prompts}), do: prompts
+  @type source :: Plan.t() | Config.t()
 
-  @spec list(PromptRunner.Config.t()) :: [Prompt.t()]
-  def list(config) do
+  @spec list(source()) :: [Prompt.t()]
+  def list(%Plan{prompts: prompts}), do: prompts
+
+  def list(%Config{} = config) do
     config.prompts_file
     |> File.read!()
     |> String.split("\n")
@@ -16,8 +19,8 @@ defmodule PromptRunner.Prompts do
     |> Enum.map(&parse_prompt_line/1)
   end
 
-  @spec get(PromptRunner.Config.t(), String.t()) :: Prompt.t() | nil
-  def get(%PromptRunner.Plan{prompts: prompts}, num) do
+  @spec get(source(), String.t()) :: Prompt.t() | nil
+  def get(%Plan{prompts: prompts}, num) do
     Enum.find(prompts, &(&1.num == num))
   end
 
@@ -25,8 +28,8 @@ defmodule PromptRunner.Prompts do
     list(config) |> Enum.find(&(&1.num == num))
   end
 
-  @spec nums(PromptRunner.Config.t()) :: [String.t()]
-  def nums(%PromptRunner.Plan{} = plan) do
+  @spec nums(source()) :: [String.t()]
+  def nums(%Plan{} = plan) do
     list(plan) |> Enum.map(& &1.num) |> Enum.sort()
   end
 
@@ -34,8 +37,8 @@ defmodule PromptRunner.Prompts do
     list(config) |> Enum.map(& &1.num) |> Enum.sort()
   end
 
-  @spec phase_nums(PromptRunner.Config.t(), integer()) :: [String.t()]
-  def phase_nums(%PromptRunner.Plan{} = plan, phase) do
+  @spec phase_nums(source(), integer()) :: [String.t()]
+  def phase_nums(%Plan{} = plan, phase) do
     list(plan)
     |> Enum.filter(&(&1.phase == phase))
     |> Enum.map(& &1.num)

@@ -97,42 +97,52 @@ defmodule PromptRunner.Source.DirectorySource do
   defp parse_simple_yaml(text) do
     lines = String.split(text, "\n", trim: true)
 
-    Enum.reduce(lines, {%{}, nil}, fn line, {acc, current_list_key} ->
-      cond do
-        String.starts_with?(line, "  - ") and current_list_key ->
-          item = line |> String.replace_prefix("  - ", "") |> strip_quotes()
-          updated = Map.update(acc, current_list_key, [item], &(&1 ++ [item]))
-          {updated, current_list_key}
-
-        String.contains?(line, ":") ->
-          [raw_key, raw_value] = String.split(line, ":", parts: 2)
-          key = String.trim(raw_key)
-          value = String.trim(raw_value)
-
-          cond do
-            value == "" ->
-              {Map.put(acc, key, []), key}
-
-            String.starts_with?(value, "[") and String.ends_with?(value, "]") ->
-              items =
-                value
-                |> String.trim_leading("[")
-                |> String.trim_trailing("]")
-                |> String.split(",", trim: true)
-                |> Enum.map(&(String.trim(&1) |> strip_quotes()))
-
-              {Map.put(acc, key, items), nil}
-
-            true ->
-              {Map.put(acc, key, strip_quotes(value)), nil}
-          end
-
-        true ->
-          {acc, current_list_key}
-      end
-    end)
+    Enum.reduce(lines, {%{}, nil}, &parse_yaml_line/2)
     |> elem(0)
   end
+
+  defp parse_yaml_line(line, {acc, current_list_key}) do
+    cond do
+      String.starts_with?(line, "  - ") and current_list_key ->
+        append_yaml_list_item(acc, current_list_key, line)
+
+      String.contains?(line, ":") ->
+        parse_yaml_key_value(acc, line)
+
+      true ->
+        {acc, current_list_key}
+    end
+  end
+
+  defp append_yaml_list_item(acc, current_list_key, line) do
+    item = line |> String.replace_prefix("  - ", "") |> strip_quotes()
+    updated = Map.update(acc, current_list_key, [item], &(&1 ++ [item]))
+    {updated, current_list_key}
+  end
+
+  defp parse_yaml_key_value(acc, line) do
+    [raw_key, raw_value] = String.split(line, ":", parts: 2)
+    key = String.trim(raw_key)
+    value = parse_yaml_value(String.trim(raw_value))
+    {Map.put(acc, key, value), next_list_key(value, key)}
+  end
+
+  defp parse_yaml_value(""), do: []
+
+  defp parse_yaml_value(value) do
+    if String.starts_with?(value, "[") and String.ends_with?(value, "]") do
+      value
+      |> String.trim_leading("[")
+      |> String.trim_trailing("]")
+      |> String.split(",", trim: true)
+      |> Enum.map(&(String.trim(&1) |> strip_quotes()))
+    else
+      strip_quotes(value)
+    end
+  end
+
+  defp next_list_key([], key), do: key
+  defp next_list_key(_value, _key), do: nil
 
   defp strip_quotes(value) do
     value
@@ -197,22 +207,16 @@ defmodule PromptRunner.Source.DirectorySource do
   end
 
   defp parse_targets(metadata, text) do
-    cond do
-      is_list(metadata["targets"]) ->
-        {Enum.map(metadata["targets"], &to_string/1), []}
-
-      true ->
-        repo_roots = parse_repository_roots(text)
-
-        if repo_roots == [] do
+    if is_list(metadata["targets"]) do
+      {Enum.map(metadata["targets"], &to_string/1), []}
+    else
+      case parse_repository_roots(text) do
+        [] ->
           {nil, []}
-        else
-          names =
-            repo_roots
-            |> Enum.map(&repo_name_for_root/1)
 
-          {names, repo_roots}
-        end
+        repo_roots ->
+          {Enum.map(repo_roots, &repo_name_for_root/1), repo_roots}
+      end
     end
   end
 

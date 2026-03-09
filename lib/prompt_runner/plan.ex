@@ -7,15 +7,24 @@ defmodule PromptRunner.Plan do
   alias PromptRunner.Committer.NoopCommitter
   alias PromptRunner.Config
   alias PromptRunner.LLMFacade
+  alias PromptRunner.Prompt
   alias PromptRunner.RunSpec
   alias PromptRunner.RuntimeStore.FileStore
   alias PromptRunner.RuntimeStore.MemoryStore
   alias PromptRunner.RuntimeStore.NoopStore
   alias PromptRunner.Source.Result
 
+  @type callbacks :: %{
+          optional(:on_event) => (map() -> term()) | nil,
+          optional(:on_prompt_started) => (map() -> term()) | nil,
+          optional(:on_prompt_completed) => (map() -> term()) | nil,
+          optional(:on_prompt_failed) => (map() -> term()) | nil,
+          optional(:on_run_completed) => (map() -> term()) | nil
+        }
+
   @type t :: %__MODULE__{
           config: Config.t(),
-          prompts: [PromptRunner.Prompt.t()],
+          prompts: [Prompt.t()],
           commit_messages: %{optional({String.t(), String.t() | nil}) => String.t()},
           source: module(),
           source_input: term(),
@@ -25,31 +34,7 @@ defmodule PromptRunner.Plan do
           state_dir: String.t() | nil,
           runtime_store: {module(), term()},
           committer: {module(), keyword()},
-          callbacks: map(),
-          config_dir: String.t(),
-          project_dir: String.t() | nil,
-          prompts_file: String.t() | nil,
-          commit_messages_file: String.t() | nil,
-          progress_file: String.t() | nil,
-          log_dir: String.t() | nil,
-          llm_sdk: atom(),
-          model: String.t() | nil,
-          prompt_overrides: map(),
-          allowed_tools: list() | nil,
-          permission_mode: atom() | nil,
-          adapter_opts: map(),
-          claude_opts: map(),
-          codex_opts: map(),
-          codex_thread_opts: map(),
-          cli_confirmation: atom(),
-          timeout: pos_integer() | atom() | nil,
-          log_mode: atom(),
-          log_meta: atom(),
-          events_mode: atom(),
-          tool_output: atom(),
-          phase_names: map(),
-          target_repos: [map()] | nil,
-          repo_groups: map()
+          callbacks: callbacks()
         }
 
   defstruct [
@@ -64,31 +49,7 @@ defmodule PromptRunner.Plan do
     :state_dir,
     :runtime_store,
     :committer,
-    :callbacks,
-    :config_dir,
-    :project_dir,
-    :prompts_file,
-    :commit_messages_file,
-    :progress_file,
-    :log_dir,
-    :llm_sdk,
-    :model,
-    :prompt_overrides,
-    :allowed_tools,
-    :permission_mode,
-    :adapter_opts,
-    :claude_opts,
-    :codex_opts,
-    :codex_thread_opts,
-    :cli_confirmation,
-    :timeout,
-    :log_mode,
-    :log_meta,
-    :events_mode,
-    :tool_output,
-    :phase_names,
-    :target_repos,
-    :repo_groups
+    :callbacks
   ]
 
   @spec build(RunSpec.t()) :: {:ok, t()} | {:error, term()}
@@ -97,124 +58,94 @@ defmodule PromptRunner.Plan do
          {:ok, config} <- build_config(run_spec, result),
          {:ok, runtime_store} <- build_runtime_store(run_spec, config),
          {:ok, committer} <- build_committer(run_spec) do
-      {:ok,
-       sync_from_config(%__MODULE__{
-         config: config,
-         prompts: result.prompts,
-         commit_messages: result.commit_messages,
-         source: run_spec.source,
-         source_input: run_spec.input,
-         source_root: result.source_root,
-         interface: run_spec.interface,
-         input_type: run_spec.input_type,
-         state_dir: runtime_state_dir(run_spec, result),
-         runtime_store: runtime_store,
-         committer: committer,
-         callbacks: callback_map(run_spec.opts)
-       })}
+      {:ok, build_plan(run_spec, result, config, runtime_store, committer)}
     end
   end
 
   @spec with_overrides(t(), keyword()) :: t()
   def with_overrides(%__MODULE__{} = plan, opts) do
-    config = Config.with_overrides(plan.config, opts)
-    plan |> sync_from_config(config)
+    %{plan | config: Config.with_overrides(plan.config, opts)}
   end
 
-  @spec sync_from_config(t(), Config.t() | nil) :: t()
-  def sync_from_config(%__MODULE__{} = plan, config \\ nil) do
-    config = config || plan.config
-
-    struct(plan,
+  defp build_plan(run_spec, result, config, runtime_store, committer) do
+    %__MODULE__{
       config: config,
-      config_dir: config.config_dir,
-      project_dir: config.project_dir,
-      prompts_file: config.prompts_file,
-      commit_messages_file: config.commit_messages_file,
-      progress_file: config.progress_file,
-      log_dir: config.log_dir,
-      llm_sdk: config.llm_sdk,
-      model: config.model,
-      prompt_overrides: config.prompt_overrides,
-      allowed_tools: config.allowed_tools,
-      permission_mode: config.permission_mode,
-      adapter_opts: config.adapter_opts,
-      claude_opts: config.claude_opts,
-      codex_opts: config.codex_opts,
-      codex_thread_opts: config.codex_thread_opts,
-      cli_confirmation: config.cli_confirmation,
-      timeout: config.timeout,
-      log_mode: config.log_mode,
-      log_meta: config.log_meta,
-      events_mode: config.events_mode,
-      tool_output: config.tool_output,
-      phase_names: config.phase_names,
-      target_repos: config.target_repos,
-      repo_groups: config.repo_groups
-    )
+      prompts: result.prompts,
+      commit_messages: result.commit_messages,
+      source: run_spec.source,
+      source_input: run_spec.input,
+      source_root: result.source_root,
+      interface: run_spec.interface,
+      input_type: run_spec.input_type,
+      state_dir: runtime_state_dir(run_spec, result),
+      runtime_store: runtime_store,
+      committer: committer,
+      callbacks: callback_map(run_spec.opts)
+    }
   end
 
-  defp build_config(%RunSpec{source: _source, interface: :legacy} = _run_spec, %Result{
-         legacy_config: %Config{} = config
-       }) do
+  defp build_config(%RunSpec{interface: :legacy}, %Result{legacy_config: %Config{} = config}) do
     {:ok, config}
   end
 
   defp build_config(%RunSpec{} = run_spec, %Result{} = result) do
-    opts =
-      defaults()
-      |> deep_merge(env_overrides())
-      |> deep_merge(global_config())
-      |> deep_merge(local_config(result.source_root))
-      |> deep_merge(Map.new(run_spec.opts))
-
+    opts = merged_opts(run_spec, result)
     model = value_from(opts, [:model], "claude-sonnet-4-6")
+
+    with {:ok, llm_sdk} <- resolve_llm_sdk(opts, model) do
+      {:ok, resolved_config(opts, result, llm_sdk, model)}
+    end
+  end
+
+  defp merged_opts(run_spec, result) do
+    defaults()
+    |> deep_merge(env_overrides())
+    |> deep_merge(global_config())
+    |> deep_merge(local_config(result.source_root))
+    |> deep_merge(Map.new(run_spec.opts))
+  end
+
+  defp resolve_llm_sdk(opts, model) do
     provider = opts[:provider] || opts[:sdk] || infer_provider(model)
 
-    llm_sdk =
-      case LLMFacade.normalize_provider(provider) do
-        {:error, reason} -> {:error, reason}
-        sdk -> sdk
-      end
-
-    case llm_sdk do
-      {:error, _} = error ->
-        error
-
-      llm_sdk ->
-        target_repos = resolve_target_repos(opts, result)
-        config_dir = result.source_root || File.cwd!()
-        project_dir = default_project_dir(target_repos, result, config_dir)
-        {log_mode, log_meta, events_mode, tool_output} = normalize_display(opts)
-
-        {:ok,
-         %Config{
-           config_dir: config_dir,
-           project_dir: project_dir,
-           target_repos: target_repos,
-           repo_groups: Map.get(result, :repo_groups, %{}),
-           prompts_file: nil,
-           commit_messages_file: nil,
-           progress_file: nil,
-           log_dir: nil,
-           llm_sdk: llm_sdk,
-           model: model,
-           prompt_overrides: normalize_prompt_overrides(opts[:prompt_overrides] || %{}),
-           allowed_tools: opts[:allowed_tools],
-           permission_mode: opts[:permission_mode],
-           adapter_opts: opts[:adapter_opts] || %{},
-           claude_opts: opts[:claude_opts] || %{},
-           codex_opts: opts[:codex_opts] || %{},
-           codex_thread_opts: opts[:codex_thread_opts] || %{},
-           cli_confirmation: opts[:cli_confirmation] || :warn,
-           timeout: opts[:timeout],
-           log_mode: log_mode,
-           log_meta: log_meta,
-           events_mode: events_mode,
-           tool_output: tool_output,
-           phase_names: Map.get(result, :phase_names, %{})
-         }}
+    case LLMFacade.normalize_provider(provider) do
+      {:error, reason} -> {:error, reason}
+      sdk -> {:ok, sdk}
     end
+  end
+
+  defp resolved_config(opts, result, llm_sdk, model) do
+    target_repos = resolve_target_repos(opts, result)
+    config_dir = result.source_root || File.cwd!()
+    project_dir = default_project_dir(target_repos, result, config_dir)
+    {log_mode, log_meta, events_mode, tool_output} = normalize_display(opts)
+
+    %Config{
+      config_dir: config_dir,
+      project_dir: project_dir,
+      target_repos: target_repos,
+      repo_groups: Map.get(result, :repo_groups, %{}),
+      prompts_file: nil,
+      commit_messages_file: nil,
+      progress_file: nil,
+      log_dir: nil,
+      llm_sdk: llm_sdk,
+      model: model,
+      prompt_overrides: normalize_prompt_overrides(opts[:prompt_overrides]),
+      allowed_tools: opts[:allowed_tools],
+      permission_mode: opts[:permission_mode],
+      adapter_opts: opts[:adapter_opts] || %{},
+      claude_opts: opts[:claude_opts] || %{},
+      codex_opts: opts[:codex_opts] || %{},
+      codex_thread_opts: opts[:codex_thread_opts] || %{},
+      cli_confirmation: opts[:cli_confirmation] || :warn,
+      timeout: opts[:timeout],
+      log_mode: log_mode,
+      log_meta: log_meta,
+      events_mode: events_mode,
+      tool_output: tool_output,
+      phase_names: Map.get(result, :phase_names, %{})
+    }
   end
 
   defp build_runtime_store(%RunSpec{} = run_spec, %Config{} = config) do
@@ -330,7 +261,10 @@ defmodule PromptRunner.Plan do
   end
 
   defp default_project_dir(repos, _result, _fallback) when is_list(repos) and repos != [] do
-    repos |> Enum.find(&(&1.default == true)) |> Kernel.||(List.first(repos)) |> Map.fetch!(:path)
+    repos
+    |> Enum.find(&(&1.default == true))
+    |> Kernel.||(List.first(repos))
+    |> Map.fetch!(:path)
   end
 
   defp default_project_dir(_repos, %Result{project_dir: project_dir}, fallback),
@@ -351,6 +285,7 @@ defmodule PromptRunner.Plan do
   defp normalize_atom_option(_value, default), do: default
 
   defp normalize_prompt_overrides(overrides) when is_map(overrides), do: overrides
+  defp normalize_prompt_overrides(nil), do: %{}
   defp normalize_prompt_overrides(_), do: %{}
 
   defp resolve_runtime_store(%RunSpec{interface: interface, opts: opts}) do
@@ -366,18 +301,24 @@ defmodule PromptRunner.Plan do
   end
 
   defp resolve_committer(%RunSpec{interface: interface, opts: opts}) do
-    case opts[:committer] do
-      nil when interface in [:cli, :legacy] -> GitCommitter
-      nil -> NoopCommitter
-      :git -> GitCommitter
-      "git" -> GitCommitter
-      :noop -> NoopCommitter
-      "noop" -> NoopCommitter
-      module when is_atom(module) -> module
-      _ when interface in [:cli, :legacy] -> GitCommitter
-      _ -> NoopCommitter
-    end
+    opts[:committer]
+    |> normalize_committer()
+    |> default_committer(interface)
   end
+
+  defp normalize_committer(nil), do: nil
+  defp normalize_committer(:git), do: GitCommitter
+  defp normalize_committer("git"), do: GitCommitter
+  defp normalize_committer(:noop), do: NoopCommitter
+  defp normalize_committer("noop"), do: NoopCommitter
+  defp normalize_committer(module) when is_atom(module), do: module
+  defp normalize_committer(_), do: :default
+
+  defp default_committer(nil, interface) when interface in [:cli, :legacy], do: GitCommitter
+  defp default_committer(nil, _interface), do: NoopCommitter
+  defp default_committer(:default, interface) when interface in [:cli, :legacy], do: GitCommitter
+  defp default_committer(:default, _interface), do: NoopCommitter
+  defp default_committer(module, _interface), do: module
 
   defp defaults, do: %{}
 

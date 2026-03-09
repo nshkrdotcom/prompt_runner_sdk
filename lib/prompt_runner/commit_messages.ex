@@ -1,10 +1,18 @@
 defmodule PromptRunner.CommitMessages do
   @moduledoc false
 
-  @spec get_message(PromptRunner.Config.t(), String.t(), String.t() | nil) :: String.t() | nil
+  alias PromptRunner.Config
+  alias PromptRunner.Plan
+
+  @type message_source ::
+          Plan.t()
+          | Config.t()
+          | %{optional({String.t(), String.t() | nil}) => String.t()}
+
+  @spec get_message(message_source(), String.t(), String.t() | nil) :: String.t() | nil
   def get_message(source, num, repo_name \\ nil)
 
-  def get_message(%PromptRunner.Plan{commit_messages: messages}, num, repo_name) do
+  def get_message(%Plan{commit_messages: messages}, num, repo_name) do
     get_message(messages, num, repo_name)
   end
 
@@ -29,7 +37,7 @@ defmodule PromptRunner.CommitMessages do
     find_commit_message(content, markers_to_try)
   end
 
-  @spec all_markers(PromptRunner.Config.t()) :: list({String.t(), String.t() | nil})
+  @spec all_markers(Config.t()) :: list({String.t(), String.t() | nil})
   def all_markers(config) do
     from_file(config.commit_messages_file)
     |> Map.keys()

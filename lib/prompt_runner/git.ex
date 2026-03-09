@@ -4,13 +4,17 @@ defmodule PromptRunner.Git do
   """
 
   alias PromptRunner.CommitMessages
+  alias PromptRunner.Config
+  alias PromptRunner.Plan
   alias PromptRunner.UI
 
-  @spec commit_multi_repo(PromptRunner.Config.t(), String.t(), list({String.t(), String.t()})) ::
+  @type source :: Plan.t() | Config.t()
+
+  @spec commit_multi_repo(source(), String.t(), list({String.t(), String.t()})) ::
           list({String.t(), term()})
-  def commit_multi_repo(config, num, target_repos) do
+  def commit_multi_repo(source, num, target_repos) do
     Enum.map(target_repos, fn {repo_name, repo_path} ->
-      msg = CommitMessages.get_message(config, num, repo_name)
+      msg = CommitMessages.get_message(source, num, repo_name)
 
       unless msg do
         raise "Commit message not found for prompt #{num}:#{repo_name}"
@@ -23,18 +27,18 @@ defmodule PromptRunner.Git do
     end)
   end
 
-  @spec commit_single_repo(PromptRunner.Config.t(), String.t(), String.t(), String.t() | nil) ::
+  @spec commit_single_repo(source(), String.t(), String.t(), String.t() | nil) ::
           {:ok, String.t()} | {:skip, atom()} | {:error, atom()}
-  def commit_single_repo(config, num, repo_name \\ "default", repo_path \\ nil) do
-    path = repo_path || config.project_dir
+  def commit_single_repo(source, num, repo_name \\ "default", repo_path \\ nil) do
+    path = repo_path || project_dir(source)
 
     # Try repo-specific message first, fall back to generic
     msg =
       if repo_name != "default" do
-        CommitMessages.get_message(config, num, repo_name) ||
-          CommitMessages.get_message(config, num)
+        CommitMessages.get_message(source, num, repo_name) ||
+          CommitMessages.get_message(source, num)
       else
-        CommitMessages.get_message(config, num)
+        CommitMessages.get_message(source, num)
       end
 
     unless msg do
@@ -82,4 +86,7 @@ defmodule PromptRunner.Git do
         end
     end
   end
+
+  defp project_dir(%Plan{config: config}), do: project_dir(config)
+  defp project_dir(%Config{project_dir: project_dir}), do: project_dir
 end

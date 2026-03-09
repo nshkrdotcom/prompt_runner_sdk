@@ -1,12 +1,17 @@
 defmodule PromptRunner.Progress do
   @moduledoc false
 
-  def statuses(%PromptRunner.Plan{runtime_store: {module, state}}) do
+  alias PromptRunner.Config
+  alias PromptRunner.Plan
+
+  @type source :: Plan.t() | Config.t()
+
+  @spec statuses(source()) :: map()
+  def statuses(%Plan{runtime_store: {module, state}}) do
     module.statuses(state)
   end
 
-  @spec statuses(PromptRunner.Config.t()) :: map()
-  def statuses(config) do
+  def statuses(%Config{} = config) do
     case File.read(config.progress_file) do
       {:ok, content} ->
         parse_progress_content(content)
@@ -26,8 +31,8 @@ defmodule PromptRunner.Progress do
     status(statuses, num).status == "completed"
   end
 
-  @spec last_completed(PromptRunner.Config.t()) :: String.t() | nil
-  def last_completed(%PromptRunner.Plan{runtime_store: {module, state}}) do
+  @spec last_completed(source()) :: String.t() | nil
+  def last_completed(%Plan{runtime_store: {module, state}}) do
     module.last_completed(state)
   end
 
@@ -39,8 +44,8 @@ defmodule PromptRunner.Progress do
     |> List.last()
   end
 
-  @spec mark_completed(PromptRunner.Config.t(), String.t(), term()) :: :ok
-  def mark_completed(%PromptRunner.Plan{runtime_store: {module, state}}, num, commit_info) do
+  @spec mark_completed(source(), String.t(), term()) :: :ok
+  def mark_completed(%Plan{runtime_store: {module, state}}, num, commit_info) do
     module.mark_completed(state, num, commit_info)
   end
 
@@ -73,8 +78,8 @@ defmodule PromptRunner.Progress do
     File.write!(config.progress_file, "#{num}:completed:#{timestamp}#{commit_suffix}\n", [:append])
   end
 
-  @spec mark_failed(PromptRunner.Config.t(), String.t()) :: :ok
-  def mark_failed(%PromptRunner.Plan{runtime_store: {module, state}}, num) do
+  @spec mark_failed(source(), String.t()) :: :ok
+  def mark_failed(%Plan{runtime_store: {module, state}}, num) do
     module.mark_failed(state, num)
   end
 

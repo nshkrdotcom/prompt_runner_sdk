@@ -58,10 +58,12 @@ defmodule PromptRunner.Scaffold do
   end
 
   defp config_content(plan, output_dir) do
+    config = plan.config
+
     project_dir =
-      case plan.target_repos do
+      case config.target_repos do
         [%{path: path} | _] -> path
-        _ -> plan.project_dir || output_dir
+        _ -> config.project_dir || output_dir
       end
 
     """
@@ -71,8 +73,8 @@ defmodule PromptRunner.Scaffold do
       commit_messages_file: "commit-messages.txt",
       progress_file: ".progress",
       log_dir: "logs",
-      model: "#{plan.model}",
-      llm: %{provider: "#{plan.llm_sdk}"}
+      model: "#{config.model}",
+      llm: %{provider: "#{config.llm_sdk}"}
     }
     """
   end

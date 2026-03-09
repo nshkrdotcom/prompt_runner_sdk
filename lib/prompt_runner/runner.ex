@@ -5,7 +5,6 @@ defmodule PromptRunner.Runner do
   alias AgentSessionManager.Rendering.Renderers.{CompactRenderer, StudioRenderer, VerboseRenderer}
   alias AgentSessionManager.Rendering.Sinks.{CallbackSink, FileSink, JSONLSink, TTYSink}
   alias PromptRunner.CommitMessages
-  alias PromptRunner.Committer.GitCommitter
   alias PromptRunner.Config
   alias PromptRunner.Plan
   alias PromptRunner.Progress
@@ -24,12 +23,6 @@ defmodule PromptRunner.Runner do
     codex: {:codex_sdk, Codex, [Codex.Events]},
     amp: {:amp_sdk, AmpSdk, []}
   }
-
-  @spec run(Config.t(), keyword(), list()) :: :ok | {:error, term()}
-  def run(config, opts, remaining) do
-    config = Config.with_overrides(config, opts)
-    do_run(config, opts, remaining)
-  end
 
   @spec run_plan(Plan.t(), keyword()) :: {:ok, Run.t()} | {:error, term()}
   def run_plan(%Plan{} = plan, opts \\ []) do
@@ -52,26 +45,36 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  def list_plan(%Plan{} = plan), do: list_prompts(plan)
-  def validate_plan(%Plan{} = _plan), do: :ok
+  @spec execute_plan(Plan.t(), keyword(), list()) :: :ok | {:error, term()}
+  def execute_plan(%Plan{} = plan, opts, remaining \\ []) do
+    plan = Plan.with_overrides(plan, opts)
+    do_run(plan, opts, remaining)
+  end
 
-  defp do_run(config, opts, remaining) do
+  @spec list_plan(Plan.t()) :: :ok
+  def list_plan(%Plan{} = plan), do: list_prompts(plan)
+
+  @spec validate_plan(Plan.t()) :: :ok | {:error, list()}
+  def validate_plan(%Plan{interface: :legacy, config: config}), do: Validator.validate_all(config)
+  def validate_plan(%Plan{}), do: :ok
+
+  defp do_run(%Plan{} = plan, opts, remaining) do
     cond do
       opts[:validate] ->
-        Validator.validate_all(config)
+        validate_plan(plan)
 
       opts[:list] ->
-        list_prompts(config)
+        list_prompts(plan)
 
       opts[:dry_run] ->
-        with {:ok, targets} <- build_targets(config, opts, remaining) do
-          Enum.each(targets, &dry_run_prompt(config, &1, opts[:no_commit] || false))
+        with {:ok, targets} <- build_targets(plan, opts, remaining) do
+          Enum.each(targets, &dry_run_prompt(plan, &1, opts[:no_commit] || false))
           :ok
         end
 
       opts[:run] ->
-        with {:ok, targets} <- build_targets(config, opts, remaining) do
-          run_targets(config, targets, opts[:no_commit] || false)
+        with {:ok, targets} <- build_targets(plan, opts, remaining) do
+          run_targets(plan, targets, opts[:no_commit] || false)
         end
 
       true ->
@@ -87,28 +90,28 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  defp run_targets(config, targets, skip_commit) do
+  defp run_targets(plan, targets, skip_commit) do
     Enum.reduce_while(targets, :ok, fn num, _acc ->
-      case run_prompt(config, num, skip_commit) do
+      case run_prompt(plan, num, skip_commit) do
         :ok -> {:cont, :ok}
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
   end
 
-  defp build_targets(config, opts, remaining) do
+  defp build_targets(plan, opts, remaining) do
     cond do
       remaining != [] ->
         {:ok, [hd(remaining)]}
 
       opts[:phase] ->
-        {:ok, Prompts.phase_nums(config, opts[:phase])}
+        {:ok, Prompts.phase_nums(plan, opts[:phase])}
 
       opts[:continue] ->
         targets =
-          case Progress.last_completed(config) do
+          case Progress.last_completed(plan) do
             nil ->
-              Prompts.nums(config)
+              Prompts.nums(plan)
 
             last ->
               next =
@@ -118,33 +121,35 @@ defmodule PromptRunner.Runner do
                 |> Integer.to_string()
                 |> String.pad_leading(2, "0")
 
-              Prompts.nums(config) |> Enum.filter(&(&1 >= next))
+              Prompts.nums(plan) |> Enum.filter(&(&1 >= next))
           end
 
         {:ok, targets}
 
       opts[:all] ->
-        {:ok, Prompts.nums(config)}
+        {:ok, Prompts.nums(plan)}
 
       true ->
         {:error, :no_target}
     end
   end
 
-  defp list_prompts(config) do
+  defp list_prompts(%Plan{} = plan) do
+    config = plan.config
+
     IO.puts("")
     IO.puts(UI.bold("Implementation Prompts"))
     IO.puts(UI.cyan("Config: #{config.config_dir}"))
     IO.puts(UI.cyan("Project: #{config.project_dir}"))
     IO.puts("")
 
-    prompts = Prompts.list(config)
-    statuses = Progress.statuses(config)
+    prompts = Prompts.list(plan)
+    statuses = Progress.statuses(plan)
 
     {completed, total, _} =
       Enum.reduce(prompts, {0, 0, nil}, fn prompt, {c, t, last_phase} ->
-        last_phase = maybe_print_phase_header(config, prompt, last_phase)
-        {line, completed_inc} = format_prompt_line(config, statuses, prompt)
+        last_phase = maybe_print_phase_header(plan, prompt, last_phase)
+        {line, completed_inc} = format_prompt_line(plan, statuses, prompt)
         IO.puts(line)
         {c + completed_inc, t + 1, last_phase}
       end)
@@ -155,17 +160,17 @@ defmodule PromptRunner.Runner do
     IO.puts("")
   end
 
-  defp maybe_print_phase_header(config, prompt, last_phase) do
+  defp maybe_print_phase_header(plan, prompt, last_phase) do
     if prompt.phase != last_phase do
       if last_phase != nil, do: IO.puts("")
-      phase_name = Map.get(config.phase_names, prompt.phase, "Unknown")
+      phase_name = Map.get(plan.config.phase_names, prompt.phase, "Unknown")
       IO.puts(UI.green("Phase #{prompt.phase}: #{phase_name}"))
     end
 
     prompt.phase
   end
 
-  defp format_prompt_line(config, statuses, prompt) do
+  defp format_prompt_line(plan, statuses, prompt) do
     prompt_status = Progress.status(statuses, prompt.num)
 
     status_label =
@@ -177,7 +182,7 @@ defmodule PromptRunner.Runner do
 
     completed_inc = if Progress.completed?(statuses, prompt.num), do: 1, else: 0
 
-    prompt_path = prompt_path(config, prompt)
+    prompt_path = prompt_path(plan, prompt)
     missing = if prompt_available?(prompt, prompt_path), do: "", else: " #{UI.red("(missing)")}"
 
     commit_suffix = format_commit_suffix(prompt_status.commit)
@@ -189,22 +194,22 @@ defmodule PromptRunner.Runner do
     {line, completed_inc}
   end
 
-  defp dry_run_prompt(config, num, skip_commit) do
-    case Prompts.get(config, num) do
+  defp dry_run_prompt(plan, num, skip_commit) do
+    case Prompts.get(plan, num) do
       nil ->
         IO.puts(UI.red("ERROR: Prompt #{num} not found"))
 
       prompt ->
-        prompt_path = prompt_path(config, prompt)
-        llm = Config.llm_for_prompt(config, prompt)
+        prompt_path = prompt_path(plan, prompt)
+        llm = Config.llm_for_prompt(plan.config, prompt)
 
         IO.puts("")
         IO.puts(UI.bold("[DRY RUN] Prompt #{num}: #{prompt.name}"))
         IO.puts("")
 
         print_prompt_file_info(prompt, prompt_path)
-        print_execution_info(config, prompt, llm)
-        print_git_commit_info(config, prompt, skip_commit)
+        print_execution_info(plan, prompt, llm)
+        print_git_commit_info(plan, prompt, skip_commit)
 
         IO.puts("")
     end
@@ -232,7 +237,7 @@ defmodule PromptRunner.Runner do
     IO.puts("")
   end
 
-  defp print_execution_info(config, prompt, llm) do
+  defp print_execution_info(plan, prompt, llm) do
     IO.puts(UI.yellow("2. Execution:"))
     IO.puts("   LLM provider: #{llm.sdk}")
     IO.puts("   - model: #{llm.model}")
@@ -242,7 +247,7 @@ defmodule PromptRunner.Runner do
     maybe_print_permission_mode(llm)
     maybe_print_adapter_opts(llm)
     maybe_print_codex_thread_opts(llm)
-    print_target_repos(config, prompt)
+    print_target_repos(plan, prompt)
     IO.puts("")
   end
 
@@ -281,7 +286,9 @@ defmodule PromptRunner.Runner do
 
   defp maybe_print_codex_thread_opts(_llm), do: :ok
 
-  defp print_target_repos(config, prompt) do
+  defp print_target_repos(plan, prompt) do
+    config = plan.config
+
     case prompt.target_repos do
       nil ->
         IO.puts("   - target_repo: #{config.project_dir}")
@@ -296,42 +303,42 @@ defmodule PromptRunner.Runner do
         end)
 
         Enum.each(resolved_repos, fn repo_name ->
-          repo_path = get_repo_path(config, repo_name)
+          repo_path = get_repo_path(plan, repo_name)
           IO.puts("     - #{repo_name}: #{repo_path || "(not configured)"}")
         end)
     end
   end
 
-  defp print_git_commit_info(config, prompt, skip_commit) do
+  defp print_git_commit_info(plan, prompt, skip_commit) do
     IO.puts(UI.yellow("3. Git commit:"))
 
     if skip_commit do
       IO.puts("   SKIPPED (--no-commit)")
     else
-      print_commit_messages(config, prompt)
+      print_commit_messages(plan, prompt)
     end
 
     IO.puts("")
   end
 
-  defp print_commit_messages(config, prompt) do
+  defp print_commit_messages(plan, prompt) do
     case prompt.target_repos do
       nil ->
-        print_single_commit_message(config, prompt)
+        print_single_commit_message(plan, prompt)
 
       repos when is_list(repos) ->
-        {resolved_repos, errors} = RepoTargets.expand(repos, config.repo_groups)
+        {resolved_repos, errors} = RepoTargets.expand(repos, plan.config.repo_groups)
 
         Enum.each(errors, fn error ->
           IO.puts("   #{UI.red("ERR")} #{RepoTargets.format_error(error)}")
         end)
 
-        Enum.each(resolved_repos, &print_repo_commit_message(config, prompt, &1))
+        Enum.each(resolved_repos, &print_repo_commit_message(plan, prompt, &1))
     end
   end
 
-  defp print_single_commit_message(config, prompt) do
-    case CommitMessages.get_message(config, prompt.num) do
+  defp print_single_commit_message(plan, prompt) do
+    case CommitMessages.get_message(plan, prompt.num) do
       nil ->
         IO.puts("   #{UI.red("COMMIT MESSAGE NOT FOUND")} for #{prompt.num}")
 
@@ -340,10 +347,10 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  defp print_repo_commit_message(config, prompt, repo_name) do
+  defp print_repo_commit_message(plan, prompt, repo_name) do
     IO.puts("   #{UI.bold(repo_name <> ":")}")
 
-    case CommitMessages.get_message(config, prompt.num, repo_name) do
+    case CommitMessages.get_message(plan, prompt.num, repo_name) do
       nil ->
         IO.puts("   #{UI.red("COMMIT MESSAGE NOT FOUND")} for #{prompt.num}:#{repo_name}")
 
@@ -369,23 +376,23 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  defp run_prompt(config, num, skip_commit) do
-    case Prompts.get(config, num) do
+  defp run_prompt(plan, num, skip_commit) do
+    case Prompts.get(plan, num) do
       nil ->
         {:error, {:prompt_not_found, num}}
 
       prompt ->
-        prompt_path = prompt_path(config, prompt)
-        llm = Config.llm_for_prompt(config, prompt)
+        prompt_path = prompt_path(plan, prompt)
+        llm = Config.llm_for_prompt(plan.config, prompt)
 
-        emit_observer(config, %{type: :prompt_started, prompt: prompt})
+        emit_observer(plan, %{type: :prompt_started, prompt: prompt})
 
         with :ok <- ensure_prompt_file(prompt, prompt_path),
              {:ok, sdk_info} <- preflight_llm_dependency(llm) do
-          execute_prompt_stream(config, num, prompt, prompt_path, llm, sdk_info, skip_commit)
+          execute_prompt_stream(plan, num, prompt, prompt_path, llm, sdk_info, skip_commit)
         else
           {:error, reason} ->
-            return_error(config, num, reason)
+            return_error(plan, num, reason)
         end
     end
   end
@@ -396,11 +403,12 @@ defmodule PromptRunner.Runner do
     if File.exists?(prompt_path), do: :ok, else: {:error, {:prompt_file_not_found, prompt_path}}
   end
 
-  defp execute_prompt_stream(config, num, prompt, prompt_path, llm, sdk_info, skip_commit) do
+  defp execute_prompt_stream(plan, num, prompt, prompt_path, llm, sdk_info, skip_commit) do
+    config = plan.config
     timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%d-%H%M%S")
-    {log_file, log_io, close_log, events_file} = open_log_device(config, num, timestamp)
+    {log_file, log_io, close_log, events_file} = open_log_device(plan, num, timestamp)
 
-    print_prompt_header(config, prompt, llm, log_file)
+    print_prompt_header(plan, prompt, llm, log_file)
     maybe_print_sdk_preflight(sdk_info)
 
     if config.log_mode != :studio and is_binary(events_file) do
@@ -427,7 +435,7 @@ defmodule PromptRunner.Runner do
 
     llm_module().start_stream(llm, prompt_content)
     |> handle_stream_result(
-      config,
+      plan,
       prompt,
       prompt_path,
       llm,
@@ -438,30 +446,32 @@ defmodule PromptRunner.Runner do
 
   defp handle_stream_result(
          {:ok, stream, close_llm, llm_meta},
-         config,
+         plan,
          prompt,
          prompt_path,
          llm,
          {log_io, close_log, events_file},
          skip_commit
        ) do
+    config = plan.config
+
     write_session_header(log_io, config, llm, llm_meta, prompt_path)
     initialize_cli_confirmation_tracking(llm, config, log_io)
 
     renderer = renderer_for_config(config)
-    sinks = build_sinks(config, log_io, events_file, llm)
+    sinks = build_sinks(plan, log_io, events_file, llm)
 
     render_result = safe_render_stream(stream, renderer, sinks)
     callback_result = Process.get(:prompt_runner_stream_result, :ok)
     Process.delete(:prompt_runner_stream_result)
     result = resolve_stream_result(render_result, callback_result)
-    result = maybe_finalize_cli_confirmation(result, llm, config, log_io)
+    result = maybe_finalize_cli_confirmation(result, llm, plan, log_io)
 
     Process.delete(:prompt_runner_cli_confirmation_printed)
     Process.delete(:prompt_runner_cli_confirmation_audit)
 
     IO.puts("")
-    finalize_stream_result(result, config, prompt, llm, skip_commit)
+    finalize_stream_result(result, plan, prompt, llm, skip_commit)
   after
     close_llm.()
     close_log.()
@@ -469,7 +479,7 @@ defmodule PromptRunner.Runner do
 
   defp handle_stream_result(
          {:error, reason},
-         config,
+         plan,
          prompt,
          _prompt_path,
          _llm,
@@ -477,11 +487,11 @@ defmodule PromptRunner.Runner do
          _skip_commit
        ) do
     close_log.()
-    return_error(config, prompt.num, {:start_failed, reason})
+    return_error(plan, prompt.num, {:start_failed, reason})
   end
 
-  defp return_error(config, num, reason) do
-    {summary, stderr_detail, stderr_truncated?} = format_error_reason(reason, config)
+  defp return_error(plan, num, reason) do
+    {summary, stderr_detail, stderr_truncated?} = format_error_reason(reason, plan.config)
 
     IO.puts(UI.red("ERROR: #{summary}"))
 
@@ -497,8 +507,8 @@ defmodule PromptRunner.Runner do
       end
     end
 
-    Progress.mark_failed(config, num)
-    emit_observer(config, %{type: :prompt_failed, prompt_num: num, reason: reason})
+    Progress.mark_failed(plan, num)
+    emit_observer(plan, %{type: :prompt_failed, prompt_num: num, reason: reason})
     {:error, reason}
   end
 
@@ -528,7 +538,9 @@ defmodule PromptRunner.Runner do
     if config.log_mode == :studio, do: opts, else: []
   end
 
-  defp print_prompt_header(config, prompt, llm, log_file) do
+  defp print_prompt_header(plan, prompt, llm, log_file) do
+    config = plan.config
+
     IO.puts("")
 
     if config.log_mode == :studio do
@@ -537,7 +549,7 @@ defmodule PromptRunner.Runner do
       IO.puts(UI.bold("  Prompt #{prompt.num}: #{prompt.name}"))
       IO.puts(bar)
       IO.puts("")
-      IO.puts("  #{UI.dim("Prompt")}   #{prompt_path(config, prompt)}")
+      IO.puts("  #{UI.dim("Prompt")}   #{prompt_path(plan, prompt)}")
       IO.puts("  #{UI.dim("Project")}  #{llm.cwd}")
       IO.puts("  #{UI.dim("LLM")}      #{llm.sdk} / #{llm.model}")
       IO.puts("  #{UI.dim("Log")}      #{log_file}")
@@ -547,7 +559,7 @@ defmodule PromptRunner.Runner do
       IO.puts(UI.bold("Prompt #{prompt.num}: #{prompt.name}"))
       IO.puts(UI.blue(String.duplicate("=", 60)))
       IO.puts("")
-      IO.puts("Prompt: #{prompt_path(config, prompt)}")
+      IO.puts("Prompt: #{prompt_path(plan, prompt)}")
       IO.puts("Project: #{llm.cwd}")
       IO.puts("LLM: #{llm_summary(llm)}")
       IO.puts("")
@@ -555,14 +567,16 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  defp build_sinks(config, log_io, events_file, llm) do
+  defp build_sinks(plan, log_io, events_file, llm) do
+    config = plan.config
+
     sinks = [
       {TTYSink, []},
       {FileSink, [io: log_io]},
       {CallbackSink,
        [
          callback: fn event, iodata ->
-           stream_tracking_callback(config, event, iodata, llm, log_io)
+           stream_tracking_callback(plan, event, iodata, llm, log_io)
          end
        ]}
     ]
@@ -574,8 +588,8 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  defp stream_tracking_callback(config, event, _iodata, llm, log_io) do
-    emit_observer(config, Map.put(event, :raw?, true))
+  defp stream_tracking_callback(plan, event, _iodata, llm, log_io) do
+    emit_observer(plan, Map.put(event, :raw?, true))
     maybe_print_cli_confirmation(event, llm, log_io)
     error_tracking_callback(event)
   end
@@ -903,7 +917,8 @@ defmodule PromptRunner.Runner do
     Process.put(:prompt_runner_cli_confirmation_audit, %{})
   end
 
-  defp maybe_finalize_cli_confirmation(result, %{sdk: :codex}, config, log_io) do
+  defp maybe_finalize_cli_confirmation(result, %{sdk: :codex}, plan, log_io) do
+    config = plan.config
     audit = Process.get(:prompt_runner_cli_confirmation_audit, %{})
     cli_confirmation = Map.get(audit, :cli_confirmation, cli_confirmation_mode(%{}, config))
     details = cli_confirmation_details(audit)
@@ -916,7 +931,7 @@ defmodule PromptRunner.Runner do
     result
   end
 
-  defp maybe_finalize_cli_confirmation(result, _llm, _config, _log_io), do: result
+  defp maybe_finalize_cli_confirmation(result, _llm, _plan, _log_io), do: result
 
   defp cli_confirmation_details(audit) do
     %{
@@ -1005,18 +1020,18 @@ defmodule PromptRunner.Runner do
     IO.binwrite(log_io, header)
   end
 
-  defp finalize_stream_result(:ok, config, prompt, llm, skip_commit) do
+  defp finalize_stream_result(:ok, plan, prompt, llm, skip_commit) do
     commit_info =
       if skip_commit do
         {:skip, :no_commit}
       else
-        commit_prompt(config, prompt, llm)
+        commit_prompt(plan, prompt, llm)
       end
 
-    Progress.mark_completed(config, prompt.num, commit_info)
-    emit_observer(config, %{type: :prompt_completed, prompt: prompt, commit_info: commit_info})
+    Progress.mark_completed(plan, prompt.num, commit_info)
+    emit_observer(plan, %{type: :prompt_completed, prompt: prompt, commit_info: commit_info})
 
-    if config.log_mode == :studio do
+    if plan.config.log_mode == :studio do
       IO.puts(UI.green("  ✓ Prompt #{prompt.num} completed"))
     else
       IO.puts(UI.green("LLM completed successfully"))
@@ -1026,23 +1041,17 @@ defmodule PromptRunner.Runner do
     :ok
   end
 
-  defp finalize_stream_result({:error, reason}, config, prompt, _llm, _skip_commit) do
-    emit_observer(config, %{type: :prompt_failed, prompt: prompt, reason: reason})
-    return_error(config, prompt.num, reason)
+  defp finalize_stream_result({:error, reason}, plan, prompt, _llm, _skip_commit) do
+    emit_observer(plan, %{type: :prompt_failed, prompt: prompt, reason: reason})
+    return_error(plan, prompt.num, reason)
   end
 
-  defp commit_prompt(config, prompt, _llm) do
-    case Map.get(config, :committer) do
-      {module, opts} when is_atom(module) ->
-        module.commit(config, prompt, %{}, opts)
-
-      module when is_atom(module) ->
-        module.commit(config, prompt, %{}, [])
-
-      _ ->
-        GitCommitter.commit(config, prompt, %{}, [])
-    end
+  defp commit_prompt(plan, prompt, _llm) do
+    {module, opts} = plan.committer
+    module.commit(plan, prompt, %{}, opts)
   end
+
+  defp get_repo_path(%Plan{config: config}, repo_name), do: get_repo_path(config, repo_name)
 
   defp get_repo_path(config, repo_name) do
     case config.target_repos do
@@ -1078,6 +1087,8 @@ defmodule PromptRunner.Runner do
     " #{UI.dim("[#{Enum.join(repos, ",")}]")}"
   end
 
+  defp prompt_path(%Plan{config: config}, prompt), do: prompt_path(config, prompt)
+
   defp prompt_path(_config, %{origin: %{path: path}}) when is_binary(path), do: path
 
   defp prompt_path(config, %{file: file}) when is_binary(file),
@@ -1094,17 +1105,6 @@ defmodule PromptRunner.Runner do
   defp open_log_device(%PromptRunner.Plan{runtime_store: {module, state}}, num, timestamp) do
     paths = module.log_paths(state, num, timestamp)
     open_log_device(paths.log_file, paths.events_file)
-  end
-
-  defp open_log_device(config, num, timestamp) do
-    if is_binary(config.log_dir) do
-      open_log_device(
-        Path.join(config.log_dir, "prompt-#{num}-#{timestamp}.log"),
-        Path.join(config.log_dir, "prompt-#{num}-#{timestamp}.events.jsonl")
-      )
-    else
-      open_log_device(nil, nil)
-    end
   end
 
   defp open_log_device(log_file, events_file) when is_binary(log_file) do
@@ -1129,8 +1129,6 @@ defmodule PromptRunner.Runner do
       _ -> :ok
     end
   end
-
-  defp emit_observer(_config, _event), do: :ok
 
   defp maybe_invoke_callback(fun, event) when is_function(fun, 1), do: fun.(event)
   defp maybe_invoke_callback(_fun, _event), do: :ok

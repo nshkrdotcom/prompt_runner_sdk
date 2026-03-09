@@ -4,7 +4,6 @@ defmodule PromptRunner.CLI do
   """
 
   alias PromptRunner
-  alias PromptRunner.Config
   alias PromptRunner.Runner
   alias PromptRunner.UI
 
@@ -78,11 +77,13 @@ defmodule PromptRunner.CLI do
   end
 
   defp run_command("list", [source | _rest], opts) do
-    with {:ok, plan} <- PromptRunner.plan(source, cli_opts(opts)) do
-      Runner.list_plan(plan)
-      :ok
-    else
-      {:error, reason} -> handle_error(reason)
+    case PromptRunner.plan(source, cli_opts(opts)) do
+      {:ok, plan} ->
+        Runner.list_plan(plan)
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
     end
   end
 
@@ -94,11 +95,13 @@ defmodule PromptRunner.CLI do
   end
 
   defp run_command("plan", [source | _rest], opts) do
-    with {:ok, plan} <- PromptRunner.plan(source, cli_opts(opts)) do
-      print_plan_summary(plan)
-      :ok
-    else
-      {:error, reason} -> handle_error(reason)
+    case PromptRunner.plan(source, cli_opts(opts)) do
+      {:ok, plan} ->
+        print_plan_summary(plan)
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
     end
   end
 
@@ -132,8 +135,16 @@ defmodule PromptRunner.CLI do
     opts
     |> Keyword.put(:interface, :cli)
     |> maybe_put(:target, opts[:target])
+    |> maybe_put(:project_dir, opts[:project_dir])
+    |> maybe_put(:repo_override, opts[:repo_override])
     |> maybe_put(:provider, opts[:provider])
     |> maybe_put(:model, opts[:model])
+    |> maybe_put(:log_mode, opts[:log_mode])
+    |> maybe_put(:log_meta, opts[:log_meta])
+    |> maybe_put(:events_mode, opts[:events_mode])
+    |> maybe_put(:tool_output, opts[:tool_output])
+    |> maybe_put(:cli_confirmation, opts[:cli_confirmation])
+    |> maybe_put(:require_cli_confirmation, opts[:require_cli_confirmation])
     |> maybe_put(:output, opts[:output])
     |> maybe_put(:state_dir, opts[:state_dir])
     |> maybe_put(:no_state, opts[:no_state])
@@ -145,18 +156,16 @@ defmodule PromptRunner.CLI do
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp run_legacy(opts, remaining) do
-    cond do
-      opts[:config] == nil ->
-        handle_missing_config()
+    if opts[:config] == nil do
+      handle_missing_config()
+    else
+      case PromptRunner.plan(opts[:config], cli_opts(opts)) do
+        {:ok, plan} ->
+          handle_runner_result(Runner.execute_plan(plan, opts, remaining))
 
-      true ->
-        case Config.load(opts[:config]) do
-          {:ok, config} ->
-            handle_runner_result(Runner.run(config, opts, remaining))
-
-          error ->
-            handle_config_error(error)
-        end
+        error ->
+          handle_config_error(error)
+      end
     end
   end
 
@@ -165,8 +174,8 @@ defmodule PromptRunner.CLI do
     IO.puts(UI.bold("PromptRunner Plan"))
     IO.puts("Source: #{plan.source_root || inspect(plan.source)}")
     IO.puts("Prompts: #{length(plan.prompts)}")
-    IO.puts("Provider: #{plan.llm_sdk}")
-    IO.puts("Model: #{plan.model}")
+    IO.puts("Provider: #{plan.config.llm_sdk}")
+    IO.puts("Model: #{plan.config.model}")
 
     Enum.each(plan.prompts, fn prompt ->
       IO.puts("  #{prompt.num} - #{prompt.name}")
@@ -190,6 +199,7 @@ defmodule PromptRunner.CLI do
 
   defp handle_runner_result({:error, reason}), do: handle_error(reason)
 
+  @spec handle_error(term()) :: no_return()
   defp handle_error(reason) do
     IO.puts(UI.red("ERROR: #{inspect(reason)}"))
     System.halt(1)
@@ -228,6 +238,7 @@ defmodule PromptRunner.CLI do
     System.halt(1)
   end
 
+  @spec handle_missing_input() :: no_return()
   defp handle_missing_input do
     IO.puts(UI.red("ERROR: no command or source path provided"))
     IO.puts("")

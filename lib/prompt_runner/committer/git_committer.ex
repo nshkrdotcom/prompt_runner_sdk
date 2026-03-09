@@ -6,21 +6,24 @@ defmodule PromptRunner.Committer.GitCommitter do
   @behaviour PromptRunner.Committer
 
   alias PromptRunner.Git
+  alias PromptRunner.Plan
   alias PromptRunner.RepoTargets
 
   @impl true
-  def commit(config, prompt, _llm, _opts) do
-    target_repos = resolve_target_repos(config, prompt)
+  def commit(%Plan{} = plan, prompt, _llm, _opts) do
+    target_repos = resolve_target_repos(plan, prompt)
 
     if length(target_repos) > 1 do
-      Git.commit_multi_repo(config, prompt.num, target_repos)
+      Git.commit_multi_repo(plan, prompt.num, target_repos)
     else
       [{repo_name, repo_path}] = target_repos
-      Git.commit_single_repo(config, prompt.num, repo_name, repo_path)
+      Git.commit_single_repo(plan, prompt.num, repo_name, repo_path)
     end
   end
 
-  defp resolve_target_repos(config, prompt) do
+  defp resolve_target_repos(plan, prompt) do
+    config = plan.config
+
     case prompt.target_repos do
       nil ->
         case get_default_repo(config) do

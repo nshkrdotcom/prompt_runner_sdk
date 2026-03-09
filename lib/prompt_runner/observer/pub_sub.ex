@@ -10,8 +10,10 @@ defmodule PromptRunner.Observer.PubSub do
 
   @spec broadcast(module(), String.t(), map()) :: :ok | {:error, term()}
   def broadcast(pubsub, topic, event) do
-    if Code.ensure_loaded?(Phoenix.PubSub) do
-      apply(Phoenix.PubSub, :broadcast, [pubsub, topic, {:prompt_runner, event}])
+    pubsub_module = Module.concat([Phoenix, PubSub])
+
+    if Code.ensure_loaded?(pubsub_module) and function_exported?(pubsub_module, :broadcast, 3) do
+      pubsub_module.broadcast(pubsub, topic, {:prompt_runner, event})
     else
       {:error, :phoenix_pubsub_not_available}
     end

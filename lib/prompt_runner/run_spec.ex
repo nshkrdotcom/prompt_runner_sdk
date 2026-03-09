@@ -24,33 +24,30 @@ defmodule PromptRunner.RunSpec do
   @spec build(term(), keyword()) :: {:ok, t()} | {:error, term()}
   def build(input, opts \\ []) do
     interface = opts[:interface] || :api
+    build_from_input(input, interface, opts)
+  end
 
+  defp build_from_input(input, interface, opts) when is_list(input) do
+    if Enum.all?(input, &match?(%Prompt{}, &1)) do
+      {:ok,
+       %__MODULE__{
+         input: input,
+         input_type: :prompt_list,
+         source: ListSource,
+         interface: interface,
+         opts: opts
+       }}
+    else
+      {:error, {:unsupported_input, input}}
+    end
+  end
+
+  defp build_from_input(input, interface, opts) when is_binary(input) do
     cond do
-      is_list(input) and Enum.all?(input, &match?(%Prompt{}, &1)) ->
-        {:ok,
-         %__MODULE__{
-           input: input,
-           input_type: :prompt_list,
-           source: ListSource,
-           interface: interface,
-           opts: opts
-         }}
+      File.dir?(input) ->
+        build_directory_spec(input, interface, opts)
 
-      is_binary(input) and File.dir?(input) ->
-        source =
-          if legacy_directory?(input) do
-            LegacyConfigSource
-          else
-            DirectorySource
-          end
-
-        type = if source == LegacyConfigSource, do: :legacy_config, else: :directory
-        iface = if source == LegacyConfigSource, do: :legacy, else: interface
-
-        {:ok,
-         %__MODULE__{input: input, input_type: type, source: source, interface: iface, opts: opts}}
-
-      is_binary(input) and File.regular?(input) and String.ends_with?(input, ".exs") ->
+      File.regular?(input) and String.ends_with?(input, ".exs") ->
         {:ok,
          %__MODULE__{
            input: input,
@@ -60,7 +57,7 @@ defmodule PromptRunner.RunSpec do
            opts: opts
          }}
 
-      is_binary(input) ->
+      true ->
         {:ok,
          %__MODULE__{
            input: input,
@@ -69,10 +66,27 @@ defmodule PromptRunner.RunSpec do
            interface: interface,
            opts: opts
          }}
-
-      true ->
-        {:error, {:unsupported_input, input}}
     end
+  end
+
+  defp build_from_input(input, _interface, _opts), do: {:error, {:unsupported_input, input}}
+
+  defp build_directory_spec(input, interface, opts) do
+    {source, input_type, resolved_interface} =
+      if legacy_directory?(input) do
+        {LegacyConfigSource, :legacy_config, :legacy}
+      else
+        {DirectorySource, :directory, interface}
+      end
+
+    {:ok,
+     %__MODULE__{
+       input: input,
+       input_type: input_type,
+       source: source,
+       interface: resolved_interface,
+       opts: opts
+     }}
   end
 
   defp legacy_directory?(dir) do

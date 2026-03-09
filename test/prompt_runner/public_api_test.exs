@@ -4,13 +4,13 @@ defmodule PromptRunner.PublicAPITest do
   import Mox
 
   alias PromptRunner
-  alias PromptRunner.Committer.NoopCommitter
   alias PromptRunner.Committer.GitCommitter
+  alias PromptRunner.Committer.NoopCommitter
   alias PromptRunner.Plan
+  alias PromptRunner.Run
   alias PromptRunner.RuntimeStore.FileStore
   alias PromptRunner.RuntimeStore.MemoryStore
   alias PromptRunner.RuntimeStore.NoopStore
-  alias PromptRunner.Run
   alias PromptRunner.Source.DirectorySource
 
   setup :verify_on_exit!

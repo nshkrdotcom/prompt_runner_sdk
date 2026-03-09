@@ -51,6 +51,7 @@ defmodule PromptRunner.RunnerTest do
     )
 
     {:ok, config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -66,7 +67,8 @@ defmodule PromptRunner.RunnerTest do
       {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
     end)
 
-    assert :ok = run_quiet(fn -> Runner.run(config, [run: true, no_commit: true], ["01"]) end)
+    assert :ok =
+             run_quiet(fn -> Runner.execute_plan(plan, [run: true, no_commit: true], ["01"]) end)
 
     statuses = Progress.statuses(config)
     assert statuses["01"].status == "completed"
@@ -105,6 +107,7 @@ defmodule PromptRunner.RunnerTest do
     )
 
     {:ok, config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -118,7 +121,7 @@ defmodule PromptRunner.RunnerTest do
 
     ExUnit.CaptureIO.capture_io(fn ->
       assert {:error, {:stream_failed, _}} =
-               Runner.run(config, [run: true, no_commit: true], ["01"])
+               Runner.execute_plan(plan, [run: true, no_commit: true], ["01"])
     end)
 
     statuses = Progress.statuses(config)
@@ -157,7 +160,8 @@ defmodule PromptRunner.RunnerTest do
       """
     )
 
-    {:ok, config} = Config.load(config_path)
+    {:ok, _config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -186,7 +190,7 @@ defmodule PromptRunner.RunnerTest do
     end)
 
     assert {:error, %{message: message, provider_error: provider_error}} =
-             run_quiet(fn -> Runner.run(config, [run: true, no_commit: true], ["01"]) end)
+             run_quiet(fn -> Runner.execute_plan(plan, [run: true, no_commit: true], ["01"]) end)
 
     assert message == "codex executable exited with status 2"
     assert provider_error.provider == :codex
@@ -227,7 +231,8 @@ defmodule PromptRunner.RunnerTest do
       """
     )
 
-    {:ok, config} = Config.load(config_path)
+    {:ok, _config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -258,7 +263,7 @@ defmodule PromptRunner.RunnerTest do
     output =
       ExUnit.CaptureIO.capture_io(fn ->
         assert {:error, %{provider_error: provider_error}} =
-                 Runner.run(config, [run: true, no_commit: true], ["01"])
+                 Runner.execute_plan(plan, [run: true, no_commit: true], ["01"])
 
         assert provider_error.stderr =~ "missing auth token"
       end)
@@ -302,7 +307,8 @@ defmodule PromptRunner.RunnerTest do
       """
     )
 
-    {:ok, config} = Config.load(config_path)
+    {:ok, _config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -336,7 +342,10 @@ defmodule PromptRunner.RunnerTest do
 
     output =
       ExUnit.CaptureIO.capture_io(fn ->
-        assert :ok = Runner.run(config, [run: true, no_commit: true, tool_output: "full"], ["01"])
+        assert :ok =
+                 Runner.execute_plan(plan, [run: true, no_commit: true, tool_output: "full"], [
+                   "01"
+                 ])
       end)
 
     plain = String.replace(output, ~r/\x1b\[[0-9;]*m/, "")
@@ -382,7 +391,8 @@ defmodule PromptRunner.RunnerTest do
       """
     )
 
-    {:ok, config} = Config.load(config_path)
+    {:ok, _config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -409,7 +419,7 @@ defmodule PromptRunner.RunnerTest do
 
     output =
       ExUnit.CaptureIO.capture_io(fn ->
-        assert :ok = Runner.run(config, [run: true, no_commit: true], ["01"])
+        assert :ok = Runner.execute_plan(plan, [run: true, no_commit: true], ["01"])
       end)
 
     assert output =~ "LLM: codex model=gpt-5.3-codex reasoning=xhigh (configured)"
@@ -451,7 +461,8 @@ defmodule PromptRunner.RunnerTest do
       """
     )
 
-    {:ok, config} = Config.load(config_path)
+    {:ok, _config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -475,7 +486,7 @@ defmodule PromptRunner.RunnerTest do
 
     output =
       ExUnit.CaptureIO.capture_io(fn ->
-        assert :ok = Runner.run(config, [run: true, no_commit: true], ["01"])
+        assert :ok = Runner.execute_plan(plan, [run: true, no_commit: true], ["01"])
       end)
 
     assert output =~ "LLM: codex model=gpt-5.3-codex reasoning=xhigh (configured)"
@@ -517,7 +528,8 @@ defmodule PromptRunner.RunnerTest do
       """
     )
 
-    {:ok, config} = Config.load(config_path)
+    {:ok, _config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -544,7 +556,7 @@ defmodule PromptRunner.RunnerTest do
 
     output =
       ExUnit.CaptureIO.capture_io(fn ->
-        assert :ok = Runner.run(config, [run: true, no_commit: true], ["01"])
+        assert :ok = Runner.execute_plan(plan, [run: true, no_commit: true], ["01"])
       end)
 
     assert output =~ "WARNING: codex_cli confirmation mismatch"
@@ -588,6 +600,7 @@ defmodule PromptRunner.RunnerTest do
     )
 
     {:ok, config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -606,7 +619,9 @@ defmodule PromptRunner.RunnerTest do
     captured_result =
       ExUnit.CaptureIO.capture_io(fn ->
         result =
-          Runner.run(config, [run: true, no_commit: true, cli_confirmation: "require"], ["01"])
+          Runner.execute_plan(plan, [run: true, no_commit: true, cli_confirmation: "require"], [
+            "01"
+          ])
 
         send(self(), {:captured_result, result})
       end)
@@ -657,7 +672,8 @@ defmodule PromptRunner.RunnerTest do
       """
     )
 
-    {:ok, config} = Config.load(config_path)
+    {:ok, _config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -682,7 +698,8 @@ defmodule PromptRunner.RunnerTest do
       {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
     end)
 
-    assert :ok = run_quiet(fn -> Runner.run(config, [run: true, no_commit: true], ["01"]) end)
+    assert :ok =
+             run_quiet(fn -> Runner.execute_plan(plan, [run: true, no_commit: true], ["01"]) end)
 
     [log_path] = Path.wildcard(Path.join(tmp_dir, "logs/prompt-01-*.log"))
     log_text = File.read!(log_path)
