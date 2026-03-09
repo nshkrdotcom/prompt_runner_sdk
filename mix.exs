@@ -1,7 +1,7 @@
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.4.0"
+  @version "0.5.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
 
   def project do
@@ -12,6 +12,7 @@ defmodule PromptRunner.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      escript: escript(),
       docs: docs(),
       description: description(),
       package: package(),
@@ -50,10 +51,17 @@ defmodule PromptRunner.MixProject do
 
   defp description do
     """
-    Prompt Runner SDK - An Elixir toolkit for orchestrating multi-step prompt
-    executions through AgentSessionManager with streaming output, progress
-    tracking, multi-repository support, and automatic git integration.
+    Prompt Runner SDK - Convention-driven and legacy-config prompt orchestration
+    for Elixir, Mix, and production applications with streaming output,
+    provider abstractions, runtime stores, and git integration.
     """
+  end
+
+  defp escript do
+    [
+      main_module: PromptRunner.CLI,
+      name: "prompt_runner"
+    ]
   end
 
   defp docs do
@@ -69,46 +77,101 @@ defmodule PromptRunner.MixProject do
         {"README.md", filename: "readme", title: "Prompt Runner SDK"},
         "CHANGELOG.md",
         "LICENSE",
-        # Guides
         {"guides/getting-started.md", filename: "getting-started", title: "Getting Started"},
+        {"guides/convention-mode.md", filename: "convention-mode", title: "Convention Mode"},
+        {"guides/cli.md", filename: "cli", title: "CLI Guide"},
+        {"guides/api.md", filename: "api", title: "API Guide"},
         {"guides/configuration.md", filename: "configuration", title: "Configuration Reference"},
+        {"guides/legacy-config.md", filename: "legacy-config", title: "Legacy Config Mode"},
+        {"guides/providers.md", filename: "providers", title: "Provider Guide"},
         {"guides/rendering.md", filename: "rendering", title: "Rendering Modes"},
-        {"guides/providers.md", filename: "providers", title: "Multi-Provider Setup"},
         {"guides/multi-repo.md", filename: "multi-repo", title: "Multi-Repository Workflows"},
-        # Examples
+        {"guides/architecture.md", filename: "architecture", title: "Architecture"},
+        {"guides/migration.md", filename: "migration", title: "Migration Notes"},
         {"examples/README.md", filename: "examples", title: "Examples Overview"},
         {"examples/simple/README.md", filename: "example-simple", title: "Simple Example"},
         {"examples/multi_repo_dummy/README.md",
          filename: "example-multi-repo", title: "Multi-Repo Example"}
       ],
       groups_for_extras: [
-        Introduction: ["readme"],
-        Guides: [
-          "getting-started",
-          "configuration",
-          "rendering",
-          "providers",
+        Overview: ["readme", "getting-started"],
+        Workflows: [
+          "convention-mode",
+          "cli",
+          "api",
+          "legacy-config",
           "multi-repo"
         ],
-        Reference: ["CHANGELOG.md", "LICENSE"],
+        Configuration: [
+          "configuration",
+          "providers",
+          "rendering"
+        ],
+        Architecture: [
+          "architecture",
+          "migration"
+        ],
         Examples: [
           "examples",
           "example-simple",
           "example-multi-repo"
+        ],
+        Reference: [
+          "CHANGELOG.md",
+          "LICENSE"
         ]
       ],
       groups_for_modules: [
         "Core API": [
           PromptRunner,
+          PromptRunner.Run,
+          PromptRunner.RunSpec,
+          PromptRunner.Plan,
           PromptRunner.Application,
-          PromptRunner.Runner,
-          PromptRunner.CLI
+          PromptRunner.CLI,
+          Mix.Tasks.PromptRunner
         ],
-        Configuration: [PromptRunner.Config, PromptRunner.Prompts, PromptRunner.Prompt],
-        "LLM Integration": [PromptRunner.LLM, PromptRunner.LLMFacade, PromptRunner.Session],
-        "Progress & Git": [PromptRunner.Progress, PromptRunner.Git, PromptRunner.CommitMessages],
-        UI: [PromptRunner.UI],
-        Utilities: [PromptRunner.Validator, PromptRunner.RepoTargets]
+        Sources: [
+          PromptRunner.Source,
+          PromptRunner.Source.Result,
+          PromptRunner.Source.DirectorySource,
+          PromptRunner.Source.LegacyConfigSource,
+          PromptRunner.Source.ListSource,
+          PromptRunner.Source.SinglePromptSource
+        ],
+        Runtime: [
+          PromptRunner.Runner,
+          PromptRunner.RuntimeStore,
+          PromptRunner.RuntimeStore.FileStore,
+          PromptRunner.RuntimeStore.MemoryStore,
+          PromptRunner.RuntimeStore.NoopStore,
+          PromptRunner.Committer,
+          PromptRunner.Committer.GitCommitter,
+          PromptRunner.Committer.NoopCommitter,
+          PromptRunner.Committer.CallbackCommitter
+        ],
+        Configuration: [
+          PromptRunner.Config,
+          PromptRunner.Prompts,
+          PromptRunner.Prompt,
+          PromptRunner.CommitMessages,
+          PromptRunner.Progress,
+          PromptRunner.Scaffold
+        ],
+        "LLM Integration": [
+          PromptRunner.LLM,
+          PromptRunner.LLMFacade,
+          PromptRunner.Session
+        ],
+        Observability: [
+          PromptRunner.Observer.PubSub,
+          PromptRunner.UI
+        ],
+        Utilities: [
+          PromptRunner.Validator,
+          PromptRunner.RepoTargets,
+          PromptRunner.Git
+        ]
       ]
     ]
   end
@@ -117,7 +180,8 @@ defmodule PromptRunner.MixProject do
     [
       name: "prompt_runner_sdk",
       description: description(),
-      files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE),
+      files:
+        ~w(lib guides examples assets mix.exs README.md CHANGELOG.md LICENSE run_prompts.exs),
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,

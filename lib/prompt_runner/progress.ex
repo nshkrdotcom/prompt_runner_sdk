@@ -1,6 +1,10 @@
 defmodule PromptRunner.Progress do
   @moduledoc false
 
+  def statuses(%PromptRunner.Plan{runtime_store: {module, state}}) do
+    module.statuses(state)
+  end
+
   @spec statuses(PromptRunner.Config.t()) :: map()
   def statuses(config) do
     case File.read(config.progress_file) do
@@ -23,6 +27,10 @@ defmodule PromptRunner.Progress do
   end
 
   @spec last_completed(PromptRunner.Config.t()) :: String.t() | nil
+  def last_completed(%PromptRunner.Plan{runtime_store: {module, state}}) do
+    module.last_completed(state)
+  end
+
   def last_completed(config) do
     statuses(config)
     |> Enum.filter(fn {_num, status} -> status.status == "completed" end)
@@ -32,6 +40,10 @@ defmodule PromptRunner.Progress do
   end
 
   @spec mark_completed(PromptRunner.Config.t(), String.t(), term()) :: :ok
+  def mark_completed(%PromptRunner.Plan{runtime_store: {module, state}}, num, commit_info) do
+    module.mark_completed(state, num, commit_info)
+  end
+
   def mark_completed(config, num, commit_info) do
     timestamp = DateTime.utc_now() |> DateTime.to_iso8601()
 
@@ -62,6 +74,10 @@ defmodule PromptRunner.Progress do
   end
 
   @spec mark_failed(PromptRunner.Config.t(), String.t()) :: :ok
+  def mark_failed(%PromptRunner.Plan{runtime_store: {module, state}}, num) do
+    module.mark_failed(state, num)
+  end
+
   def mark_failed(config, num) do
     timestamp = DateTime.utc_now() |> DateTime.to_iso8601()
     File.write!(config.progress_file, "#{num}:failed:#{timestamp}\n", [:append])

@@ -1,23 +1,29 @@
 defmodule PromptRunner.CLI do
-  @moduledoc false
+  @moduledoc """
+  Command-line entrypoint for convention and legacy PromptRunner workflows.
+  """
 
+  alias PromptRunner
   alias PromptRunner.Config
   alias PromptRunner.Runner
   alias PromptRunner.UI
 
   @spec main(list()) :: :ok | no_return()
   def main(args \\ System.argv()) do
-    {opts, remaining, _} = parse_args(args)
+    {opts, remaining, _invalid} = parse_args(args)
 
     cond do
       opts[:help] ->
         show_help()
 
-      opts[:config] == nil ->
-        handle_missing_config()
+      command = command_from_args(remaining) ->
+        run_command(command, tl(remaining), opts)
+
+      legacy_mode?(opts) ->
+        run_legacy(opts, remaining)
 
       true ->
-        run_with_config(opts, remaining)
+        handle_missing_input()
     end
   end
 
@@ -30,7 +36,6 @@ defmodule PromptRunner.CLI do
         validate: :boolean,
         dry_run: :boolean,
         run: :boolean,
-        plan_only: :boolean,
         no_commit: :boolean,
         require_cli_confirmation: :boolean,
         cli_confirmation: :string,
@@ -43,30 +48,131 @@ defmodule PromptRunner.CLI do
         phase: :integer,
         all: :boolean,
         continue: :boolean,
-        branch_strategy: :string,
-        branch_name: :string,
-        auto_pr: :boolean,
-        partial_mode: :string,
-        partial_continue: :boolean
+        target: :keep,
+        targets: :keep,
+        provider: :string,
+        model: :string,
+        output: :string,
+        state_dir: :string,
+        no_state: :boolean,
+        runtime_store: :string,
+        committer: :string
       ],
       aliases: [
         h: :help,
         c: :config,
         l: :list,
-        v: :validate,
-        p: :plan_only
+        v: :validate
       ]
     )
   end
 
-  defp run_with_config(opts, remaining) do
-    case Config.load(opts[:config]) do
-      {:ok, config} ->
-        handle_runner_result(Runner.run(config, opts, remaining))
+  defp command_from_args([command | _])
+       when command in ["run", "list", "validate", "plan", "scaffold"],
+       do: command
 
-      error ->
-        handle_config_error(error)
+  defp command_from_args(_), do: nil
+
+  defp legacy_mode?(opts) do
+    opts[:config] != nil or opts[:list] or opts[:validate] or opts[:dry_run] or opts[:run]
+  end
+
+  defp run_command("list", [source | _rest], opts) do
+    with {:ok, plan} <- PromptRunner.plan(source, cli_opts(opts)) do
+      Runner.list_plan(plan)
+      :ok
+    else
+      {:error, reason} -> handle_error(reason)
     end
+  end
+
+  defp run_command("validate", [source | _rest], opts) do
+    case PromptRunner.validate(source, cli_opts(opts)) do
+      :ok -> :ok
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp run_command("plan", [source | _rest], opts) do
+    with {:ok, plan} <- PromptRunner.plan(source, cli_opts(opts)) do
+      print_plan_summary(plan)
+      :ok
+    else
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp run_command("run", [source | _rest], opts) do
+    case PromptRunner.run(source, cli_opts(opts)) do
+      {:ok, _run} -> :ok
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp run_command("scaffold", [source | _rest], opts) do
+    case PromptRunner.scaffold(source, cli_opts(opts)) do
+      {:ok, paths} ->
+        IO.puts(UI.green("Scaffolded PromptRunner files"))
+        IO.puts("  prompts: #{paths.prompts_file}")
+        IO.puts("  commits: #{paths.commit_messages_file}")
+        IO.puts("  config: #{paths.config_file}")
+        IO.puts("  runner: #{paths.runner_file}")
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
+  end
+
+  defp run_command(_command, _args, _opts) do
+    handle_missing_input()
+  end
+
+  defp cli_opts(opts) do
+    opts
+    |> Keyword.put(:interface, :cli)
+    |> maybe_put(:target, opts[:target])
+    |> maybe_put(:provider, opts[:provider])
+    |> maybe_put(:model, opts[:model])
+    |> maybe_put(:output, opts[:output])
+    |> maybe_put(:state_dir, opts[:state_dir])
+    |> maybe_put(:no_state, opts[:no_state])
+    |> maybe_put(:runtime_store, opts[:runtime_store])
+    |> maybe_put(:committer, opts[:committer])
+  end
+
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp run_legacy(opts, remaining) do
+    cond do
+      opts[:config] == nil ->
+        handle_missing_config()
+
+      true ->
+        case Config.load(opts[:config]) do
+          {:ok, config} ->
+            handle_runner_result(Runner.run(config, opts, remaining))
+
+          error ->
+            handle_config_error(error)
+        end
+    end
+  end
+
+  defp print_plan_summary(plan) do
+    IO.puts("")
+    IO.puts(UI.bold("PromptRunner Plan"))
+    IO.puts("Source: #{plan.source_root || inspect(plan.source)}")
+    IO.puts("Prompts: #{length(plan.prompts)}")
+    IO.puts("Provider: #{plan.llm_sdk}")
+    IO.puts("Model: #{plan.model}")
+
+    Enum.each(plan.prompts, fn prompt ->
+      IO.puts("  #{prompt.num} - #{prompt.name}")
+    end)
+
+    IO.puts("")
   end
 
   defp handle_runner_result(:ok), do: :ok
@@ -82,7 +188,9 @@ defmodule PromptRunner.CLI do
     System.halt(1)
   end
 
-  defp handle_runner_result({:error, reason}) do
+  defp handle_runner_result({:error, reason}), do: handle_error(reason)
+
+  defp handle_error(reason) do
     IO.puts(UI.red("ERROR: #{inspect(reason)}"))
     System.halt(1)
   end
@@ -108,14 +216,11 @@ defmodule PromptRunner.CLI do
     System.halt(1)
   end
 
-  defp handle_config_error({:error, reason}) do
-    IO.puts(UI.red("ERROR: #{inspect(reason)}"))
-    System.halt(1)
-  end
+  defp handle_config_error({:error, reason}), do: handle_error(reason)
 
   @spec handle_missing_config() :: no_return()
   defp handle_missing_config do
-    IO.puts(UI.red("ERROR: --config is required"))
+    IO.puts(UI.red("ERROR: --config is required for legacy mode"))
     IO.puts("")
     IO.puts("Usage: mix run run_prompts.exs --config <config_file> [command] [options]")
     IO.puts("")
@@ -123,124 +228,27 @@ defmodule PromptRunner.CLI do
     System.halt(1)
   end
 
+  defp handle_missing_input do
+    IO.puts(UI.red("ERROR: no command or source path provided"))
+    IO.puts("")
+    show_help()
+    System.halt(1)
+  end
+
   defp show_help do
     IO.puts("")
-    IO.puts(UI.bold("Generic Implementation Prompt Runner (Elixir)"))
+    IO.puts(UI.bold("PromptRunner"))
     IO.puts("")
-    IO.puts("Usage: mix run run_prompts.exs --config <config_file> [COMMAND] [OPTIONS]")
+    IO.puts("Convention-driven mode:")
+    IO.puts("  prompt_runner list <prompt_dir> [--target /path/to/repo]")
+    IO.puts("  prompt_runner run <prompt_dir> [--target /path/to/repo]")
+    IO.puts("  prompt_runner validate <prompt_dir> [--target /path/to/repo]")
+    IO.puts("  prompt_runner plan <prompt_dir> [--target /path/to/repo]")
+    IO.puts("  prompt_runner scaffold <prompt_dir> [--output ./generated]")
     IO.puts("")
-
-    IO.puts(UI.yellow("Required:"))
-    IO.puts("    --config, -c FILE   Configuration file (required)")
-    IO.puts("")
-
-    IO.puts(UI.yellow("Commands:"))
-    IO.puts("    --list              List all prompts with status")
-    IO.puts("    --validate, -v      Comprehensive config validation")
-    IO.puts("    --dry-run TARGET    Preview what would execute")
-    IO.puts("    --plan-only, -p     Generate execution plan without running")
-    IO.puts("    --run TARGET        Execute prompts with streaming output")
-    IO.puts("")
-
-    IO.puts(UI.yellow("Targets:"))
-    IO.puts("    NN                  Single prompt (e.g., 01, 15)")
-    IO.puts("    --phase N           All prompts in phase 1-5")
-    IO.puts("    --all               All prompts")
-    IO.puts("    --continue          Resume from last completed")
-    IO.puts("    --partial-continue  Resume failed repos from partial_success")
-    IO.puts("")
-
-    IO.puts(UI.yellow("Options:"))
-    IO.puts("    --no-commit             Skip git commit after prompt")
-    IO.puts("    --cli-confirmation MODE Confirmation policy: off | warn | require")
-
-    IO.puts(
-      "    --require-cli-confirmation  Fail run if codex CLI does not confirm model/reasoning"
-    )
-
-    IO.puts("    --project-dir DIR       Override project directory (legacy single-repo)")
-    IO.puts("    --repo-override N:P     Override repo path by name (repeatable)")
-    IO.puts("    --log-mode MODE         Log output mode: compact (default), verbose, or studio")
-    IO.puts("    --log-meta MODE         Event metadata: none (default) or full")
-    IO.puts("    --events-mode MODE      Events log: compact (default), full, or off")
-    IO.puts("    --tool-output MODE      Studio tool output: summary (default), preview, or full")
-    IO.puts("")
-
-    IO.puts(UI.yellow("Branch Strategy:"))
-
-    IO.puts(
-      "    --branch-strategy MODE  Branch mode: direct (default), feature_branch, per_prompt"
-    )
-
-    IO.puts("    --branch-name NAME      Override branch name")
-    IO.puts("    --auto-pr               Create PRs after completion")
-    IO.puts("")
-
-    IO.puts(UI.yellow("Partial Success:"))
-
-    IO.puts(
-      "    --partial-mode MODE     Partial failure: fail_fast (default), continue, require_all"
-    )
-
-    IO.puts("    --partial-continue      Resume from partial_success state")
-    IO.puts("")
-
-    IO.puts(UI.yellow("Examples:"))
-    IO.puts("    mix run run_prompts.exs --config runner_config.exs --list")
-    IO.puts("    mix run run_prompts.exs --config runner_config.exs --dry-run 01")
-    IO.puts("    mix run run_prompts.exs --config runner_config.exs --dry-run --phase 1")
-    IO.puts("    mix run run_prompts.exs --config runner_config.exs --run 01")
-    IO.puts("    mix run run_prompts.exs --config runner_config.exs --run --all")
-    IO.puts("    mix run run_prompts.exs --config runner_config.exs --run --continue --no-commit")
-    IO.puts("")
-
-    IO.puts(UI.yellow("Config File Format (Elixir):"))
-    IO.puts(~S"    %{")
-    IO.puts(~S|      project_dir: "/path/to/project",|)
-    IO.puts("")
-    IO.puts("      target_repos: [")
-    IO.puts(~S|        %{name: "command", path: "/path/to/command", default: true},|)
-    IO.puts(~S|        %{name: "flowstone", path: "/path/to/flowstone"}|)
-    IO.puts("      ],")
-    IO.puts("")
-    IO.puts("      llm: %{")
-    IO.puts(~S|        provider: "claude",|)
-    IO.puts(~S|        model: "haiku",|)
-    IO.puts("        prompt_overrides: %{")
-    IO.puts(~S|          "02" => %{provider: "codex", model: "gpt-5.3-codex"}|)
-    IO.puts("        }")
-    IO.puts("      },")
-    IO.puts("")
-    IO.puts(~S|      prompts_file: "prompts.txt",|)
-    IO.puts(~S|      commit_messages_file: "commit-messages.txt",|)
-    IO.puts(~S|      progress_file: ".progress",|)
-    IO.puts(~S|      log_dir: "../logs",|)
-    IO.puts(~S|      model: "haiku",|)
-    IO.puts(~S|      allowed_tools: ["Read", "Write"],|)
-    IO.puts("      permission_mode: :accept_edits,")
-    IO.puts("      log_mode: :compact,")
-    IO.puts("      log_meta: :none,")
-    IO.puts("      events_mode: :compact,")
-    IO.puts("      tool_output: :summary,")
-    IO.puts(~S|      phase_names: %{1 => "Phase One"}|)
-    IO.puts("    }")
-    IO.puts("")
-
-    IO.puts(UI.yellow("Prompts File Format:"))
-    IO.puts("    # Format: NUM|PHASE|SP|NAME|FILE[|TARGET_REPOS]")
-    IO.puts("    01|1|5|Schema|001-schema.md")
-    IO.puts("    02|1|8|FlowStone|002-flowstone.md|command,flowstone")
-    IO.puts("")
-
-    IO.puts(UI.yellow("Commit Messages File Format:"))
-    IO.puts("    === COMMIT 01 ===")
-    IO.puts("    feat(module): description")
-    IO.puts("")
-    IO.puts("    === COMMIT 02:command ===")
-    IO.puts("    feat(command): changes for command repo")
-    IO.puts("")
-    IO.puts("    === COMMIT 02:flowstone ===")
-    IO.puts("    feat(flowstone): changes for flowstone repo")
+    IO.puts("Legacy mode:")
+    IO.puts("  mix run run_prompts.exs --config runner_config.exs --list")
+    IO.puts("  mix run run_prompts.exs --config runner_config.exs --run 01")
     IO.puts("")
   end
 end

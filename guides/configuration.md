@@ -1,278 +1,114 @@
 # Configuration Reference
 
-Configuration lives in a `runner_config.exs` file — an Elixir script that evaluates to a map. It is loaded by `PromptRunner.Config.load/1`.
+Prompt Runner now has two configuration styles:
 
-## Full Config
+- convention mode via API/CLI options
+- explicit legacy config via `runner_config.exs`
+
+## Convention Mode Options
+
+These are the options used by `PromptRunner.plan/2`, `run/2`, `run_prompt/2`,
+and `mix prompt_runner ...`.
+
+| Option | Type | Meaning |
+|--------|------|---------|
+| `target` | string or repeated | Repo path or `name:path` target |
+| `targets` | map or list | Named target repo map for API use |
+| `provider` | atom/string | `:claude`, `:codex`, or `:amp` |
+| `model` | string | Model name |
+| `interface` | atom | `:api` or `:cli` |
+| `state_dir` | string | Override the CLI runtime state directory |
+| `no_state` | boolean | Disable persisted runtime state |
+| `runtime_store` | atom/string | Override runtime store selection |
+| `committer` | atom/string | Override committer selection |
+| `log_mode` | atom/string | `:compact`, `:verbose`, or `:studio` |
+| `log_meta` | atom/string | `:none` or `:full` |
+| `events_mode` | atom/string | `:compact`, `:full`, or `:off` |
+| `tool_output` | atom/string | `:summary`, `:preview`, or `:full` |
+| `on_event` | function | Global observer callback |
+| `on_prompt_started` | function | Lifecycle callback |
+| `on_prompt_completed` | function | Lifecycle callback |
+| `on_prompt_failed` | function | Lifecycle callback |
+| `on_run_completed` | function | Lifecycle callback |
+
+## Convention Metadata
+
+Convention prompts support:
+
+- front matter keys: `num`, `phase`, `sp`, `targets`, `commit`, `validation`
+- heading fallbacks: `#`, `## Mission`, `## Validation Commands`, `## Repository Root`
+
+See [Convention Mode](convention-mode.md) for examples.
+
+## Legacy Config
+
+`runner_config.exs` is still loaded through `PromptRunner.Config.load/1`.
 
 ```elixir
 %{
-  # === Required ===
-  project_dir: "/path/to/project",
+  project_dir: "/path/to/repo",
   prompts_file: "prompts.txt",
   commit_messages_file: "commit-messages.txt",
   progress_file: ".progress",
   log_dir: "logs",
   model: "haiku",
-
-  # === Optional: Multi-repo ===
-  target_repos: [
-    %{name: "app", path: "/path/to/app", default: true},
-    %{name: "lib", path: "/path/to/lib"}
-  ],
-  repo_groups: %{
-    "all" => ["app", "lib"]
-  },
-
-  # === Optional: LLM ===
   llm: %{
     provider: "claude",
-    model: "haiku",
-    permission_mode: :accept_edits,
-    allowed_tools: ["Read", "Write", "Bash"],
-    max_turns: nil,
-    system_prompt: nil,
-    sdk_opts: [],
-    adapter_opts: %{},
-    claude_opts: %{},
-    codex_opts: %{},
-    codex_thread_opts: %{},
     prompt_overrides: %{
-      "03" => %{provider: "codex", model: "gpt-5.3-codex"}
+      "02" => %{provider: "codex", model: "gpt-5.3-codex"}
     }
-  },
-
-  # === Optional: Display ===
-  log_mode: :compact,
-  log_meta: :none,
-  events_mode: :compact,
-  tool_output: :summary,
-  phase_names: %{1 => "Setup", 2 => "Implementation"}
-}
-```
-
-## Required Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `project_dir` | string | Absolute path to project root. Used as the LLM working directory (`cwd`). |
-| `prompts_file` | string | Path to prompt index file (relative to `project_dir`). |
-| `commit_messages_file` | string | Path to commit messages file (relative to `project_dir`). |
-| `progress_file` | string | Path to progress tracking file (relative to `project_dir`). |
-| `log_dir` | string | Directory for session logs (relative to `project_dir`). |
-| `model` | string | Default model name (e.g., `"haiku"`, `"sonnet"`, `"gpt-5.3-codex"`). |
-
-All relative paths are resolved against the directory containing the config file.
-
-## LLM Section
-
-The `llm` map controls provider selection, tool permissions, and per-prompt overrides.
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `provider` | string | `"claude"` | Provider name: `"claude"`, `"codex"`, or `"amp"`. |
-| `model` | string | root `model` | Overrides the top-level `model`. |
-| `allowed_tools` | list | `nil` | Tool names the LLM may use (e.g., `["Read", "Write", "Bash"]`). |
-| `permission_mode` | atom | `nil` | `:default`, `:accept_edits`, `:plan`, `:full_auto`, or `:dangerously_skip_permissions`. |
-| `max_turns` | integer | `nil` | Maximum agentic turns. Claude: nil=unlimited. Codex: nil=SDK default (10). Amp: ignored. |
-| `system_prompt` | string | `nil` | System-level instructions. Claude: `system_prompt`. Codex: `base_instructions`. Amp: stored only. |
-| `sdk_opts` | keyword | `[]` | Arbitrary provider-specific SDK options. Normalized options take precedence. |
-| `adapter_opts` | map | `%{}` | Options passed to the AgentSessionManager adapter. |
-| `claude_opts` | map | `%{}` | Claude-specific adapter options (merged before `adapter_opts`). |
-| `codex_opts` | map | `%{}` | Codex-specific options (merged before `adapter_opts`). |
-| `codex_thread_opts` | map | `%{}` | Codex thread options (e.g., `%{reasoning_effort: :xhigh}`). Merged before `adapter_opts`. |
-| `cli_confirmation` | atom | `:warn` | Codex CLI confirmation policy: `:off`, `:warn`, or `:require`. See [Codex CLI Confirmation](#codex-cli-confirmation). |
-| `timeout` | integer/atom | `nil` | Session timeout in milliseconds. Also accepts `:unbounded` or `:infinity` (capped at 7 days internally). |
-| `prompt_overrides` | map | `%{}` | Per-prompt overrides keyed by prompt number. |
-
-### Config Precedence
-
-For each prompt, `PromptRunner.Config.llm_for_prompt/2` deep-merges in this order (lowest to highest):
-
-1. Root-level keys (`model`, `allowed_tools`, `permission_mode`, etc.)
-2. `llm` section values
-3. `prompt_overrides` entry for the specific prompt number
-
-The resulting map is passed to `PromptRunner.Session.start_stream/2`.
-
-### Provider Aliases
-
-The `provider` key accepts multiple aliases. The legacy `sdk` key is also accepted for backward compatibility.
-
-| Input | Resolves To |
-|-------|-------------|
-| `"claude"`, `"claude_agent"`, `"claude_agent_sdk"` | `:claude` |
-| `"codex"`, `"codex_sdk"` | `:codex` |
-| `"amp"`, `"amp_sdk"` | `:amp` |
-
-```elixir
-# All equivalent:
-llm: %{provider: "claude"}
-llm: %{sdk: "claude_agent_sdk"}
-llm: %{provider: "claude_agent"}
-```
-
-### prompt_overrides
-
-Override any LLM setting for a specific prompt. Keys can be integers (auto-padded to `"02"` format) or strings:
-
-```elixir
-llm: %{
-  provider: "claude",
-  model: "haiku",
-  prompt_overrides: %{
-    "03" => %{provider: "codex", model: "gpt-5.3-codex"},
-    5 => %{model: "sonnet", adapter_opts: %{max_tokens: 16384}}
   }
 }
 ```
 
-Overrides are deep-merged, so you only need to specify the fields that change.
+### Required Legacy Fields
 
-### adapter_opts
+| Field | Meaning |
+|-------|---------|
+| `project_dir` | Default working directory |
+| `prompts_file` | Prompt manifest |
+| `commit_messages_file` | Commit message source |
+| `progress_file` | Progress log |
+| `log_dir` | Session logs |
+| `model` | Default model |
 
-Provider-agnostic options passed directly to the AgentSessionManager adapter. This map is merged *after* provider-specific options (`claude_opts`, `codex_opts`, etc.), so it takes precedence:
+### Legacy `llm` Fields
 
-```elixir
-llm: %{
-  provider: "claude",
-  adapter_opts: %{max_tokens: 8192}
-}
-```
+| Field | Meaning |
+|-------|---------|
+| `provider` | Provider alias |
+| `model` | Optional override of root model |
+| `allowed_tools` | Tool restriction list |
+| `permission_mode` | Provider permission policy |
+| `adapter_opts` | Adapter-specific options |
+| `claude_opts` | Claude-specific options |
+| `codex_opts` | Codex-specific options |
+| `codex_thread_opts` | Codex thread options |
+| `cli_confirmation` | Codex CLI confirmation policy |
+| `timeout` | Timeout override |
+| `prompt_overrides` | Per-prompt LLM overrides |
 
-`adapter_opts` can also appear at the root level of the config. The `llm`-scoped value takes precedence if both are present.
+### Multi-Repo Legacy Fields
 
-## Multi-Repo Fields
+| Field | Meaning |
+|-------|---------|
+| `target_repos` | Named repo definitions |
+| `repo_groups` | Named repo groups for `@group` expansion |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `target_repos` | list | List of repo maps. Each has `:name` (string), `:path` (string), and optional `:default` (boolean). |
-| `repo_groups` | map | Named groups of repos. Keys are group names, values are lists of repo names or `@group` references. |
+## Defaults By Interface
 
-See the [Multi-Repository Workflows](multi-repo.md) guide for full details.
+| Interface | Runtime Store | Committer |
+|-----------|---------------|-----------|
+| API | memory | noop |
+| CLI | file | git |
+| Legacy config | explicit files | git |
 
-## Codex CLI Confirmation
+## Environment and Global Config
 
-When using Codex, the runner can verify that the CLI is actually using the model and reasoning effort you configured. This is controlled by the `cli_confirmation` setting:
+Convention mode also reads:
 
-| Mode | Behavior |
-|------|----------|
-| `:off` | No confirmation checking |
-| `:warn` | Print a warning if configured and confirmed settings differ (default) |
-| `:require` | Fail the run if the CLI does not confirm the configured model/reasoning |
+- `PROMPT_RUNNER_MODEL`
+- `PROMPT_RUNNER_PROVIDER`
+- `~/.config/prompt_runner/config.exs` if it exists
 
-```elixir
-llm: %{
-  provider: "codex",
-  model: "gpt-5.3-codex",
-  cli_confirmation: :warn,
-  codex_thread_opts: %{reasoning_effort: :xhigh},
-  prompt_overrides: %{
-    "03" => %{cli_confirmation: :require}
-  }
-}
-```
-
-Machine-readable audit lines (`LLM_AUDIT`, `LLM_AUDIT_CONFIRMED`, `LLM_AUDIT_RESULT`) are always written to the session log file for traceability, regardless of the confirmation mode.
-
-CLI flags: `--cli-confirmation off|warn|require` and `--require-cli-confirmation` (shortcut for `require`).
-
-## Timeout Configuration
-
-The `timeout` field accepts:
-
-- Positive integer (milliseconds): `timeout: 300_000`
-- `:unbounded` or `:infinity` atoms: no practical limit (capped at 7 days internally)
-- String equivalents: `"unbounded"`, `"infinity"`, `"infinite"`, or numeric strings like `"300000"`
-- `nil` (default): uses the emergency cap (7 days)
-
-Timeout can be set at the top level, in the `llm` section, or per-prompt via `prompt_overrides`.
-
-## Display Fields
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `log_mode` | atom | `:compact` | `:compact` (abbreviated tokens via `CompactRenderer`), `:verbose` (one event per line), or `:studio` (CLI-grade interactive rendering via `StudioRenderer`). |
-| `log_meta` | atom | `:none` | Error detail mode. `:none` prints summary errors only. `:full` additionally prints `provider_error.stderr` when available. |
-| `events_mode` | atom | `:compact` | `:compact`, `:full`, or `:off`. Controls JSONL event file detail level via `JSONLSink`. |
-| `tool_output` | atom | `:summary` | Studio renderer tool output level: `:summary`, `:preview`, or `:full`. |
-| `phase_names` | map | `%{}` | Map of phase number (integer) to display name (string). |
-
-## File Formats
-
-### prompts.txt
-
-Each line defines one prompt. Lines starting with `#` or blank lines are skipped.
-
-```
-NUM|PHASE|SP|NAME|FILE[|TARGET_REPOS]
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| NUM | string | Prompt identifier (`01`, `02`, ...). |
-| PHASE | integer | Phase grouping. Used with `--phase` flag. |
-| SP | integer | Story points (tracking only). |
-| NAME | string | Display name. |
-| FILE | string | Prompt markdown file path (relative to `project_dir`). |
-| TARGET_REPOS | string | Optional. Comma-separated repo names or `@group` references. |
-
-### commit-messages.txt
-
-Markers delimit commit messages. Text between markers is the full commit message (can be multi-line).
-
-Single repo:
-```
-=== COMMIT 01 ===
-feat: setup database schema
-```
-
-Multi-repo (repo-qualified):
-```
-=== COMMIT 01:frontend ===
-feat(frontend): initial setup
-
-=== COMMIT 01:backend ===
-feat(backend): initial setup
-```
-
-The marker regex is: `=== COMMIT (\d+)(?::(\w+))? ===`
-
-For multi-repo prompts, the SDK looks for `NN:repo_name` first, then falls back to `NN`.
-
-### progress file
-
-Append-only log of prompt execution results. Format:
-
-```
-NUM:STATUS:TIMESTAMP[:COMMIT_INFO]
-```
-
-| Field | Values |
-|-------|--------|
-| STATUS | `completed` or `failed` |
-| TIMESTAMP | ISO8601 datetime |
-| COMMIT_INFO | SHA (`abc1234`), `no_changes`, `no_commit`, or repo map (`repo1=abc,repo2=def`) |
-
-The SDK reads the *last* entry per prompt number when determining status.
-
-## Logging
-
-Each prompt execution produces two log files in `log_dir`:
-
-1. **Text log** (`NN-name.log`) - Plain text with ANSI codes stripped
-2. **Events log** (`NN-name.events.jsonl`) - One JSON object per line
-
-The events file detail level is controlled by `events_mode`:
-- `:off` - No events file
-- `:compact` - Abbreviated field names and short type codes
-- `:full` - All event fields preserved
-
-## Validation
-
-`PromptRunner.Validator.validate_all/1` (invoked by `--validate`) checks:
-
-1. Every prompt has a matching commit message (or repo-specific variants)
-2. Every prompt markdown file exists
-3. Every `TARGET_REPOS` reference resolves to a configured repo (including `@group` expansion)
-
-Errors are collected and reported together with pass/fail indicators.
+CLI/API options win over those defaults.

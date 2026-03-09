@@ -1,43 +1,38 @@
-# Multi-Provider Setup
+# Provider Guide
 
-Prompt Runner SDK supports three LLM providers through [AgentSessionManager](https://hex.pm/packages/agent_session_manager). The `PromptRunner.Session` module starts the appropriate adapter, runs a single prompt, normalizes the event stream, and cleans up.
+Prompt Runner delegates provider execution to `agent_session_manager`.
 
-| Provider | Atom | Adapter | Description |
-|----------|------|---------|-------------|
-| Claude | `:claude` | `ClaudeAdapter` | Anthropic Claude models |
-| Codex | `:codex` | `CodexAdapter` | OpenAI Codex models |
-| Amp | `:amp` | `AmpAdapter` | Amp models |
+Supported providers:
 
-## Required Dependencies
+| Provider | Key | Optional dependency |
+|----------|-----|---------------------|
+| Claude | `:claude` | `claude_agent_sdk` |
+| Codex | `:codex` | `codex_sdk` |
+| Amp | `:amp` | `amp_sdk` |
 
-Prompt Runner SDK declares the three provider SDKs as **optional** dependencies.
-You must add the SDK(s) you intend to use to your own `mix.exs`:
+## Add Only What You Use
 
 ```elixir
-# mix.exs
-defp deps do
+def deps do
   [
-    {:prompt_runner_sdk, "~> 0.4"},
-
-    # Add the provider(s) you use:
-    {:claude_agent_sdk, "~> 0.13.0"},   # for provider: "claude"
-    {:codex_sdk, "~> 0.9.0"},           # for provider: "codex"
-    {:amp_sdk, "~> 0.3"},               # for provider: "amp"
+    {:prompt_runner_sdk, "~> 0.5.0"},
+    {:claude_agent_sdk, "~> 0.14.0"}
   ]
 end
 ```
 
-If a required SDK is missing at runtime, the runner prints an actionable error
-with the exact dependency to add.
+If a provider dependency is missing at runtime, Prompt Runner reports which
+dependency to add.
 
-> **Standalone examples:** The example scripts in `examples/` use `Mix.install`
-> with a path dependency, which pulls all transitive deps (including the optional
-> SDKs) automatically. No extra deps are needed when running examples from the
-> source tree.
+## Selecting A Provider
 
-## Choosing a Provider
+Convention/API mode:
 
-Set the `provider` key in the `llm` section:
+```elixir
+PromptRunner.run("./prompts", target: "/repo", provider: :claude, model: "haiku")
+```
+
+Legacy config:
 
 ```elixir
 %{
@@ -46,200 +41,44 @@ Set the `provider` key in the `llm` section:
 }
 ```
 
-If `provider` is omitted, it defaults to `"claude"`.
+## Codex CLI Confirmation
 
-## Per-Prompt Overrides
+Codex runs can verify that the configured model and reasoning effort were
+actually confirmed by the CLI.
 
-Switch providers for individual prompts using `prompt_overrides`:
-
-```elixir
-%{
-  llm: %{
-    provider: "claude",
-    model: "haiku",
-    prompt_overrides: %{
-      "02" => %{provider: "codex", model: "gpt-5.3-codex"},
-      "04" => %{provider: "amp"}
-    }
-  }
-}
-```
-
-Prompts 01 and 03 use Claude (the default). Prompt 02 uses Codex. Prompt 04 uses Amp.
-
-Overrides are deep-merged with the base config, so you only specify what changes.
-
-## Provider Details
-
-### Claude
-
-Claude model aliases are resolved by `PromptRunner.Session`:
-
-| Alias | Full Model ID |
-|-------|---------------|
-| `"haiku"` | `claude-haiku-4-5-20251001` |
-| `"sonnet"` | `claude-sonnet-4-5-20250929` |
-| `"opus"` | `claude-opus-4-6` |
-
-Any other string is passed through as-is (e.g., `"claude-sonnet-4-5-20250929"`).
-
-Claude supports `allowed_tools` and `permission_mode`:
-
-```elixir
-llm: %{
-  provider: "claude",
-  model: "haiku",
-  permission_mode: :accept_edits,
-  allowed_tools: ["Read", "Write", "Edit", "Bash"],
-  claude_opts: %{
-    # Additional options passed to ClaudeAdapter
-  }
-}
-```
-
-Claude uses `project_dir` as its `cwd` — the Claude CLI runs in that directory.
-
-### Codex
-
-Codex uses the `project_dir` as its working directory automatically. No extra cwd configuration needed.
+Legacy config example:
 
 ```elixir
 llm: %{
   provider: "codex",
   model: "gpt-5.3-codex",
-  codex_opts: %{
-    # Options passed to CodexAdapter
-  },
-  codex_thread_opts: %{
-    reasoning_effort: :xhigh  # Reasoning effort level
-    # Plus sandbox, approval settings, etc.
-  }
-}
-```
-
-Both `codex_opts` and `codex_thread_opts` are merged into the adapter options, with `adapter_opts` applied last.
-
-#### CLI Confirmation
-
-When `reasoning_effort` is configured, the runner can verify that the Codex CLI is actually using it. Set `cli_confirmation` to control the response:
-
-```elixir
-llm: %{
-  provider: "codex",
-  model: "gpt-5.3-codex",
-  cli_confirmation: :warn,  # :off | :warn (default) | :require
+  cli_confirmation: :warn,
   codex_thread_opts: %{reasoning_effort: :xhigh}
 }
 ```
 
-With `:require`, the run fails if the CLI does not confirm the configured model and reasoning effort. Machine-readable audit lines are written to session logs for traceability. See [Configuration Reference](configuration.md#codex-cli-confirmation) for details.
+Modes:
 
-### Amp
+- `:off`
+- `:warn`
+- `:require`
 
-Amp also uses `project_dir` as its working directory:
+## Legacy Per-Prompt Overrides
 
-```elixir
-llm: %{
-  provider: "amp",
-  adapter_opts: %{
-    # Options passed to AmpAdapter
-  }
-}
-```
-
-## Normalized Options
-
-These options work across all providers. The Session module passes them to the appropriate adapter, which maps them to provider-specific SDK fields.
-
-| Option | Claude | Codex | Amp |
-|--------|--------|-------|-----|
-| `permission_mode` | `--permission-mode` CLI flag | `full_auto` / `dangerously_bypass` | `dangerously_allow_all` |
-| `max_turns` | `--max-turns N` (nil=unlimited) | `RunConfig` max_turns (nil=SDK default 10) | ignored (CLI-enforced) |
-| `system_prompt` | `system_prompt` on Options | `base_instructions` on Thread.Options | stored in state |
-| `sdk_opts` | merged into `ClaudeAgentSDK.Options` | merged into `Codex.Thread.Options` | merged into `AmpSdk.Types.Options` |
+Per-prompt provider switching currently lives in legacy config via
+`prompt_overrides`:
 
 ```elixir
 llm: %{
   provider: "claude",
   model: "haiku",
-  permission_mode: :dangerously_skip_permissions,
-  max_turns: 10,
-  system_prompt: "You are a code assistant. Be concise.",
-  sdk_opts: [verbose: true]
+  prompt_overrides: %{
+    "02" => %{provider: "codex", model: "gpt-5.3-codex"}
+  }
 }
 ```
 
-Normalized options always take precedence over `sdk_opts`.
+## Working Directory Behavior
 
-## adapter_opts
-
-The `adapter_opts` map provides a provider-agnostic way to pass options to any adapter. It is merged *after* provider-specific options (`claude_opts`, `codex_opts`, `codex_thread_opts`):
-
-```elixir
-llm: %{
-  provider: "claude",
-  model: "sonnet",
-  adapter_opts: %{max_tokens: 16384}
-}
-```
-
-`adapter_opts` can be set at both the root config level and within the `llm` section. The `llm` value takes precedence.
-
-## Event Format
-
-`PromptRunner.Session` passes canonical AgentSessionManager events directly to the rendering pipeline. The rendering system (`AgentSessionManager.Rendering`) handles all event types uniformly regardless of which provider is in use:
-
-| Canonical Event | Description |
-|----------------|-------------|
-| `:run_started` | Session started (model, session_id) |
-| `:message_streamed` | Text content delta |
-| `:tool_call_started` | Tool invocation started (tool_name, tool_input) |
-| `:tool_call_completed` | Tool invocation finished (tool_name, tool_output) |
-| `:token_usage_updated` | Token counts (input_tokens, output_tokens) |
-| `:message_received` | Complete message received |
-| `:run_completed` | Session completed (stop_reason) |
-| `:run_failed` | Session failed (`error_code`, `error_message`, optional `provider_error`) |
-| `:run_cancelled` | Session cancelled |
-| `:error_occurred` | Error during session (`error_code`, `error_message`, optional `provider_error`) |
-
-For backward compatibility, older events may only include `error_message`.
-When available, `provider_error` follows this contract:
-
-```elixir
-%{
-  provider: :codex | :amp | :claude | :gemini | :unknown,
-  kind: atom(),
-  message: String.t(),
-  exit_code: integer() | nil,
-  stderr: String.t() | nil,
-  truncated?: boolean() | nil
-}
-```
-
-## Session Lifecycle
-
-For each prompt execution, `Session.start_stream/2`:
-
-1. Resolves the provider and builds an adapter spec (`{Module, opts}` tuple)
-2. Delegates to `AgentSessionManager.StreamSession.start/1` which:
-   - Starts an `InMemorySessionStore` automatically
-   - Starts the adapter from the spec
-   - Launches a task that calls `SessionManager.run_once/4`
-   - Returns a lazy event stream with 120s idle timeout
-3. Returns `{:ok, stream, close_fun, meta}`
-
-The returned `close_fun` terminates the task, adapter, and store. There is no session persistence across prompts — each prompt gets a fresh session.
-
-## Backward Compatibility
-
-The legacy `sdk` key still works everywhere `provider` is accepted:
-
-```elixir
-# Legacy (still supported)
-llm: %{sdk: "claude_agent_sdk"}
-
-# Current
-llm: %{provider: "claude"}
-```
-
-See the [Configuration Reference](configuration.md) for the full alias table.
+Prompt Runner computes provider `cwd` from the prompt target repo when targets
+are configured. Otherwise it falls back to the configured project directory.

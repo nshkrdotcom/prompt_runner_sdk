@@ -2,7 +2,21 @@ defmodule PromptRunner.CommitMessages do
   @moduledoc false
 
   @spec get_message(PromptRunner.Config.t(), String.t(), String.t() | nil) :: String.t() | nil
-  def get_message(config, num, repo_name \\ nil) do
+  def get_message(source, num, repo_name \\ nil)
+
+  def get_message(%PromptRunner.Plan{commit_messages: messages}, num, repo_name) do
+    get_message(messages, num, repo_name)
+  end
+
+  def get_message(messages, num, repo_name) when is_map(messages) and not is_struct(messages) do
+    if repo_name do
+      Map.get(messages, {num, repo_name}) || Map.get(messages, {num, nil})
+    else
+      Map.get(messages, {num, nil})
+    end
+  end
+
+  def get_message(config, num, repo_name) do
     content = File.read!(config.commit_messages_file)
 
     markers_to_try =
@@ -17,13 +31,21 @@ defmodule PromptRunner.CommitMessages do
 
   @spec all_markers(PromptRunner.Config.t()) :: list({String.t(), String.t() | nil})
   def all_markers(config) do
-    content = File.read!(config.commit_messages_file)
+    from_file(config.commit_messages_file)
+    |> Map.keys()
+  end
 
-    ~r/=== COMMIT (\d+)(?::(\w+))? ===/
-    |> Regex.scan(content)
-    |> Enum.map(fn
-      [_, num, repo] -> {num, repo}
-      [_, num] -> {num, nil}
+  @spec from_file(String.t()) :: %{optional({String.t(), String.t() | nil}) => String.t()}
+  def from_file(path) do
+    content = File.read!(path)
+
+    Regex.split(~r/^=== COMMIT /m, content, trim: true)
+    |> Enum.reduce(%{}, fn chunk, acc ->
+      case Regex.run(~r/^(\d+)(?::([\w-]+))? ===\n(.*)\z/s, chunk, capture: :all_but_first) do
+        [num, repo, msg] -> Map.put(acc, {num, blank_to_nil(repo)}, String.trim(msg))
+        [num, msg] -> Map.put(acc, {num, nil}, String.trim(msg))
+        _ -> acc
+      end
     end)
   end
 
@@ -51,4 +73,7 @@ defmodule PromptRunner.CommitMessages do
       _ -> text
     end
   end
+
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(value), do: value
 end

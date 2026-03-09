@@ -1,75 +1,59 @@
 # Rendering Modes
 
-PromptRunner uses AgentSessionManager's rendering pipeline to display LLM
-session output. Three modes are available:
+Prompt Runner uses `agent_session_manager` renderers and sinks for streaming
+output.
 
-## Studio Mode (Recommended)
+## Modes
 
-Studio mode produces clean, human-readable output matching the quality of
-the Claude Code and Codex CLIs.
+### `:compact`
 
-    log_mode: :studio
+Dense single-line status output for fast local iteration.
 
-### Tool Output Verbosity
+### `:verbose`
 
-Control how much tool output is shown:
+One event per line for debugging event streams.
 
-    tool_output: :summary   # One-line summaries (default)
-    tool_output: :preview   # Summary + last 3 lines
-    tool_output: :full      # Complete output
+### `:studio`
 
-### Example Output
+Readable CLI-grade output with prompt headers, tool summaries, and completion
+status.
 
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      Prompt 01: PubSub Integration
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Tool Output Levels
 
-      ● gpt-5.3-codex session started
+Studio mode supports:
 
-        I'll implement the PubSub integration. Let me read the
-        existing sink modules first.
+- `:summary`
+- `:preview`
+- `:full`
 
-      ✓ Read lib/rendering/sink.ex (72 lines)
-      ✓ Read lib/rendering/sinks/callback.ex (50 lines)
+## Failure Detail Levels
 
-        Now I'll create the test file.
+`log_meta` controls failure detail:
 
-      ✓ Wrote test/pubsub_sink_test.exs (138 lines)
-      ✓ Ran: mix test test/pubsub_sink_test.exs (exit 0, 3.2s)
+- `:none`
+- `:full`
 
-      ● Session complete (end_turn) — 847/312 tokens, 6 tools
+With `:full`, provider stderr detail is printed when available.
 
-      ✓ Prompt 01 completed
+## Event Logs
 
-## Compact Mode
+`events_mode` controls JSONL event logging when a file-backed runtime store is
+used:
 
-Dense single-line token format for log monitoring:
+- `:compact`
+- `:full`
+- `:off`
 
-    log_mode: :compact
+API runs using `MemoryStore` do not create file-backed event logs by default.
 
-    r+ gpt-5.3-codex >> Implementing... t+Read t-Read tr:{...} r-:end
+## Example
 
-## Verbose Mode
-
-Line-by-line bracketed format for debugging:
-
-    log_mode: :verbose
-
-    [run_started] model=gpt-5.3-codex
-    [tool_call_started] name=Read id=tu_001
-    [tool_call_completed] name=Read output=...
-    [run_completed] stop_reason=end_turn tokens=847/312
-
-## CLI Overrides
-
-    elixir run_prompts.exs --log-mode studio --tool-output preview
-
-## Failure Detail Toggle
-
-Use `log_meta` to control terminal error detail:
-
-    log_meta: :none   # summary only (default)
-    log_meta: :full   # include provider stderr details when available
-
-`log_meta: :full` only affects failure rendering and does not change normal
-token/tool event rendering.
+```elixir
+PromptRunner.run("./prompts",
+  target: "/repo",
+  provider: :claude,
+  model: "haiku",
+  log_mode: :studio,
+  tool_output: :summary
+)
+```

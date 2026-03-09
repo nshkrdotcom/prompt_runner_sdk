@@ -3,6 +3,9 @@ defmodule PromptRunner.Prompts do
 
   alias PromptRunner.Prompt
 
+  @spec list(PromptRunner.Plan.t()) :: [Prompt.t()]
+  def list(%PromptRunner.Plan{prompts: prompts}), do: prompts
+
   @spec list(PromptRunner.Config.t()) :: [Prompt.t()]
   def list(config) do
     config.prompts_file
@@ -14,16 +17,31 @@ defmodule PromptRunner.Prompts do
   end
 
   @spec get(PromptRunner.Config.t(), String.t()) :: Prompt.t() | nil
+  def get(%PromptRunner.Plan{prompts: prompts}, num) do
+    Enum.find(prompts, &(&1.num == num))
+  end
+
   def get(config, num) do
     list(config) |> Enum.find(&(&1.num == num))
   end
 
   @spec nums(PromptRunner.Config.t()) :: [String.t()]
+  def nums(%PromptRunner.Plan{} = plan) do
+    list(plan) |> Enum.map(& &1.num) |> Enum.sort()
+  end
+
   def nums(config) do
     list(config) |> Enum.map(& &1.num) |> Enum.sort()
   end
 
   @spec phase_nums(PromptRunner.Config.t(), integer()) :: [String.t()]
+  def phase_nums(%PromptRunner.Plan{} = plan, phase) do
+    list(plan)
+    |> Enum.filter(&(&1.phase == phase))
+    |> Enum.map(& &1.num)
+    |> Enum.sort()
+  end
+
   def phase_nums(config, phase) do
     list(config)
     |> Enum.filter(&(&1.phase == phase))

@@ -5,7 +5,7 @@
 <h1 align="center">Prompt Runner SDK</h1>
 
 <p align="center">
-  <strong>Run ordered prompt sequences with streaming output, automatic git commits, and multi-provider LLM support</strong>
+  <strong>Convention-driven prompt orchestration for Elixir, Mix, and production applications</strong>
 </p>
 
 <p align="center">
@@ -14,245 +14,187 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
 </p>
 
----
+Prompt Runner SDK executes ordered prompt workflows against local repositories.
+It supports two equally valid styles:
 
-## What It Does
+- Convention-driven execution from a directory of numbered `.prompt.md` files.
+- Explicit legacy execution from `runner_config.exs`, `prompts.txt`, and `commit-messages.txt`.
 
-Prompt Runner SDK executes a sequence of LLM prompts against your codebase. Each prompt is sent to an LLM provider, the response is streamed in real time, and the resulting changes are committed to git automatically.
+The core engine is library-first. The CLI, Mix task, standalone script, and
+future release binaries all sit on top of the same runtime.
 
-- **Streaming output** - See responses as they're generated (compact or verbose mode)
-- **Automatic git commits** - Each prompt gets its own commit with a predefined message
-- **Multi-provider support** - Claude, Codex, and Amp through [AgentSessionManager](https://hex.pm/packages/agent_session_manager)
-- **Progress tracking** - Resume interrupted runs with `--continue`
-- **Multi-repository** - Orchestrate prompts across multiple repos with per-repo commits
-- **Per-prompt overrides** - Switch providers, models, or tool permissions for individual prompts
-- **Validation** - Check config, prompt files, commit messages, and repo references before running
+## Highlights
+
+- `PromptRunner.run/2`, `plan/2`, `validate/2`, and `run_prompt/2` for embedded use.
+- `mix prompt_runner ...` for local workflows.
+- Convention mode with optional front matter and heading-based metadata.
+- Runtime store defaults that are safe by context:
+  API calls default to memory/noop commit.
+  CLI calls default to `.prompt_runner/` state plus git commits.
+- Legacy config compatibility without migration pressure.
+- Claude, Codex, and Amp support through `agent_session_manager`.
+- Studio, compact, and verbose rendering modes.
+- Observer callbacks and an optional PubSub bridge.
 
 ## Installation
 
 ```elixir
 def deps do
-  [{:prompt_runner_sdk, "~> 0.4.0"}]
+  [
+    {:prompt_runner_sdk, "~> 0.5.0"},
+
+    # Add the provider SDKs you actually use.
+    {:claude_agent_sdk, "~> 0.14.0"},
+    {:codex_sdk, "~> 0.10.1"},
+    {:amp_sdk, "~> 0.4.0"}
+  ]
 end
 ```
 
-The SDK starts an OTP supervision tree automatically (`PromptRunner.Application`) with supervisors for task execution and adapter lifecycle.
+## Quick Start
 
-## Quick Example
+### 1. Create a prompt directory
 
-```elixir
-# runner_config.exs
-%{
-  project_dir: File.cwd!(),
-  prompts_file: "prompts.txt",
-  commit_messages_file: "commit-messages.txt",
-  progress_file: ".progress",
-  log_dir: "logs",
-  model: "haiku",
-  llm: %{provider: "claude"}
-}
+`prompts/01_auth.prompt.md`
+
+```markdown
+# Reconcile auth ownership
+
+## Mission
+
+Align the auth architecture across code and docs.
+
+## Validation Commands
+
+- `mix test`
 ```
 
-```
-# prompts.txt — format: NUM|PHASE|SP|NAME|FILE
-01|1|1|Setup database|001-setup.md
-02|1|3|Add API layer|002-api.md
-```
-
-```
-# commit-messages.txt
-=== COMMIT 01 ===
-feat: setup database schema
-
-=== COMMIT 02 ===
-feat: add API layer
-```
+### 2. Run it from Mix
 
 ```bash
-mix run run_prompts.exs -c runner_config.exs --run 01
+mix prompt_runner run ./prompts --target /path/to/repo --provider claude --model haiku
 ```
 
-## CLI
+### 3. List or inspect the plan
 
 ```bash
-# Info
-mix run run_prompts.exs -c config.exs --list              # List prompts + status
-mix run run_prompts.exs -c config.exs --validate           # Validate config, files, repos
-mix run run_prompts.exs -c config.exs --dry-run 01         # Preview without executing
-
-# Run
-mix run run_prompts.exs -c config.exs --run 01             # Run one prompt
-mix run run_prompts.exs -c config.exs --run --all          # Run all prompts
-mix run run_prompts.exs -c config.exs --run --continue     # Resume from last completed
-mix run run_prompts.exs -c config.exs --run --phase 2      # Run all prompts in phase 2
-
-# Options
---no-commit                  # Skip git commits
---project-dir DIR            # Override project_dir
---repo-override name:path    # Override a repo path (repeatable)
---log-mode compact|verbose|studio  # Output mode (default: compact)
---log-meta none|full         # Error detail mode; full prints provider stderr on failures
---events-mode compact|full|off  # JSONL event logging (default: compact)
---tool-output summary|preview|full  # Studio tool verbosity (default: summary)
---cli-confirmation off|warn|require  # Codex CLI model confirmation policy
+mix prompt_runner list ./prompts --target /path/to/repo
+mix prompt_runner plan ./prompts --target /path/to/repo
 ```
 
-## Rendering Modes
+CLI runs store progress and logs in `./prompts/.prompt_runner/` by default.
 
-PromptRunner supports three render modes: `:compact`, `:verbose`, and `:studio`.
-For interactive terminal runs, use `:studio` (recommended) for readable tool
-summaries and status symbols, with configurable tool verbosity.
+## Programmatic API
 
 ```elixir
-%{
-  log_mode: :studio,
-  tool_output: :summary # :summary | :preview | :full
-}
-```
+{:ok, plan} =
+  PromptRunner.plan("./prompts",
+    target: "/path/to/repo",
+    provider: :claude,
+    model: "haiku"
+  )
 
-## Error Diagnostics
-
-PromptRunner preserves structured provider failures from AgentSessionManager
-(`provider_error`) instead of flattening everything to a generic string. Keep
-`log_meta: :none` for concise output, or set `log_meta: :full` to print
-redacted/truncated provider stderr details when available.
-
-## Codex CLI Confirmation
-
-When using Codex, PromptRunner can verify that the CLI is actually running the
-model and reasoning effort you configured:
-
-```elixir
-llm: %{
-  provider: "codex",
-  model: "gpt-5.3-codex",
-  cli_confirmation: :warn,  # :off | :warn | :require
-  codex_thread_opts: %{reasoning_effort: :xhigh}
-}
-```
-
-With `:warn` (default), mismatches print a warning. With `:require`, the run
-fails if the CLI does not confirm the configured settings. Audit lines are
-written to session logs for traceability.
-
-## Multi-Provider Support
-
-Switch between Claude, Codex, and Amp. Override per-prompt:
-
-```elixir
-%{
-  llm: %{
-    provider: "claude",
+{:ok, run} =
+  PromptRunner.run("./prompts",
+    target: "/path/to/repo",
+    provider: :claude,
     model: "haiku",
-    allowed_tools: ["Read", "Write", "Bash"],
-    permission_mode: :accept_edits,
-    prompt_overrides: %{
-      "03" => %{provider: "codex", model: "gpt-5.3-codex"},
-      "05" => %{provider: "amp"}
-    }
-  }
-}
+    on_event: fn event -> IO.inspect(event.type) end
+  )
 ```
 
-Normalized options that work across all providers:
+Single prompt execution works without any files:
 
 ```elixir
-llm: %{
-  provider: "claude",
-  permission_mode: :dangerously_skip_permissions,
-  max_turns: 10,
-  system_prompt: "Be concise.",
-  sdk_opts: [verbose: true],       # arbitrary provider-specific SDK options
-  adapter_opts: %{max_tokens: 16384}  # passed to adapter directly
-}
+{:ok, run} =
+  PromptRunner.run_prompt(
+    "Create hello.txt with a greeting.",
+    target: "/path/to/repo",
+    provider: :claude,
+    model: "haiku"
+  )
 ```
 
-## Multi-Repository Support
+API calls default to:
 
-Target prompts at specific repos. Define repo groups with `@` references:
+- `MemoryStore` for progress/state.
+- `NoopCommitter` for post-run behavior.
 
-```elixir
-%{
-  target_repos: [
-    %{name: "frontend", path: "/path/to/frontend", default: true},
-    %{name: "backend", path: "/path/to/backend"}
-  ],
-  repo_groups: %{
-    "all" => ["frontend", "backend"]
-  }
-}
+That keeps embedded production use free of surprise filesystem writes and git
+commits unless you explicitly opt into them.
+
+## CLI Surfaces
+
+### Mix task
+
+```bash
+mix prompt_runner list ./prompts --target /repo
+mix prompt_runner run ./prompts --target /repo
+mix prompt_runner validate ./prompts --target /repo
+mix prompt_runner scaffold ./prompts --output ./generated --target /repo
 ```
 
-```
-# prompts.txt — 6th field is TARGET_REPOS
-01|1|5|Setup both|001-setup.md|@all
-02|1|8|Frontend only|002-frontend.md|frontend
+### Standalone script
+
+The root `run_prompts.exs` file remains available for legacy config-driven runs:
+
+```bash
+mix run run_prompts.exs --config runner_config.exs --run 01
 ```
 
-```
-# commit-messages.txt — repo-qualified markers
-=== COMMIT 01:frontend ===
-feat(frontend): initial setup
+### Escript
 
-=== COMMIT 01:backend ===
-feat(backend): initial setup
+```bash
+mix escript.build
+./prompt_runner list ./prompts --target /repo
 ```
 
-## Architecture
+## Legacy Config Mode
 
-```
-run_prompts.exs
-       |
-  PromptRunner.CLI           -- parse args, route commands
-       |
-  PromptRunner.Config        -- load, normalize, validate config
-       |
-  PromptRunner.Runner        -- orchestrate prompt sequence
-       |
-  PromptRunner.LLMFacade     -- thin delegator (LLM behaviour)
-       |
-  PromptRunner.Session       -- AgentSessionManager bridge
-       |                        starts store + adapter per prompt,
-       |                        normalizes events to common format
-  AgentSessionManager
-   +-- ClaudeAdapter
-   +-- CodexAdapter
-   +-- AmpAdapter
+Existing v0.4 projects continue to work:
+
+```bash
+mix run run_prompts.exs --config runner_config.exs --list
+mix run run_prompts.exs --config runner_config.exs --run 01
+mix run run_prompts.exs --config runner_config.exs --run --all
 ```
 
-Supporting modules: `Prompts` (parse prompts.txt), `CommitMessages` (parse commit messages), `Progress` (track completion), `Git` (commit changes), `Validator` (pre-run checks), `RepoTargets` (expand `@group` references). Rendering is handled by `AgentSessionManager.Rendering`.
+Legacy config is still the right fit when you want:
+
+- hand-authored `prompts.txt`
+- hand-authored `commit-messages.txt`
+- per-prompt provider overrides via `prompt_overrides`
+- fixed checked-in runner files
+
+## Documentation Map
+
+- [Getting Started](guides/getting-started.md)
+- [Convention Mode](guides/convention-mode.md)
+- [CLI Guide](guides/cli.md)
+- [API Guide](guides/api.md)
+- [Configuration Reference](guides/configuration.md)
+- [Legacy Config Mode](guides/legacy-config.md)
+- [Provider Guide](guides/providers.md)
+- [Rendering Modes](guides/rendering.md)
+- [Multi-Repository Workflows](guides/multi-repo.md)
+- [Architecture](guides/architecture.md)
+- [Migration Notes](guides/migration.md)
+- [Examples](examples/README.md)
 
 ## Examples
 
-| Example | Description |
-|---------|-------------|
-| `examples/simple/` | Single repo, provider override (Claude default, Codex for prompt 02) |
-| `examples/multi_repo_dummy/` | Two repos (alpha, beta), per-repo commits, provider switching |
-
-```bash
-# Try the multi-repo example
-bash examples/multi_repo_dummy/setup.sh
-mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --list
-mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --run 01
-```
-
-## Guides
-
-- **[Getting Started](guides/getting-started.md)** - Installation, prerequisites, first run
-- **[Configuration Reference](guides/configuration.md)** - All config keys and file formats
-- **[Rendering Modes](guides/rendering.md)** - Compact, verbose, and studio output modes
-- **[Multi-Provider Setup](guides/providers.md)** - Claude, Codex, Amp configuration
-- **[Multi-Repository Workflows](guides/multi-repo.md)** - Cross-repo orchestration and repo groups
+- `examples/simple/` shows the explicit legacy single-repo workflow.
+- `examples/multi_repo_dummy/` shows explicit multi-repo commits.
 
 ## Development
 
 ```bash
-mix test           # Run tests
-mix credo --strict # Lint
-mix dialyzer       # Type check
-mix docs           # Generate docs
+mix test
+mix format
+mix credo --strict
+mix docs
 ```
 
 ## License
 
-MIT - see [LICENSE](LICENSE)
+MIT
