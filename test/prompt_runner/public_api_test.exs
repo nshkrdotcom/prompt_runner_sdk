@@ -120,9 +120,19 @@ defmodule PromptRunner.PublicAPITest do
     assert elem(plan.committer, 0) == GitCommitter
   end
 
-  test "run_prompt/2 executes a raw prompt with memory-backed defaults and observer callbacks" do
+  test "run_prompt/2 canonicalizes symlinked targets before invoking the LLM" do
     repo = repo_dir("prompt_runner_public_api_run_repo")
+
+    repo_alias =
+      Path.join(
+        System.tmp_dir!(),
+        "prompt_runner_public_api_run_repo_alias_#{System.unique_integer([:positive])}"
+      )
+
     test_pid = self()
+
+    assert :ok = File.ln_s(repo, repo_alias)
+    on_exit(fn -> File.rm_rf!(repo_alias) end)
 
     Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
     on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
@@ -148,7 +158,7 @@ defmodule PromptRunner.PublicAPITest do
                  {:run_result,
                   PromptRunner.run_prompt(
                     "Create hello.txt with a greeting.",
-                    target: repo,
+                    target: repo_alias,
                     provider: :claude,
                     model: "haiku",
                     on_event: fn event -> send(test_pid, {:observer_event, event.type}) end

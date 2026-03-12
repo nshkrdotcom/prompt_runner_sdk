@@ -7,6 +7,7 @@ defmodule PromptRunner.Plan do
   alias PromptRunner.Committer.NoopCommitter
   alias PromptRunner.Config
   alias PromptRunner.LLMFacade
+  alias PromptRunner.Paths
   alias PromptRunner.Prompt
   alias PromptRunner.RunSpec
   alias PromptRunner.RuntimeStore.FileStore
@@ -74,7 +75,7 @@ defmodule PromptRunner.Plan do
       commit_messages: result.commit_messages,
       source: run_spec.source,
       source_input: run_spec.input,
-      source_root: result.source_root,
+      source_root: Paths.resolve(result.source_root),
       interface: run_spec.interface,
       input_type: run_spec.input_type,
       state_dir: runtime_state_dir(run_spec, result),
@@ -115,8 +116,8 @@ defmodule PromptRunner.Plan do
   end
 
   defp resolved_config(opts, result, llm_sdk, model) do
-    target_repos = resolve_target_repos(opts, result)
-    config_dir = result.source_root || File.cwd!()
+    config_dir = Paths.resolve(result.source_root || File.cwd!())
+    target_repos = resolve_target_repos(opts, result, config_dir)
     project_dir = default_project_dir(target_repos, result, config_dir)
     {log_mode, log_meta, events_mode, tool_output} = normalize_display(opts)
 
@@ -154,7 +155,7 @@ defmodule PromptRunner.Plan do
     case module do
       FileStore ->
         state_dir =
-          run_spec.opts[:state_dir] ||
+          Paths.resolve(run_spec.opts[:state_dir], config.config_dir) ||
             Path.join(config.config_dir || File.cwd!(), ".prompt_runner")
 
         runtime_config = %{
@@ -196,7 +197,7 @@ defmodule PromptRunner.Plan do
 
   defp runtime_state_dir(%RunSpec{interface: :cli}, %Result{source_root: root})
        when is_binary(root),
-       do: Path.join(root, ".prompt_runner")
+       do: root |> Paths.resolve() |> Path.join(".prompt_runner")
 
   defp runtime_state_dir(%RunSpec{interface: :legacy}, %Result{legacy_config: %Config{} = config}) do
     Path.dirname(config.progress_file || config.config_dir)
@@ -204,20 +205,25 @@ defmodule PromptRunner.Plan do
 
   defp runtime_state_dir(_, _), do: nil
 
-  defp resolve_target_repos(opts, %Result{target_repos: target_repos})
+  defp resolve_target_repos(opts, %Result{target_repos: target_repos}, config_dir)
        when is_list(target_repos) and target_repos != [] do
-    explicit_targets = normalize_target_opts(opts)
-    if explicit_targets == [], do: target_repos, else: explicit_targets
+    explicit_targets = normalize_target_opts(opts, config_dir)
+
+    if explicit_targets == [] do
+      normalize_target_repos(target_repos, config_dir)
+    else
+      explicit_targets
+    end
   end
 
-  defp resolve_target_repos(opts, _result) do
-    case normalize_target_opts(opts) do
+  defp resolve_target_repos(opts, _result, config_dir) do
+    case normalize_target_opts(opts, config_dir) do
       [] -> nil
       repos -> repos
     end
   end
 
-  defp normalize_target_opts(opts) do
+  defp normalize_target_opts(opts, config_dir) do
     opts
     |> collect_targets()
     |> Enum.with_index()
@@ -226,13 +232,23 @@ defmodule PromptRunner.Plan do
         [single] ->
           %{
             name: if(index == 0, do: "default", else: "target_#{index + 1}"),
-            path: single,
+            path: Paths.resolve(single, config_dir),
             default: index == 0
           }
 
         [name, path] ->
-          %{name: name, path: path, default: index == 0}
+          %{name: name, path: Paths.resolve(path, config_dir), default: index == 0}
       end
+    end)
+  end
+
+  defp normalize_target_repos(repos, config_dir) do
+    Enum.map(repos, fn repo ->
+      %{
+        name: repo[:name] || repo["name"],
+        path: Paths.resolve(repo[:path] || repo["path"], config_dir),
+        default: repo[:default] || repo["default"] || false
+      }
     end)
   end
 
@@ -268,7 +284,7 @@ defmodule PromptRunner.Plan do
   end
 
   defp default_project_dir(_repos, %Result{project_dir: project_dir}, fallback),
-    do: project_dir || fallback
+    do: Paths.resolve(project_dir, fallback) || fallback
 
   defp normalize_display(opts) do
     {

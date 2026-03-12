@@ -514,4 +514,120 @@ defmodule PromptRunner.ConfigTest do
              ]
     end
   end
+
+  test "load/1 canonicalizes symlinked config, repo, and additional directory paths" do
+    workspace =
+      Path.join(System.tmp_dir!(), "prompt_runner_symlink_#{System.unique_integer([:positive])}")
+
+    docs_real = Path.join(workspace, "docs_real")
+    docs_alias = Path.join(workspace, "docs_alias")
+    repo_real = Path.join(workspace, "repo_real")
+    repo_alias = Path.join(workspace, "repo_alias")
+    repo_other_real = Path.join(workspace, "repo_other_real")
+    repo_other_alias = Path.join(workspace, "repo_other_alias")
+    extra_real = Path.join(workspace, "extra_real")
+    extra_alias = Path.join(workspace, "extra_alias")
+
+    File.mkdir_p!(docs_real)
+    File.mkdir_p!(repo_real)
+    File.mkdir_p!(repo_other_real)
+    File.mkdir_p!(extra_real)
+
+    assert :ok = File.ln_s(docs_real, docs_alias)
+    assert :ok = File.ln_s(repo_real, repo_alias)
+    assert :ok = File.ln_s(repo_other_real, repo_other_alias)
+    assert :ok = File.ln_s(extra_real, extra_alias)
+
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    File.write!(Path.join(docs_real, "prompts.txt"), "01|1|1|Alpha|001.md|default,other\n")
+    File.write!(Path.join(docs_real, "commit-messages.txt"), "=== COMMIT 01 ===\nmsg\n")
+    File.write!(Path.join(docs_real, "001.md"), "alpha\n")
+
+    config_path = Path.join(docs_real, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "../repo_alias",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.4",
+        target_repos: [
+          %{name: "default", path: "../repo_alias", default: true},
+          %{name: "other", path: "../repo_other_alias", default: false}
+        ],
+        llm: %{
+          provider: "codex",
+          codex_thread_opts: %{additional_directories: ["../extra_alias"]}
+        }
+      }
+      """
+    )
+
+    assert {:ok, config} = Config.load(Path.join(docs_alias, "runner_config.exs"))
+
+    assert config.config_dir == docs_real
+    assert config.project_dir == repo_real
+
+    assert config.target_repos == [
+             %{name: "default", path: repo_real, default: true},
+             %{name: "other", path: repo_other_real, default: false}
+           ]
+
+    assert config.codex_thread_opts.additional_directories == [extra_real]
+
+    prompt = %Prompt{
+      num: "01",
+      phase: 1,
+      sp: 1,
+      name: "Alpha",
+      file: "001.md",
+      target_repos: ["default", "other"]
+    }
+
+    llm = Config.llm_for_prompt(config, prompt)
+
+    assert llm.cwd == repo_real
+    assert llm.codex_thread_opts.additional_directories == [extra_real, repo_other_real]
+  end
+
+  test "with_overrides/2 canonicalizes symlinked project_dir and repo overrides" do
+    workspace =
+      Path.join(System.tmp_dir!(), "prompt_runner_override_#{System.unique_integer([:positive])}")
+
+    config_dir = Path.join(workspace, "config")
+    project_real = Path.join(workspace, "project_real")
+    project_alias = Path.join(workspace, "project_alias")
+    repo_real = Path.join(workspace, "repo_real")
+    repo_alias = Path.join(workspace, "repo_alias")
+
+    File.mkdir_p!(config_dir)
+    File.mkdir_p!(project_real)
+    File.mkdir_p!(repo_real)
+
+    assert :ok = File.ln_s(project_real, project_alias)
+    assert :ok = File.ln_s(repo_real, repo_alias)
+
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    config = %Config{
+      config_dir: config_dir,
+      project_dir: project_real,
+      target_repos: [%{name: "default", path: project_real, default: true}]
+    }
+
+    updated =
+      Config.with_overrides(
+        config,
+        project_dir: project_alias,
+        repo_override: ["default:#{repo_alias}"]
+      )
+
+    assert updated.project_dir == project_real
+    assert updated.target_repos == [%{name: "default", path: repo_real, default: true}]
+  end
 end

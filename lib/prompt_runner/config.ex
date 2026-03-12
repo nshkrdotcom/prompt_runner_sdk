@@ -6,6 +6,7 @@ defmodule PromptRunner.Config do
   alias AgentSessionManager.PermissionMode
   alias PromptRunner.LLM
   alias PromptRunner.LLMFacade
+  alias PromptRunner.Paths
   alias PromptRunner.RepoTargets
   alias PromptRunner.UI
 
@@ -100,7 +101,12 @@ defmodule PromptRunner.Config do
     cwd = List.first(prompt_repo_paths) || config.project_dir
 
     codex_thread_opts =
-      enrich_codex_thread_opts(config.codex_thread_opts || %{}, prompt_repo_paths, cwd)
+      enrich_codex_thread_opts(
+        config.codex_thread_opts || %{},
+        prompt_repo_paths,
+        cwd,
+        config.config_dir
+      )
 
     base = %{
       sdk: config.llm_sdk,
@@ -122,7 +128,7 @@ defmodule PromptRunner.Config do
 
     merged =
       Map.update(merged, :codex_thread_opts, %{}, fn opts ->
-        enrich_codex_thread_opts(opts, prompt_repo_paths, merged[:cwd])
+        enrich_codex_thread_opts(opts, prompt_repo_paths, merged[:cwd], config.config_dir)
       end)
 
     sdk = resolve_merged_sdk(merged, base.sdk)
@@ -193,26 +199,37 @@ defmodule PromptRunner.Config do
     if repo, do: Map.get(repo, field)
   end
 
-  defp enrich_codex_thread_opts(opts, prompt_repo_paths, cwd) when is_map(opts) do
+  defp enrich_codex_thread_opts(opts, prompt_repo_paths, cwd, config_dir) when is_map(opts) do
     additional_directories =
       prompt_repo_paths
       |> Enum.reject(&(&1 == cwd))
 
     merged_dirs =
       opts
-      |> Map.get(:additional_directories, [])
-      |> normalize_additional_dirs()
+      |> codex_additional_directories()
+      |> normalize_additional_dirs(config_dir)
       |> Kernel.++(additional_directories)
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
 
-    Map.put(opts, :additional_directories, merged_dirs)
+    opts
+    |> Map.delete("additional_directories")
+    |> Map.put(:additional_directories, merged_dirs)
   end
 
-  defp enrich_codex_thread_opts(opts, _prompt_repo_paths, _cwd), do: opts
+  defp enrich_codex_thread_opts(opts, _prompt_repo_paths, _cwd, _config_dir), do: opts
 
-  defp normalize_additional_dirs(dirs) when is_list(dirs), do: dirs
-  defp normalize_additional_dirs(_), do: []
+  defp codex_additional_directories(opts) when is_map(opts) do
+    Map.get(opts, :additional_directories, Map.get(opts, "additional_directories", []))
+  end
+
+  defp normalize_additional_dirs(dirs, config_dir) when is_list(dirs) do
+    dirs
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&Paths.resolve(&1, config_dir))
+  end
+
+  defp normalize_additional_dirs(_, _config_dir), do: []
 
   defp normalize_llm_sdk(llm_section, config) do
     case LLMFacade.normalize_provider(
@@ -245,7 +262,8 @@ defmodule PromptRunner.Config do
 
     prompt_overrides =
       normalize_prompt_overrides(
-        coalesce([llm_section[:prompt_overrides], config[:prompt_overrides]], %{})
+        coalesce([llm_section[:prompt_overrides], config[:prompt_overrides]], %{}),
+        config_dir
       )
 
     %__MODULE__{
@@ -268,7 +286,8 @@ defmodule PromptRunner.Config do
       claude_opts: coalesce([llm_section[:claude_opts], config[:claude_opts]], %{}),
       codex_opts: coalesce([llm_section[:codex_opts], config[:codex_opts]], %{}),
       codex_thread_opts:
-        coalesce([llm_section[:codex_thread_opts], config[:codex_thread_opts]], %{}),
+        coalesce([llm_section[:codex_thread_opts], config[:codex_thread_opts]], %{})
+        |> normalize_codex_thread_opts(config_dir),
       cli_confirmation:
         coalesce([llm_section[:cli_confirmation], config[:cli_confirmation]], :warn)
         |> normalize_cli_confirmation(),
@@ -289,7 +308,8 @@ defmodule PromptRunner.Config do
 
   defp read_config_file(config_path) do
     if File.exists?(config_path) do
-      config_dir = Path.dirname(Path.expand(config_path))
+      config_path = Paths.resolve(config_path)
+      config_dir = Path.dirname(config_path)
       {config, _} = Code.eval_file(config_path)
       {:ok, {config, config_dir}}
     else
@@ -314,12 +334,21 @@ defmodule PromptRunner.Config do
   defp normalize_path(nil, _config_dir), do: nil
 
   defp normalize_path(path, config_dir) when is_binary(path) do
-    if Path.type(path) == :absolute do
-      path
-    else
-      Path.join(config_dir, path)
-    end
+    Paths.resolve(path, config_dir)
   end
+
+  defp normalize_codex_thread_opts(opts, config_dir) when is_map(opts) do
+    opts
+    |> Map.delete("additional_directories")
+    |> Map.put(
+      :additional_directories,
+      opts
+      |> codex_additional_directories()
+      |> normalize_additional_dirs(config_dir)
+    )
+  end
+
+  defp normalize_codex_thread_opts(_opts, _config_dir), do: %{}
 
   defp normalize_log_mode(nil), do: {:ok, :compact}
   defp normalize_log_mode(mode) when is_atom(mode), do: normalize_log_mode(Atom.to_string(mode))
@@ -417,19 +446,23 @@ defmodule PromptRunner.Config do
 
   defp normalize_cli_confirmation(_), do: :warn
 
-  defp normalize_prompt_overrides(nil), do: %{}
+  defp normalize_prompt_overrides(nil, _config_dir), do: %{}
 
-  defp normalize_prompt_overrides(overrides) when is_list(overrides) do
+  defp normalize_prompt_overrides(overrides, config_dir) when is_list(overrides) do
     overrides
-    |> Enum.into(%{}, fn {k, v} -> {normalize_prompt_num(k), normalize_prompt_override(v)} end)
+    |> Enum.into(%{}, fn {k, v} ->
+      {normalize_prompt_num(k), normalize_prompt_override(v, config_dir)}
+    end)
   end
 
-  defp normalize_prompt_overrides(overrides) when is_map(overrides) do
+  defp normalize_prompt_overrides(overrides, config_dir) when is_map(overrides) do
     overrides
-    |> Enum.into(%{}, fn {k, v} -> {normalize_prompt_num(k), normalize_prompt_override(v)} end)
+    |> Enum.into(%{}, fn {k, v} ->
+      {normalize_prompt_num(k), normalize_prompt_override(v, config_dir)}
+    end)
   end
 
-  defp normalize_prompt_overrides(_), do: %{}
+  defp normalize_prompt_overrides(_overrides, _config_dir), do: %{}
 
   defp normalize_prompt_num(num) when is_integer(num) do
     num |> Integer.to_string() |> String.pad_leading(2, "0")
@@ -447,12 +480,12 @@ defmodule PromptRunner.Config do
 
   defp normalize_prompt_num(other), do: inspect(other)
 
-  defp normalize_prompt_override(nil), do: %{}
+  defp normalize_prompt_override(nil, _config_dir), do: %{}
 
-  defp normalize_prompt_override(kw) when is_list(kw),
-    do: kw |> Enum.into(%{}) |> normalize_prompt_override()
+  defp normalize_prompt_override(kw, config_dir) when is_list(kw),
+    do: kw |> Enum.into(%{}) |> normalize_prompt_override(config_dir)
 
-  defp normalize_prompt_override(map) when is_map(map) do
+  defp normalize_prompt_override(map, config_dir) when is_map(map) do
     map =
       Enum.reduce(map, %{}, fn {k, v}, acc ->
         key =
@@ -469,6 +502,7 @@ defmodule PromptRunner.Config do
       Map.update(map, :timeout, nil, fn timeout ->
         normalize_timeout_value(timeout)
       end)
+      |> Map.update(:codex_thread_opts, %{}, &normalize_codex_thread_opts(&1, config_dir))
 
     sdk =
       case LLMFacade.normalize_provider(map[:provider] || map[:sdk] || map[:llm_sdk]) do
@@ -486,7 +520,7 @@ defmodule PromptRunner.Config do
     end
   end
 
-  defp normalize_prompt_override(_), do: %{}
+  defp normalize_prompt_override(_other, _config_dir), do: %{}
 
   defp normalize_permission_mode(nil), do: nil
   defp normalize_permission_mode(:bypass_permissions), do: :full_auto
@@ -510,7 +544,7 @@ defmodule PromptRunner.Config do
   defp maybe_override_project_dir(config, nil), do: config
 
   defp maybe_override_project_dir(config, project_dir) do
-    %{config | project_dir: project_dir}
+    %{config | project_dir: Paths.resolve(project_dir, config.config_dir)}
   end
 
   defp apply_repo_overrides(config, nil), do: config
@@ -519,16 +553,16 @@ defmodule PromptRunner.Config do
   defp apply_repo_overrides(config, overrides) when is_list(overrides) do
     updated_repos =
       Enum.reduce(overrides, config.target_repos || [], fn override, repos ->
-        apply_repo_override(override, repos)
+        apply_repo_override(override, repos, config.config_dir)
       end)
 
     %{config | target_repos: updated_repos}
   end
 
-  defp apply_repo_override(override, repos) do
+  defp apply_repo_override(override, repos, config_dir) do
     case String.split(override, ":", parts: 2) do
       [name, path] ->
-        upsert_repo_override(repos, name, path)
+        upsert_repo_override(repos, name, path, config_dir)
 
       _ ->
         IO.puts(UI.yellow("WARNING: Invalid repo override format: #{override}"))
@@ -537,7 +571,9 @@ defmodule PromptRunner.Config do
     end
   end
 
-  defp upsert_repo_override(repos, name, path) do
+  defp upsert_repo_override(repos, name, path, config_dir) do
+    path = Paths.resolve(path, config_dir)
+
     if Enum.any?(repos, &(&1.name == name)) do
       Enum.map(repos, &update_repo_path(&1, name, path))
     else
