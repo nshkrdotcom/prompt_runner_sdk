@@ -4,6 +4,13 @@ defmodule PromptRunner.ConfigTest do
   alias PromptRunner.Config
   alias PromptRunner.Prompt
 
+  defp init_git_repo!(path) do
+    {_, 0} = System.cmd("git", ["init", "-q"], cd: path)
+    {_, 0} = System.cmd("git", ["config", "user.name", "Test"], cd: path)
+    {_, 0} = System.cmd("git", ["config", "user.email", "test@example.com"], cd: path)
+    :ok
+  end
+
   test "loads config and normalizes prompt overrides" do
     tmp_dir =
       Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
@@ -406,6 +413,95 @@ defmodule PromptRunner.ConfigTest do
     assert Config.llm_for_prompt(config, prompt_02).permission_mode == :full_auto
   end
 
+  test "rejects target repos whose paths do not exist" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    prompts_path = Path.join(tmp_dir, "prompts.txt")
+    commits_path = Path.join(tmp_dir, "commit-messages.txt")
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+    repo_dir = Path.join(tmp_dir, "repo")
+    missing_repo_dir = Path.join(tmp_dir, "missing_repo")
+
+    File.mkdir_p!(repo_dir)
+    init_git_repo!(repo_dir)
+
+    File.write!(prompts_path, "01|1|1|Alpha|001.md|repo\n")
+    File.write!(commits_path, "=== COMMIT 01:repo ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        target_repos: [
+          %{name: "repo", path: "#{repo_dir}", default: true},
+          %{name: "missing_repo", path: "#{missing_repo_dir}"}
+        ],
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "haiku",
+        llm: %{provider: "claude"}
+      }
+      """
+    )
+
+    assert {:error, errors} = Config.load(config_path)
+
+    assert {{:target_repo, "missing_repo"}, {:path_not_found, missing_repo_dir}} in errors
+  end
+
+  test "rejects target repos that are not git repositories" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    prompts_path = Path.join(tmp_dir, "prompts.txt")
+    commits_path = Path.join(tmp_dir, "commit-messages.txt")
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+    repo_dir = Path.join(tmp_dir, "repo")
+    non_git_repo_dir = Path.join(tmp_dir, "non_git_repo")
+
+    File.mkdir_p!(repo_dir)
+    File.mkdir_p!(non_git_repo_dir)
+    init_git_repo!(repo_dir)
+
+    File.write!(prompts_path, "01|1|1|Alpha|001.md|repo\n")
+    File.write!(commits_path, "=== COMMIT 01:repo ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        target_repos: [
+          %{name: "repo", path: "#{repo_dir}", default: true},
+          %{name: "non_git_repo", path: "#{non_git_repo_dir}"}
+        ],
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "haiku",
+        llm: %{provider: "claude"}
+      }
+      """
+    )
+
+    assert {:error, errors} = Config.load(config_path)
+
+    assert {{:target_repo, "non_git_repo"}, {:not_git_repo, non_git_repo_dir}} in errors
+  end
+
   describe "llm_for_prompt/2 repo-aware cwd" do
     test "uses the prompt target repo as cwd" do
       config = %Config{
@@ -532,6 +628,8 @@ defmodule PromptRunner.ConfigTest do
     File.mkdir_p!(repo_real)
     File.mkdir_p!(repo_other_real)
     File.mkdir_p!(extra_real)
+    init_git_repo!(repo_real)
+    init_git_repo!(repo_other_real)
 
     assert :ok = File.ln_s(docs_real, docs_alias)
     assert :ok = File.ln_s(repo_real, repo_alias)

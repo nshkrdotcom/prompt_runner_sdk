@@ -200,6 +200,10 @@ defmodule PromptRunner.CLI do
   defp handle_runner_result({:error, reason}), do: handle_error(reason)
 
   @spec handle_error(term()) :: no_return()
+  defp handle_error(errors) when is_list(errors) do
+    handle_config_error({:error, errors})
+  end
+
   defp handle_error(reason) do
     IO.puts(UI.red("ERROR: #{inspect(reason)}"))
     System.halt(1)
@@ -219,8 +223,8 @@ defmodule PromptRunner.CLI do
   defp handle_config_error({:error, errors}) when is_list(errors) do
     IO.puts(UI.red("ERROR: Config validation failed"))
 
-    Enum.each(Enum.reverse(errors), fn {key, detail} ->
-      IO.puts("  - #{key}: #{inspect(detail)}")
+    Enum.each(Enum.reverse(errors), fn error ->
+      IO.puts("  - #{format_validation_error(error)}")
     end)
 
     System.halt(1)
@@ -262,4 +266,36 @@ defmodule PromptRunner.CLI do
     IO.puts("  mix run run_prompts.exs --config runner_config.exs --run 01")
     IO.puts("")
   end
+
+  defp format_validation_error({key, :missing_value}) do
+    "#{format_validation_key(key)} is required"
+  end
+
+  defp format_validation_error({key, {:path_not_found, path}}) do
+    "#{format_validation_key(key)} path not found: #{path}"
+  end
+
+  defp format_validation_error({key, {:not_a_directory, path}}) do
+    "#{format_validation_key(key)} is not a directory: #{path}"
+  end
+
+  defp format_validation_error({key, {:not_git_repo, path}}) do
+    "#{format_validation_key(key)} is not a git repository: #{path}"
+  end
+
+  defp format_validation_error({key, {:git_unavailable, path}}) do
+    "#{format_validation_key(key)} could not be verified because git is not available: #{path}"
+  end
+
+  defp format_validation_error({key, {:invalid_timeout, timeout}}) do
+    "#{format_validation_key(key)} is invalid: #{inspect(timeout)}"
+  end
+
+  defp format_validation_error({key, detail}) do
+    "#{format_validation_key(key)}: #{inspect(detail)}"
+  end
+
+  defp format_validation_key({:target_repo, name}), do: "target repo #{name}"
+  defp format_validation_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp format_validation_key(key), do: inspect(key)
 end

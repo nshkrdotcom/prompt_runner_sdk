@@ -6,6 +6,13 @@ defmodule PromptRunner.ValidatorTest do
   alias PromptRunner.Config
   alias PromptRunner.Validator
 
+  defp init_git_repo!(path) do
+    {_, 0} = System.cmd("git", ["init", "-q"], cd: path)
+    {_, 0} = System.cmd("git", ["config", "user.name", "Test"], cd: path)
+    {_, 0} = System.cmd("git", ["config", "user.email", "test@example.com"], cd: path)
+    :ok
+  end
+
   defp write_config!(tmp_dir, config) do
     config_path = Path.join(tmp_dir, "runner_config.exs")
     File.write!(config_path, config)
@@ -26,6 +33,8 @@ defmodule PromptRunner.ValidatorTest do
     flowstone_dir = Path.join(tmp_dir, "flowstone")
     File.mkdir_p!(command_dir)
     File.mkdir_p!(flowstone_dir)
+    init_git_repo!(command_dir)
+    init_git_repo!(flowstone_dir)
 
     File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
     File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md|@pipeline\n")
@@ -83,6 +92,7 @@ defmodule PromptRunner.ValidatorTest do
 
     command_dir = Path.join(tmp_dir, "command")
     File.mkdir_p!(command_dir)
+    init_git_repo!(command_dir)
 
     File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
     File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
@@ -133,6 +143,7 @@ defmodule PromptRunner.ValidatorTest do
 
     command_dir = Path.join(tmp_dir, "command")
     File.mkdir_p!(command_dir)
+    init_git_repo!(command_dir)
 
     File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
     File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md|@missing\n")

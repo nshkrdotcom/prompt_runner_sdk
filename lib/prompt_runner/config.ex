@@ -633,6 +633,7 @@ defmodule PromptRunner.Config do
       |> maybe_missing_path(config.project_dir, :project_dir)
       |> maybe_missing_path(config.prompts_file, :prompts_file)
       |> maybe_missing_path(config.commit_messages_file, :commit_messages_file)
+      |> maybe_invalid_target_repos(config.target_repos)
 
     if errors == [] do
       :ok
@@ -654,6 +655,61 @@ defmodule PromptRunner.Config do
       errors
     else
       [{key, {:path_not_found, path}} | errors]
+    end
+  end
+
+  defp maybe_invalid_target_repos(errors, nil), do: errors
+
+  defp maybe_invalid_target_repos(errors, target_repos) when is_list(target_repos) do
+    Enum.reduce(target_repos, errors, fn repo, acc ->
+      validate_target_repo(acc, repo)
+    end)
+  end
+
+  defp maybe_invalid_target_repos(errors, _target_repos), do: errors
+
+  defp validate_target_repo(errors, %{name: name, path: path}) do
+    key = {:target_repo, name || "unnamed"}
+
+    cond do
+      path in [nil, ""] ->
+        [{key, :missing_value} | errors]
+
+      not File.exists?(path) ->
+        [{key, {:path_not_found, path}} | errors]
+
+      not File.dir?(path) ->
+        [{key, {:not_a_directory, path}} | errors]
+
+      true ->
+        case git_repo_status(path) do
+          :ok ->
+            errors
+
+          {:error, reason} ->
+            [{key, {reason, path}} | errors]
+        end
+    end
+  end
+
+  defp validate_target_repo(errors, _repo),
+    do: [{{:target_repo, "unnamed"}, :missing_value} | errors]
+
+  defp git_repo_status(path) do
+    case System.find_executable("git") do
+      nil ->
+        {:error, :git_unavailable}
+
+      git ->
+        case System.cmd(git, ["-C", path, "rev-parse", "--is-inside-work-tree"],
+               stderr_to_stdout: true
+             ) do
+          {output, 0} ->
+            if String.trim(output) == "true", do: :ok, else: {:error, :not_git_repo}
+
+          {_output, _exit_code} ->
+            {:error, :not_git_repo}
+        end
     end
   end
 
