@@ -63,6 +63,54 @@ Modes:
 - `:warn`
 - `:require`
 
+## Shared Versus Codex-Specific Knobs
+
+Prompt Runner exposes two different kinds of execution settings:
+
+- shared runner/provider settings
+- Codex-only thread settings
+
+Shared settings:
+
+- `allowed_tools`
+- `permission_mode`
+
+Codex-only settings:
+
+- `codex_thread_opts`
+- `cli_confirmation`
+
+That distinction matters:
+
+- `permission_mode` is the shared knob that Prompt Runner passes into the
+  selected provider adapter
+- `codex_thread_opts` is a direct pass-through map for real `codex_sdk` thread
+  options such as `sandbox` and `ask_for_approval`
+- `cli_confirmation` is not a Codex runtime permission setting; it is a Prompt
+  Runner audit policy for Codex CLI confirmation events
+
+Example:
+
+```elixir
+llm: %{
+  provider: "codex",
+  permission_mode: :accept_edits,
+  cli_confirmation: :require,
+  codex_thread_opts: %{
+    sandbox: :workspace_write,
+    ask_for_approval: :never,
+    reasoning_effort: :xhigh
+  }
+}
+```
+
+In that configuration:
+
+- `permission_mode` is the shared runner-level approval/edit posture
+- `sandbox` and `ask_for_approval` are Codex thread options only
+- `cli_confirmation` controls whether Prompt Runner warns or fails when Codex
+  CLI confirmation metadata does not match expectations
+
 ## Legacy Per-Prompt Overrides
 
 Per-prompt provider switching currently lives in legacy config via

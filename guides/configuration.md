@@ -88,6 +88,32 @@ See [Convention Mode](convention-mode.md) for examples.
 | `timeout` | Timeout override |
 | `prompt_overrides` | Per-prompt LLM overrides |
 
+### Important Layering Notes
+
+These fields do not all mean the same thing or apply at the same layer.
+
+- `allowed_tools`
+  - Prompt Runner level tool allowlist passed through to the selected adapter.
+- `permission_mode`
+  - Prompt Runner's shared provider-facing permission knob.
+  - This is normalized here and then interpreted by the provider adapter or
+    downstream runtime.
+- `codex_thread_opts`
+  - Codex-only thread/session options passed through to `codex_sdk`.
+  - This is where Codex-specific knobs such as `sandbox`,
+    `ask_for_approval`, and `reasoning_effort` belong.
+- `cli_confirmation`
+  - Codex-only runner audit policy.
+  - This checks whether the configured Codex model and reasoning settings were
+    actually confirmed by the CLI.
+
+Practical rule:
+
+- use `permission_mode` when you want one runner-level approval/edit posture
+  that can map onto multiple providers
+- use `codex_thread_opts` when you need a real Codex thread option that does
+  not exist as a shared provider knob
+
 ### Multi-Repo Legacy Fields
 
 | Field | Meaning |
