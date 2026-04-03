@@ -198,3 +198,17 @@ mix docs
 ## License
 
 MIT
+## Resume-First Recovery
+
+`prompt_runner_sdk` now treats provider-native session continuation as the first recovery path for
+recoverable transport/protocol failures.
+
+- prompt runs cache provider-native recovery metadata as the stream progresses
+- recoverable protocol/transport failures trigger an exact-session resume attempt with `Continue`
+  before any prompt replay is considered
+- the runner preserves the original/root provider error and attaches any failed recovery attempt as
+  secondary context instead of overwriting it with generic transport noise
+- prompt-numbering `--continue` remains distinct from provider session continuation
+
+This repo now depends on the current `agent_session_manager` session runtime rather than the older
+adapter seam so those recovery handles can flow end to end.

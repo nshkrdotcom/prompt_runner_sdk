@@ -43,3 +43,9 @@ After each run, you should see:
 ```bash
 bash examples/multi_repo_dummy/cleanup.sh
 ```
+## Recovery Notes
+
+This multi-repo pack is also the manual proof lane for provider-session recovery across a prompt
+that spans more than one repo. The hardened runner now keeps provider-native recovery metadata in
+the same execution path instead of replaying the full prompt blindly after a recoverable runtime
+failure.

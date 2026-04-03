@@ -35,3 +35,11 @@ elixir run_prompts.exs --run 02
 ```bash
 bash examples/simple/cleanup.sh
 ```
+## Recovery Notes
+
+The simple example pack is the fastest way to verify that Prompt Runner still distinguishes:
+
+- prompt-list continuation (`--continue` through the prompt plan)
+- provider-session continuation (resume the same underlying provider session with `Continue`)
+
+Those are intentionally separate flows in the hardened runner.

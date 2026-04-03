@@ -389,7 +389,7 @@ defmodule PromptRunner.ConfigTest do
     )
 
     assert {:ok, config} = Config.load(config_path)
-    assert config.permission_mode == :full_auto
+    assert config.permission_mode == :bypass
 
     prompt_01 = %Prompt{
       num: "01",
@@ -409,8 +409,8 @@ defmodule PromptRunner.ConfigTest do
       target_repos: nil
     }
 
-    assert Config.llm_for_prompt(config, prompt_01).permission_mode == :full_auto
-    assert Config.llm_for_prompt(config, prompt_02).permission_mode == :full_auto
+    assert Config.llm_for_prompt(config, prompt_01).permission_mode == :bypass
+    assert Config.llm_for_prompt(config, prompt_02).permission_mode == :bypass
   end
 
   test "rejects target repos whose paths do not exist" do

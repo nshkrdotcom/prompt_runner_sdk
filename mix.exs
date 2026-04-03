@@ -35,19 +35,29 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      {:agent_session_manager, "~> 0.8.0"},
+      local_or_hex_dep(:agent_session_manager, "~> 0.10.1", "../agent_session_manager"),
       {:jason, "~> 1.4"},
 
       # Agent SDKs (optional — consumers add the ones they need)
-      {:codex_sdk, "~> 0.10.1", optional: true},
-      {:claude_agent_sdk, "~> 0.14.0", optional: true},
-      {:amp_sdk, "~> 0.4.0", optional: true},
-      {:gemini_cli_sdk, "~> 0.1.0", optional: true},
+      local_or_hex_dep(:codex_sdk, "~> 0.15.0", "../codex_sdk", optional: true),
+      local_or_hex_dep(:claude_agent_sdk, "~> 0.16.0", "../claude_agent_sdk", optional: true),
+      local_or_hex_dep(:amp_sdk, "~> 0.4.0", "../amp_sdk", optional: true),
+      local_or_hex_dep(:gemini_cli_sdk, "~> 0.1.0", "../gemini_cli_sdk", optional: true),
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: :dev, runtime: false}
     ]
+  end
+
+  defp local_or_hex_dep(app, version, relative_path, opts \\ []) do
+    path = Path.expand(relative_path, __DIR__)
+
+    if File.dir?(path) do
+      {app, version, Keyword.put(opts, :path, relative_path)}
+    else
+      {app, version, opts}
+    end
   end
 
   defp description do

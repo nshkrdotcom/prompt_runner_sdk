@@ -1,14 +1,14 @@
 defmodule PromptRunner.Runner do
   @moduledoc false
 
-  alias AgentSessionManager.Rendering
-  alias AgentSessionManager.Rendering.Renderers.{CompactRenderer, StudioRenderer, VerboseRenderer}
-  alias AgentSessionManager.Rendering.Sinks.{CallbackSink, FileSink, JSONLSink, TTYSink}
   alias PromptRunner.CommitMessages
   alias PromptRunner.Config
   alias PromptRunner.Plan
   alias PromptRunner.Progress
   alias PromptRunner.Prompts
+  alias PromptRunner.Rendering
+  alias PromptRunner.Rendering.Renderers.{CompactRenderer, StudioRenderer, VerboseRenderer}
+  alias PromptRunner.Rendering.Sinks.{CallbackSink, FileSink, JSONLSink, TTYSink}
   alias PromptRunner.RepoTargets
   alias PromptRunner.Run
   alias PromptRunner.UI
@@ -21,8 +21,10 @@ defmodule PromptRunner.Runner do
   @provider_deps %{
     claude: {:claude_agent_sdk, ClaudeAgentSDK, []},
     codex: {:codex_sdk, Codex, [Codex.Events]},
+    gemini: {:gemini_cli_sdk, GeminiCliSdk, []},
     amp: {:amp_sdk, AmpSdk, []}
   }
+  @resume_prompt "Continue"
 
   @spec run_plan(Plan.t(), keyword()) :: {:ok, Run.t()} | {:error, term()}
   def run_plan(%Plan{} = plan, opts \\ []) do
@@ -454,27 +456,42 @@ defmodule PromptRunner.Runner do
          skip_commit
        ) do
     config = plan.config
+    Process.put(:prompt_runner_additional_closers, [])
 
-    write_session_header(log_io, config, llm, llm_meta, prompt_path)
-    initialize_cli_confirmation_tracking(llm, config, log_io)
+    try do
+      write_session_header(log_io, config, llm, llm_meta, prompt_path)
+      initialize_cli_confirmation_tracking(llm, config, log_io)
 
-    renderer = renderer_for_config(config)
-    sinks = build_sinks(plan, log_io, events_file, llm)
+      renderer = renderer_for_config(config)
+      sinks = build_sinks(plan, log_io, events_file, llm)
 
-    render_result = safe_render_stream(stream, renderer, sinks)
-    callback_result = Process.get(:prompt_runner_stream_result, :ok)
-    Process.delete(:prompt_runner_stream_result)
-    result = resolve_stream_result(render_result, callback_result)
-    result = maybe_finalize_cli_confirmation(result, llm, plan, log_io)
+      recovery = %{
+        renderer: renderer,
+        sinks: sinks,
+        llm: llm,
+        llm_meta: llm_meta,
+        plan: plan,
+        prompt: prompt,
+        log_io: log_io
+      }
 
-    Process.delete(:prompt_runner_cli_confirmation_printed)
-    Process.delete(:prompt_runner_cli_confirmation_audit)
+      {result, extra_closers} = run_stream_with_recovery(stream, recovery)
 
-    IO.puts("")
-    finalize_stream_result(result, plan, prompt, llm, skip_commit)
-  after
-    close_llm.()
-    close_log.()
+      Process.put(:prompt_runner_additional_closers, extra_closers)
+      Process.delete(:prompt_runner_cli_confirmation_printed)
+      Process.delete(:prompt_runner_cli_confirmation_audit)
+
+      IO.puts("")
+      finalize_stream_result(result, plan, prompt, llm, skip_commit)
+    after
+      Enum.each(
+        Process.get(:prompt_runner_additional_closers, []) ++ [close_llm],
+        &safe_close_fun/1
+      )
+
+      Process.delete(:prompt_runner_additional_closers)
+      close_log.()
+    end
   end
 
   defp handle_stream_result(
@@ -591,6 +608,7 @@ defmodule PromptRunner.Runner do
   defp stream_tracking_callback(plan, event, _iodata, llm, log_io) do
     emit_observer(plan, Map.put(event, :raw?, true))
     maybe_print_cli_confirmation(event, llm, log_io)
+    maybe_log_recovery_metadata(event, log_io)
     error_tracking_callback(event)
   end
 
@@ -611,12 +629,172 @@ defmodule PromptRunner.Runner do
             {:error, summary}
           end
 
-        Process.put(:prompt_runner_stream_result, result)
+        if Process.get(:prompt_runner_stream_result) == nil do
+          Process.put(:prompt_runner_stream_result, result)
+        end
 
       _ ->
         :ok
     end
   end
+
+  defp run_stream_with_recovery(stream, recovery, attempt \\ 0) do
+    result =
+      render_stream_attempt(
+        stream,
+        recovery.renderer,
+        recovery.sinks,
+        recovery.llm,
+        recovery.plan,
+        recovery.log_io
+      )
+
+    case maybe_resume_failed_stream(result, recovery, attempt) do
+      {:resume, resumed_stream, resumed_close, resumed_meta} ->
+        {resumed_result, extra_closers} =
+          run_stream_with_recovery(
+            resumed_stream,
+            %{recovery | llm_meta: resumed_meta},
+            attempt + 1
+          )
+
+        {resumed_result, [resumed_close | extra_closers]}
+
+      {:resume_failed, merged_result} ->
+        {merged_result, []}
+
+      :no_resume ->
+        {result, []}
+    end
+  end
+
+  defp render_stream_attempt(stream, renderer, sinks, llm, plan, log_io) do
+    Process.delete(:prompt_runner_stream_result)
+
+    render_result = safe_render_stream(stream, renderer, sinks)
+    callback_result = Process.get(:prompt_runner_stream_result, :ok)
+    Process.delete(:prompt_runner_stream_result)
+
+    render_result
+    |> resolve_stream_result(callback_result)
+    |> maybe_finalize_cli_confirmation(llm, plan, log_io)
+  end
+
+  defp maybe_resume_failed_stream(result, recovery, attempt) do
+    cond do
+      result == :ok ->
+        :no_resume
+
+      attempt > 0 ->
+        :no_resume
+
+      not recoverable_stream_error?(result) ->
+        :no_resume
+
+      true ->
+        emit_observer(recovery.plan, %{
+          type: :session_resume_attempted,
+          prompt: recovery.prompt,
+          reason: result,
+          provider: recovery.llm.sdk,
+          message: @resume_prompt
+        })
+
+        IO.puts("Resuming provider session with #{@resume_prompt}...")
+
+        IO.binwrite(
+          recovery.log_io,
+          "SESSION_RECOVERY action=resume_attempt provider=#{recovery.llm.sdk} prompt=#{inspect(@resume_prompt)} reason=#{inspect(result)}\n"
+        )
+
+        case llm_module().resume_stream(recovery.llm, recovery.llm_meta, @resume_prompt) do
+          {:ok, resumed_stream, resumed_close, resumed_meta} ->
+            emit_observer(recovery.plan, %{
+              type: :session_resume_started,
+              prompt: recovery.prompt,
+              provider: recovery.llm.sdk,
+              message: @resume_prompt
+            })
+
+            IO.binwrite(
+              recovery.log_io,
+              "SESSION_RECOVERY action=resume_started provider=#{recovery.llm.sdk} prompt=#{inspect(@resume_prompt)}\n"
+            )
+
+            {:resume, resumed_stream, resumed_close, resumed_meta}
+
+          {:error, resume_reason} ->
+            merged_result = merge_root_and_resume_error(result, {:error, resume_reason})
+
+            emit_observer(recovery.plan, %{
+              type: :session_resume_failed,
+              prompt: recovery.prompt,
+              provider: recovery.llm.sdk,
+              root_reason: result,
+              resume_reason: resume_reason
+            })
+
+            IO.binwrite(
+              recovery.log_io,
+              "SESSION_RECOVERY action=resume_failed provider=#{recovery.llm.sdk} reason=#{inspect(resume_reason)}\n"
+            )
+
+            {:resume_failed, merged_result}
+        end
+    end
+  end
+
+  defp maybe_log_recovery_metadata(event, log_io) do
+    case event do
+      %{type: :run_started, data: data, provider: provider} when is_map(data) ->
+        provider_session_id = map_get(data, :provider_session_id)
+
+        if is_binary(provider_session_id) and
+             Process.get(:prompt_runner_session_recovery_logged) != provider_session_id do
+          Process.put(:prompt_runner_session_recovery_logged, provider_session_id)
+
+          IO.binwrite(
+            log_io,
+            "SESSION_RECOVERY action=checkpoint provider=#{provider} provider_session_id=#{provider_session_id}\n"
+          )
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp recoverable_stream_error?({:error, reason}) do
+    provider_error = extract_provider_error(reason)
+    kind = map_get(provider_error, :kind)
+
+    message =
+      String.downcase(map_get(provider_error, :message) || map_get(reason, :message) || "")
+
+    kind in [:protocol_error, :transport_error, :transport_exit] or
+      String.contains?(message, "websocket protocol error") or
+      String.contains?(message, "connection reset without closing handshake")
+  end
+
+  defp recoverable_stream_error?(_result), do: false
+
+  defp merge_root_and_resume_error({:error, root_reason}, {:error, resume_reason}) do
+    root_message =
+      map_get(root_reason, :message) ||
+        map_get(extract_provider_error(root_reason), :message) ||
+        if(is_binary(root_reason), do: root_reason, else: inspect(root_reason))
+
+    {:error,
+     %{
+       message: root_message,
+       provider_error: extract_provider_error(root_reason),
+       details: map_get(root_reason, :details),
+       root_cause: root_reason,
+       recovery_error: resume_reason
+     }}
+  end
+
+  defp merge_root_and_resume_error(root_result, _resume_result), do: root_result
 
   defp format_error_reason(reason, config) do
     provider_error = extract_provider_error(reason)
@@ -854,6 +1032,7 @@ defmodule PromptRunner.Runner do
 
   defp dep_fallback_spec(:codex_sdk), do: "~> 0.9.0"
   defp dep_fallback_spec(:claude_agent_sdk), do: "~> 0.13.0"
+  defp dep_fallback_spec(:gemini_cli_sdk), do: "~> 0.2.0"
   defp dep_fallback_spec(:amp_sdk), do: "~> 0.3"
   defp dep_fallback_spec(_), do: ">= 0.0.0"
 
@@ -905,6 +1084,7 @@ defmodule PromptRunner.Runner do
 
     Process.put(:prompt_runner_cli_confirmation_printed, false)
     Process.put(:prompt_runner_cli_confirmation_audit, audit)
+    Process.delete(:prompt_runner_session_recovery_logged)
 
     IO.binwrite(
       log_io,
@@ -915,6 +1095,7 @@ defmodule PromptRunner.Runner do
   defp initialize_cli_confirmation_tracking(_llm, _config, _log_io) do
     Process.put(:prompt_runner_cli_confirmation_printed, false)
     Process.put(:prompt_runner_cli_confirmation_audit, %{})
+    Process.delete(:prompt_runner_session_recovery_logged)
   end
 
   defp maybe_finalize_cli_confirmation(result, %{sdk: :codex}, plan, log_io) do
@@ -1132,6 +1313,17 @@ defmodule PromptRunner.Runner do
 
   defp maybe_invoke_callback(fun, event) when is_function(fun, 1), do: fun.(event)
   defp maybe_invoke_callback(_fun, _event), do: :ok
+
+  defp safe_close_fun(fun) when is_function(fun, 0) do
+    fun.()
+    :ok
+  rescue
+    _error -> :ok
+  catch
+    :exit, _reason -> :ok
+  end
+
+  defp safe_close_fun(_fun), do: :ok
 
   defp llm_module do
     Application.get_env(:prompt_runner, :llm_module, PromptRunner.LLMFacade)

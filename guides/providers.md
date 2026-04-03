@@ -130,3 +130,14 @@ llm: %{
 
 Prompt Runner computes provider `cwd` from the prompt target repo when targets
 are configured. Otherwise it falls back to the configured project directory.
+## Provider Recovery Semantics
+
+The current provider posture is:
+
+- Claude: provider-native session history and resume are available through the current ASM runtime
+- Codex: exact thread resumption is preferred when a provider session id is known
+- Gemini: typed session history and runtime-neutral resume are available
+- Amp: thread-history resume is available, but unsupported prompt-control surfaces are rejected
+
+Prompt Runner uses those provider-native session surfaces only for recoverable failures. Fatal
+data-loss events such as unrecoverable overflow still terminate the run honestly.

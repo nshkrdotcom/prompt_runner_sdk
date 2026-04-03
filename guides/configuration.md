@@ -138,3 +138,16 @@ Convention mode also reads:
 - `~/.config/prompt_runner/config.exs` if it exists
 
 CLI/API options win over those defaults.
+## Recovery-Related Provider Options
+
+Prompt Runner now forwards recovery-relevant provider options through the current ASM stack instead
+of keeping a legacy adapter-specific option surface.
+
+- Claude supports `system_prompt` and `append_system_prompt`
+- Codex supports `system_prompt` via the underlying thread base-instructions surface
+- Gemini supports `system_prompt`
+- Amp does not advertise `system_prompt`, and Prompt Runner now rejects that unsupported input
+  instead of silently dropping it
+
+On recoverable runtime failures, Prompt Runner will attempt an exact provider-session resume with
+`Continue` before it gives up on the run.

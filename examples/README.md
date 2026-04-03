@@ -39,3 +39,13 @@ bash examples/multi_repo_dummy/cleanup.sh
 
 - **Most users:** Start with `simple/` - it's the common case
 - **Cross-repo workflows:** Use `multi_repo_dummy/` as your reference
+## Recovery-Oriented Example Packs
+
+The example packs in this repo are now the primary manual proof surface for Prompt Runner’s
+resume-first recovery posture:
+
+- `examples/simple/` exercises the single-repo provider matrix
+- `examples/multi_repo_dummy/` exercises multi-repo prompt planning and execution boundaries
+
+Both example packs now rely on the current ASM session runtime, so provider-native recovery handles
+can flow through normal prompt execution.

@@ -2,8 +2,9 @@ defmodule PromptRunner.Application do
   @moduledoc """
   OTP application for Prompt Runner SDK.
 
-  Session lifecycle management (stores, adapters, tasks) is handled by
-  `AgentSessionManager.StreamSession` — no local supervisors needed.
+  Session lifecycle management is delegated to the current ASM runtime and the
+  provider SDKs beneath it. Prompt runner keeps its own rendering and plan
+  orchestration locally.
   """
 
   use Application

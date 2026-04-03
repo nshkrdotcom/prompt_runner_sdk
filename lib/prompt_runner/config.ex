@@ -3,7 +3,7 @@ defmodule PromptRunner.Config do
   Loads and normalizes configuration for the prompt runner.
   """
 
-  alias AgentSessionManager.PermissionMode
+  alias ASM.Permission
   alias PromptRunner.LLM
   alias PromptRunner.LLMFacade
   alias PromptRunner.Paths
@@ -27,10 +27,16 @@ defmodule PromptRunner.Config do
           prompt_overrides: map(),
           allowed_tools: list() | nil,
           permission_mode: atom() | nil,
+          sdk_opts: map(),
           adapter_opts: map(),
           claude_opts: map(),
           codex_opts: map(),
           codex_thread_opts: map(),
+          gemini_opts: map(),
+          amp_opts: map(),
+          system_prompt: String.t() | map() | nil,
+          append_system_prompt: String.t() | nil,
+          max_turns: pos_integer() | nil,
           cli_confirmation: :off | :warn | :require,
           timeout: pos_integer() | :unbounded | :infinity | nil,
           log_mode: :compact | :verbose | :studio,
@@ -54,10 +60,16 @@ defmodule PromptRunner.Config do
     :prompt_overrides,
     :allowed_tools,
     :permission_mode,
+    :sdk_opts,
     :adapter_opts,
     :claude_opts,
     :codex_opts,
     :codex_thread_opts,
+    :gemini_opts,
+    :amp_opts,
+    :system_prompt,
+    :append_system_prompt,
+    :max_turns,
     :cli_confirmation,
     :timeout,
     :log_mode,
@@ -99,45 +111,53 @@ defmodule PromptRunner.Config do
   def llm_for_prompt(config, prompt) do
     prompt_repo_paths = resolve_prompt_repo_paths(config, prompt)
     cwd = List.first(prompt_repo_paths) || config.project_dir
-
-    codex_thread_opts =
-      enrich_codex_thread_opts(
-        config.codex_thread_opts || %{},
-        prompt_repo_paths,
-        cwd,
-        config.config_dir
-      )
-
-    base = %{
-      sdk: config.llm_sdk,
-      provider: config.llm_sdk,
-      model: config.model,
-      cwd: cwd,
-      allowed_tools: config.allowed_tools,
-      permission_mode: config.permission_mode,
-      timeout: config.timeout,
-      adapter_opts: config.adapter_opts || %{},
-      claude_opts: config.claude_opts || %{},
-      codex_opts: config.codex_opts || %{},
-      codex_thread_opts: codex_thread_opts,
-      cli_confirmation: config.cli_confirmation
-    }
-
-    override = Map.get(config.prompt_overrides || %{}, prompt.num, %{})
-    merged = deep_merge(base, override)
-
-    merged =
-      Map.update(merged, :codex_thread_opts, %{}, fn opts ->
-        enrich_codex_thread_opts(opts, prompt_repo_paths, merged[:cwd], config.config_dir)
-      end)
-
+    base = base_llm_for_prompt(config, prompt_repo_paths, cwd)
+    merged = merge_prompt_llm_config(config, prompt, prompt_repo_paths, base)
     sdk = resolve_merged_sdk(merged, base.sdk)
 
     merged
     |> Map.put(:sdk, sdk)
     |> Map.put(:provider, sdk)
     |> Map.update(:cli_confirmation, :warn, &normalize_cli_confirmation/1)
-    |> Map.update(:permission_mode, nil, &normalize_permission_mode/1)
+    |> Map.update(:permission_mode, nil, &normalize_permission_mode(&1, sdk))
+  end
+
+  defp base_llm_for_prompt(config, prompt_repo_paths, cwd) do
+    %{
+      sdk: config.llm_sdk,
+      provider: config.llm_sdk,
+      model: config.model,
+      cwd: cwd,
+      allowed_tools: config.allowed_tools,
+      permission_mode: config.permission_mode,
+      sdk_opts: config.sdk_opts || %{},
+      timeout: config.timeout,
+      adapter_opts: config.adapter_opts || %{},
+      claude_opts: config.claude_opts || %{},
+      codex_opts: config.codex_opts || %{},
+      codex_thread_opts:
+        enrich_codex_thread_opts(
+          config.codex_thread_opts || %{},
+          prompt_repo_paths,
+          cwd,
+          config.config_dir
+        ),
+      gemini_opts: config.gemini_opts || %{},
+      amp_opts: config.amp_opts || %{},
+      system_prompt: config.system_prompt,
+      append_system_prompt: config.append_system_prompt,
+      max_turns: config.max_turns,
+      cli_confirmation: config.cli_confirmation
+    }
+  end
+
+  defp merge_prompt_llm_config(config, prompt, prompt_repo_paths, base) do
+    override = Map.get(config.prompt_overrides || %{}, prompt.num, %{})
+    merged = deep_merge(base, override)
+
+    Map.update(merged, :codex_thread_opts, %{}, fn opts ->
+      enrich_codex_thread_opts(opts, prompt_repo_paths, merged[:cwd], config.config_dir)
+    end)
   end
 
   defp resolve_merged_sdk(merged, fallback) do
@@ -281,13 +301,20 @@ defmodule PromptRunner.Config do
       allowed_tools: coalesce([llm_section[:allowed_tools], config[:allowed_tools]], nil),
       permission_mode:
         coalesce([llm_section[:permission_mode], config[:permission_mode]], nil)
-        |> normalize_permission_mode(),
+        |> normalize_permission_mode(llm_sdk),
+      sdk_opts: coalesce([llm_section[:sdk_opts], config[:sdk_opts]], %{}),
       adapter_opts: coalesce([llm_section[:adapter_opts], config[:adapter_opts]], %{}),
       claude_opts: coalesce([llm_section[:claude_opts], config[:claude_opts]], %{}),
       codex_opts: coalesce([llm_section[:codex_opts], config[:codex_opts]], %{}),
       codex_thread_opts:
         coalesce([llm_section[:codex_thread_opts], config[:codex_thread_opts]], %{})
         |> normalize_codex_thread_opts(config_dir),
+      gemini_opts: coalesce([llm_section[:gemini_opts], config[:gemini_opts]], %{}),
+      amp_opts: coalesce([llm_section[:amp_opts], config[:amp_opts]], %{}),
+      system_prompt: coalesce([llm_section[:system_prompt], config[:system_prompt]], nil),
+      append_system_prompt:
+        coalesce([llm_section[:append_system_prompt], config[:append_system_prompt]], nil),
+      max_turns: coalesce([llm_section[:max_turns], config[:max_turns]], nil),
       cli_confirmation:
         coalesce([llm_section[:cli_confirmation], config[:cli_confirmation]], :warn)
         |> normalize_cli_confirmation(),
@@ -522,16 +549,26 @@ defmodule PromptRunner.Config do
 
   defp normalize_prompt_override(_other, _config_dir), do: %{}
 
-  defp normalize_permission_mode(nil), do: nil
-  defp normalize_permission_mode(:bypass_permissions), do: :full_auto
-  defp normalize_permission_mode("bypass_permissions"), do: :full_auto
+  defp normalize_permission_mode(nil, _provider), do: nil
 
-  defp normalize_permission_mode(mode) do
-    case PermissionMode.normalize(mode) do
-      {:ok, normalized} -> normalized
-      {:error, _reason} -> mode
+  defp normalize_permission_mode(mode, provider) do
+    canonical_mode = legacy_permission_alias(mode)
+
+    case Permission.normalize(provider || :claude, canonical_mode) do
+      {:ok, %{normalized: normalized}} -> normalized
+      {:error, _reason} -> canonical_mode
     end
   end
+
+  defp legacy_permission_alias(:bypass_permissions), do: :bypass
+  defp legacy_permission_alias("bypass_permissions"), do: :bypass
+  defp legacy_permission_alias(:dangerously_skip_permissions), do: :bypass
+  defp legacy_permission_alias("dangerously_skip_permissions"), do: :bypass
+  defp legacy_permission_alias(:dangerously_allow_all), do: :bypass
+  defp legacy_permission_alias("dangerously_allow_all"), do: :bypass
+  defp legacy_permission_alias(:full_auto), do: :auto
+  defp legacy_permission_alias("full_auto"), do: :auto
+  defp legacy_permission_alias(mode), do: mode
 
   defp deep_merge(left, right) when is_map(left) and is_map(right) do
     Map.merge(left, right, fn _k, l, r ->
@@ -666,8 +703,6 @@ defmodule PromptRunner.Config do
     end)
   end
 
-  defp maybe_invalid_target_repos(errors, _target_repos), do: errors
-
   defp validate_target_repo(errors, %{name: name, path: path}) do
     key = {:target_repo, name || "unnamed"}
 
@@ -701,16 +736,24 @@ defmodule PromptRunner.Config do
         {:error, :git_unavailable}
 
       git ->
-        case System.cmd(git, ["-C", path, "rev-parse", "--is-inside-work-tree"],
-               stderr_to_stdout: true
-             ) do
-          {output, 0} ->
-            if String.trim(output) == "true", do: :ok, else: {:error, :not_git_repo}
-
-          {_output, _exit_code} ->
-            {:error, :not_git_repo}
-        end
+        git_repo_status_with_git(git, path)
     end
+  end
+
+  defp git_repo_status_with_git(git, path) do
+    case System.cmd(git, ["-C", path, "rev-parse", "--is-inside-work-tree"],
+           stderr_to_stdout: true
+         ) do
+      {output, 0} ->
+        parse_git_repo_status(output)
+
+      {_output, _exit_code} ->
+        {:error, :not_git_repo}
+    end
+  end
+
+  defp parse_git_repo_status(output) do
+    if String.trim(output) == "true", do: :ok, else: {:error, :not_git_repo}
   end
 
   defp maybe_invalid_timeout(errors, nil), do: errors

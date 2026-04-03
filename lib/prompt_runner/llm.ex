@@ -3,7 +3,7 @@ defmodule PromptRunner.LLM do
   Behaviour and types for LLM integrations.
   """
 
-  @type sdk :: :claude | :codex | :amp
+  @type sdk :: :claude | :codex | :gemini | :amp
   @type provider :: sdk()
   @type stream_event :: map()
   @type stream :: Enumerable.t()
@@ -12,5 +12,8 @@ defmodule PromptRunner.LLM do
   @callback normalize_provider(term()) :: provider() | {:error, term()}
   @callback normalize_sdk(term()) :: sdk | {:error, term()}
   @callback start_stream(map(), String.t()) ::
+              {:ok, stream(), close_fun(), map()} | {:error, term()}
+
+  @callback resume_stream(map(), map(), String.t()) ::
               {:ok, stream(), close_fun(), map()} | {:error, term()}
 end
