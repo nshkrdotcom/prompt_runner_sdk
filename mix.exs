@@ -192,7 +192,7 @@ defmodule PromptRunner.MixProject do
       name: "prompt_runner_sdk",
       description: description(),
       files:
-        ~w(lib guides examples assets mix.exs README.md CHANGELOG.md LICENSE run_prompts.exs),
+        ~w(lib guides examples assets assets/architecture.svg mix.exs README.md CHANGELOG.md LICENSE run_prompts.exs),
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
