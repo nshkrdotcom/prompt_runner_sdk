@@ -15,15 +15,6 @@ defmodule PromptRunner.Runner do
   alias PromptRunner.Validator
 
   @prompt_preview_lines 10
-
-  # Maps each provider to {otp_app, primary_module, extra_modules}.
-  # Module checks match what ASM adapters guard on at compile time.
-  @provider_deps %{
-    claude: {:claude_agent_sdk, ClaudeAgentSDK, []},
-    codex: {:codex_sdk, Codex, [Codex.Events]},
-    gemini: {:gemini_cli_sdk, GeminiCliSdk, []},
-    amp: {:amp_sdk, AmpSdk, []}
-  }
   @resume_prompt "Continue"
 
   @spec run_plan(Plan.t(), keyword()) :: {:ok, Run.t()} | {:error, term()}
@@ -390,8 +381,8 @@ defmodule PromptRunner.Runner do
         emit_observer(plan, %{type: :prompt_started, prompt: prompt})
 
         with :ok <- ensure_prompt_file(prompt, prompt_path),
-             {:ok, sdk_info} <- preflight_llm_dependency(llm) do
-          execute_prompt_stream(plan, num, prompt, prompt_path, llm, sdk_info, skip_commit)
+             {:ok, provider_info} <- preflight_llm_provider(llm) do
+          execute_prompt_stream(plan, num, prompt, prompt_path, llm, provider_info, skip_commit)
         else
           {:error, reason} ->
             return_error(plan, num, reason)
@@ -405,13 +396,13 @@ defmodule PromptRunner.Runner do
     if File.exists?(prompt_path), do: :ok, else: {:error, {:prompt_file_not_found, prompt_path}}
   end
 
-  defp execute_prompt_stream(plan, num, prompt, prompt_path, llm, sdk_info, skip_commit) do
+  defp execute_prompt_stream(plan, num, prompt, prompt_path, llm, provider_info, skip_commit) do
     config = plan.config
     timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%d-%H%M%S")
     {log_file, log_io, close_log, events_file} = open_log_device(plan, num, timestamp)
 
     print_prompt_header(plan, prompt, llm, log_file)
-    maybe_print_sdk_preflight(sdk_info)
+    maybe_print_provider_preflight(provider_info)
 
     if config.log_mode != :studio and is_binary(events_file) do
       IO.puts("Events: #{events_file}")
@@ -1037,83 +1028,57 @@ defmodule PromptRunner.Runner do
   defp normalize_cli_confirmation_mode_from_string("require"), do: :require
   defp normalize_cli_confirmation_mode_from_string(_), do: :warn
 
-  defp maybe_print_sdk_preflight(nil), do: :ok
+  defp maybe_print_provider_preflight(nil), do: :ok
 
-  defp maybe_print_sdk_preflight(%{package: package, version: version, module: module}) do
+  defp maybe_print_provider_preflight(%{
+         provider: provider,
+         lane: lane,
+         cli_command: cli_command,
+         cli_path_env: cli_path_env,
+         core_profile_id: core_profile_id,
+         sdk_available?: sdk_available?
+       }) do
     IO.puts(
-      "LLM SDK preflight: package=#{package} version=#{version} module=#{module} loaded=true"
+      "LLM provider preflight: provider=#{provider} lane=#{lane} cli=#{cli_command} env=#{cli_path_env} core_profile=#{core_profile_id} sdk_available=#{sdk_available?}"
     )
   end
 
-  defp preflight_llm_dependency(%{sdk: provider} = llm) do
+  defp preflight_llm_provider(%{sdk: provider}) do
     # In tests and custom integrations, a custom llm_module may fully own provider setup.
     if llm_module() != PromptRunner.LLMFacade do
       {:ok, nil}
     else
-      do_preflight(provider, llm)
+      provider_runtime_info(provider)
     end
   end
 
-  defp preflight_llm_dependency(_), do: {:ok, nil}
+  defp preflight_llm_provider(_), do: {:ok, nil}
 
-  defp do_preflight(provider, _llm) do
-    case Map.fetch(@provider_deps, provider) do
-      {:ok, {otp_app, primary_mod, extra_mods}} ->
-        all_mods = [primary_mod | extra_mods]
+  defp provider_runtime_info(provider) when is_atom(provider) do
+    with {:ok, provider_def} <- ASM.Provider.resolve(provider),
+         {:ok, provider_info} <- ASM.ProviderRegistry.provider_info(provider) do
+      example_support = provider_def.example_support
 
-        if Enum.all?(all_mods, &Code.ensure_loaded?/1) do
-          {:ok,
-           %{
-             package: Atom.to_string(otp_app),
-             version: app_vsn(otp_app),
-             module: inspect(primary_mod)
-           }}
-        else
-          missing =
-            all_mods
-            |> Enum.reject(&Code.ensure_loaded?/1)
-            |> Enum.map_join(", ", &inspect/1)
-
-          {:error,
-           {:provider_dependency_missing,
-            %{
-              provider: provider,
-              package: otp_app,
-              missing_module: missing,
-              hint: dep_hint(otp_app)
-            }}}
-        end
-
-      :error ->
-        {:ok, nil}
+      {:ok,
+       %{
+         provider: provider,
+         lane: :core,
+         cli_command: example_support.cli_command,
+         cli_path_env: example_support.cli_path_env,
+         install_hint: example_support.install_hint,
+         core_profile_id: provider_info.core_profile_id,
+         available_lanes: provider_info.available_lanes,
+         sdk_available?: provider_info.sdk_available?
+       }}
     end
   end
-
-  defp dep_hint(otp_app) do
-    version_spec =
-      case app_vsn(otp_app) do
-        "unknown" -> dep_fallback_spec(otp_app)
-        vsn -> "~> #{vsn}"
-      end
-
-    "Add {#{inspect(otp_app)}, #{inspect(version_spec)}} to the deps in your mix.exs."
-  end
-
-  defp dep_fallback_spec(:codex_sdk), do: "~> 0.16.1"
-  defp dep_fallback_spec(:claude_agent_sdk), do: "~> 0.17.0"
-  defp dep_fallback_spec(:gemini_cli_sdk), do: "~> 0.2.0"
-  defp dep_fallback_spec(:amp_sdk), do: "~> 0.5.0"
-  defp dep_fallback_spec(_), do: ">= 0.0.0"
 
   @doc false
-  @spec check_provider_dependency(atom()) :: {:ok, map() | nil} | {:error, term()}
-  def check_provider_dependency(provider), do: do_preflight(provider, %{})
-
-  defp app_vsn(app) do
-    case Application.spec(app, :vsn) do
-      nil -> "unknown"
-      vsn when is_list(vsn) -> List.to_string(vsn)
-      vsn -> to_string(vsn)
+  @spec check_provider_runtime(atom()) :: {:ok, map() | nil} | {:error, term()}
+  def check_provider_runtime(provider) when is_atom(provider) do
+    case ASM.Provider.resolve(provider) do
+      {:ok, _provider} -> provider_runtime_info(provider)
+      {:error, _error} -> {:ok, nil}
     end
   end
 

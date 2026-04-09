@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-09
+
+### Changed
+
+- Removed direct provider SDK package requirements from `prompt_runner_sdk`.
+  Host projects now install only `prompt_runner_sdk`, while provider CLI
+  execution flows through `agent_session_manager` core lane plus
+  `cli_subprocess_core`.
+- Prompt Runner now starts ASM sessions with `lane: :core` explicitly instead
+  of inheriting ASM's default `:auto` lane selection.
+- Replaced provider-SDK runtime preflight with provider/core-lane preflight
+  based on ASM provider metadata and common CLI discovery facts.
+- Updated README, guides, scaffolding, and shipped examples to use provider
+  names as the standard config surface and to stop installing provider SDK
+  packages.
+
+### Fixed
+
+- Standalone scaffold output and shipped example `run_prompts.exs` files no
+  longer declare unnecessary provider SDK dependencies.
+- Prompt Runner now behaves consistently whether provider SDK packages happen
+  to be installed locally or not, because the runner always stays on ASM core
+  lane.
+
 ## [0.5.1] - 2026-04-09
 
 ### Changed
@@ -239,7 +263,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
-[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.3.0...v0.4.0

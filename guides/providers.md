@@ -1,37 +1,31 @@
 # Provider Guide
 
 Prompt Runner delegates provider execution to `agent_session_manager`.
-This guide targets `prompt_runner_sdk ~> 0.5.1`.
+This guide targets `prompt_runner_sdk ~> 0.6.0`.
 
 Supported providers:
 
-| Provider | Key | Optional dependency | Version for 0.5.1 |
-|----------|-----|---------------------|-------------------|
-| Claude | `:claude` | `claude_agent_sdk` | `~> 0.17.0` |
-| Codex | `:codex` | `codex_sdk` | `~> 0.16.1` |
-| Gemini | `:gemini` | `gemini_cli_sdk` | `~> 0.2.0` |
-| Amp | `:amp` | `amp_sdk` | `~> 0.5.0` |
+| Provider | Key | CLI command | Notes |
+|----------|-----|-------------|-------|
+| Claude | `:claude` | `claude` | ASM core lane via `cli_subprocess_core` |
+| Codex | `:codex` | `codex` | ASM core lane via `cli_subprocess_core` |
+| Gemini | `:gemini` | `gemini` | ASM core lane via `cli_subprocess_core` |
+| Amp | `:amp` | `amp` | ASM core lane via `cli_subprocess_core` |
 
-## Add Only What You Use
+## Install Prompt Runner
 
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.5.1"},
-    {:claude_agent_sdk, "~> 0.17.0"},
-    {:codex_sdk, "~> 0.16.1"},
-    {:gemini_cli_sdk, "~> 0.2.0"},
-    {:amp_sdk, "~> 0.5.0"}
+    {:prompt_runner_sdk, "~> 0.6.0"}
   ]
 end
 ```
 
-If a provider dependency is missing at runtime, Prompt Runner reports which
-dependency to add.
-
-Prompt Runner does not rely on `agent_session_manager` to pull the provider
-SDKs transitively. Keeping them explicit in the host project makes dependency
-resolution and runtime validation deterministic.
+Prompt Runner always starts ASM sessions with `lane: :core`, so host apps do
+not need the provider SDK packages just to run Prompt Runner. If your host app
+also uses a provider SDK directly for some other purpose, manage that SDK as a
+separate application concern.
 
 ## Selecting A Provider
 
@@ -160,6 +154,9 @@ llm: %{
   }
 }
 ```
+
+SDK-name aliases such as `"codex_sdk"` still normalize for compatibility, but
+provider names are the standard documented format.
 
 ## Working Directory Behavior
 

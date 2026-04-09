@@ -8,7 +8,7 @@ defmodule PromptRunner.ScaffoldTest do
     path
   end
 
-  test "generated runner installs only the selected provider sdk deps" do
+  test "generated runner installs only prompt_runner_sdk" do
     prompt_dir = tmp_dir("prompt_runner_scaffold_prompts")
     repo_dir = tmp_dir("prompt_runner_scaffold_repo")
     output_dir = tmp_dir("prompt_runner_scaffold_output")
@@ -28,14 +28,14 @@ defmodule PromptRunner.ScaffoldTest do
 
     runner = File.read!(runner_file)
 
-    assert runner =~ ~s({:prompt_runner_sdk, "~> 0.5.1"})
-    assert runner =~ ~s({:claude_agent_sdk, "~> 0.17.0"})
+    assert runner =~ ~s({:prompt_runner_sdk, "~> 0.6.0"})
+    refute runner =~ "claude_agent_sdk"
     refute runner =~ "codex_sdk"
     refute runner =~ "gemini_cli_sdk"
     refute runner =~ "amp_sdk"
   end
 
-  test "generated runner includes base and overridden provider sdk deps in stable order" do
+  test "generated runner stays provider-agnostic even with overrides" do
     prompt_dir = tmp_dir("prompt_runner_scaffold_multi_prompts")
     repo_dir = tmp_dir("prompt_runner_scaffold_multi_repo")
     output_dir = tmp_dir("prompt_runner_scaffold_multi_output")
@@ -70,23 +70,10 @@ defmodule PromptRunner.ScaffoldTest do
 
     runner = File.read!(runner_file)
 
-    expected_lines = [
-      ~s({:claude_agent_sdk, "~> 0.17.0"}),
-      ~s({:codex_sdk, "~> 0.16.1"}),
-      ~s({:gemini_cli_sdk, "~> 0.2.0"}),
-      ~s({:amp_sdk, "~> 0.5.0"})
-    ]
-
-    Enum.each(expected_lines, fn line ->
-      assert runner =~ line
-    end)
-
-    positions =
-      Enum.map(expected_lines, fn line ->
-        {position, _length} = :binary.match(runner, line)
-        position
-      end)
-
-    assert positions == Enum.sort(positions)
+    assert runner =~ ~s({:prompt_runner_sdk, "~> 0.6.0"})
+    refute runner =~ "claude_agent_sdk"
+    refute runner =~ "codex_sdk"
+    refute runner =~ "gemini_cli_sdk"
+    refute runner =~ "amp_sdk"
   end
 end

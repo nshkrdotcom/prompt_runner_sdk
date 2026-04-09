@@ -82,7 +82,6 @@ defmodule PromptRunner.SessionTest do
 
     llm = %{
       provider: "codex",
-      sdk: "codex_sdk",
       model: "gpt-5.4",
       cwd: tmp_dir,
       permission_mode: :bypass,
@@ -90,7 +89,7 @@ defmodule PromptRunner.SessionTest do
       sdk_opts: %{cli_path: script_path}
     }
 
-    {:ok, stream, close_fun, _meta} = Session.start_stream(llm, "say ok")
+    {:ok, stream, close_fun, meta} = Session.start_stream(llm, "say ok")
     events = Enum.take(stream, 10)
     close_fun.()
 
@@ -102,5 +101,6 @@ defmodule PromptRunner.SessionTest do
 
     assert hidden_run_started.data.provider_session_id == "thr_probe"
     assert hidden_run_started.data.metadata["labels"] == %{"topic" => "demo"}
+    assert meta.session_opts[:lane] == :core
   end
 end

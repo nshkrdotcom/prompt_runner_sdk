@@ -14,10 +14,7 @@ Application.ensure_all_started(:inets)
 
 Mix.install([
   {:prompt_runner_sdk, path: Path.expand("../..", __DIR__)},
-  {:claude_agent_sdk, "~> 0.17.0"},
-  {:codex_sdk, "~> 0.16.1"},
-  {:amp_sdk, "~> 0.5.0"},
-  {:gemini_cli_sdk, "~> 0.2.0"}
+  {:agent_session_manager, "~> 0.9.1"}
 ])
 
 args = System.argv()

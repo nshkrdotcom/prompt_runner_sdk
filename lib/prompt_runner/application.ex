@@ -2,8 +2,8 @@ defmodule PromptRunner.Application do
   @moduledoc """
   OTP application for Prompt Runner SDK.
 
-  Session lifecycle management is delegated to the current ASM runtime and the
-  provider SDKs beneath it. Prompt runner keeps its own rendering and plan
+  Session lifecycle management is delegated to the current ASM runtime. Prompt
+  Runner stays on ASM's common core lane and keeps its own rendering and plan
   orchestration locally.
   """
 

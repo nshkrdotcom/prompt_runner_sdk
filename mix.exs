@@ -1,7 +1,7 @@
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.5.1"
+  @version "0.6.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
 
   def project do
@@ -37,12 +37,6 @@ defmodule PromptRunner.MixProject do
     [
       local_dev_or_hex_dep(:agent_session_manager, "~> 0.9.1", "../agent_session_manager"),
       {:jason, "~> 1.4"},
-
-      # Agent SDKs (optional — consumers add the ones they need)
-      local_dev_or_hex_dep(:codex_sdk, "~> 0.16.1", "../codex_sdk", optional: true),
-      local_dev_or_hex_dep(:claude_agent_sdk, "~> 0.17.0", "../claude_agent_sdk", optional: true),
-      local_dev_or_hex_dep(:amp_sdk, "~> 0.5.0", "../amp_sdk", optional: true),
-      local_dev_or_hex_dep(:gemini_cli_sdk, "~> 0.2.0", "../gemini_cli_sdk", optional: true),
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

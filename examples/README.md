@@ -10,10 +10,10 @@ Two examples covering the two use cases:
 ## simple/
 
 Single repository workflow. Four prompts write files to the same repo:
-- Prompt 01: Claude Agent SDK
-- Prompt 02: Codex SDK
-- Prompt 03: Amp SDK
-- Prompt 04: Gemini CLI SDK
+- Prompt 01: Claude
+- Prompt 02: Codex
+- Prompt 03: Amp
+- Prompt 04: Gemini
 
 From the project root:
 
@@ -30,10 +30,10 @@ bash examples/simple/cleanup.sh
 ## multi_repo_dummy/
 
 Multi-repository workflow. Four prompts target two repos (alpha, beta):
-- Prompt 01: Codex SDK, targets both repos
-- Prompt 02: Claude Agent SDK, targets both repos
-- Prompt 03: Amp SDK, targets both repos
-- Prompt 04: Gemini CLI SDK, targets both repos
+- Prompt 01: Codex, targets both repos
+- Prompt 02: Claude, targets both repos
+- Prompt 03: Amp, targets both repos
+- Prompt 04: Gemini, targets both repos
 
 From the project root:
 
@@ -62,6 +62,10 @@ resume-first recovery posture:
 
 Both example packs now rely on the current ASM session runtime, so provider-native recovery handles
 can flow through normal prompt execution.
+
+Both standalone example runners install the local `prompt_runner_sdk` checkout
+plus `agent_session_manager`; provider selection and CLI execution still flow
+through ASM core lane, with no provider SDK packages.
 
 Both `setup.sh` scripts reset and reseed their example workspace, so rerunning
 them gives you a clean starting state.

@@ -3,10 +3,14 @@
 This example demonstrates four prompts that target the same two repositories
 (alpha and beta) and write a commit in each repo:
 
-- Prompt 01 runs with `codex_sdk`.
-- Prompt 02 runs with `claude_agent_sdk` and only allows the Bash tool to write the files.
-- Prompt 03 runs with `amp_sdk`.
-- Prompt 04 runs with `gemini_cli_sdk`.
+- Prompt 01 runs with Codex.
+- Prompt 02 runs with Claude and only allows the Bash tool to write the files.
+- Prompt 03 runs with Amp.
+- Prompt 04 runs with Gemini.
+
+The standalone runner installs the local `prompt_runner_sdk` checkout plus
+`agent_session_manager`; provider execution still goes through ASM core lane,
+with no provider SDK packages.
 
 ## 1) Create the dummy repos
 

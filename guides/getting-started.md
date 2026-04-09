@@ -6,20 +6,14 @@ Prompt Runner SDK supports two starting points:
 - Legacy mode: keep explicit `runner_config.exs`, `prompts.txt`, and `commit-messages.txt`.
 
 For new projects, start with convention mode.
-This guide targets `prompt_runner_sdk ~> 0.5.1`.
+This guide targets `prompt_runner_sdk ~> 0.6.0`.
 
 ## Install
 
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.5.1"},
-
-    # Add the provider SDKs you actually use.
-    {:claude_agent_sdk, "~> 0.17.0"},
-    {:codex_sdk, "~> 0.16.1"},
-    {:gemini_cli_sdk, "~> 0.2.0"},
-    {:amp_sdk, "~> 0.5.0"}
+    {:prompt_runner_sdk, "~> 0.6.0"}
   ]
 end
 ```
@@ -32,7 +26,7 @@ mix deps.get
 
 ## Provider Credentials
 
-Set the provider credentials your chosen SDK expects:
+Set the provider CLI credentials your chosen provider expects:
 
 | Provider | Env Var |
 |----------|---------|

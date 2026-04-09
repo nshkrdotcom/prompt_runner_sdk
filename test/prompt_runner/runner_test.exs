@@ -956,24 +956,42 @@ defmodule PromptRunner.RunnerTest do
              "LLM_AUDIT_RESULT status=matched configured_model=gpt-5.3-codex configured_reasoning=xhigh confirmed_model=gpt-5.3-codex confirmed_reasoning=xhigh"
   end
 
-  describe "check_provider_dependency/1" do
-    test "returns ok with info for :claude" do
-      assert {:ok, %{package: "claude_agent_sdk", module: "ClaudeAgentSDK"}} =
-               Runner.check_provider_dependency(:claude)
+  describe "check_provider_runtime/1" do
+    test "returns ASM core-lane runtime info for :claude" do
+      assert {:ok,
+              %{
+                provider: :claude,
+                lane: :core,
+                cli_command: "claude",
+                cli_path_env: "CLAUDE_CLI_PATH",
+                core_profile_id: :claude
+              }} = Runner.check_provider_runtime(:claude)
     end
 
-    test "returns ok with info for :codex" do
-      assert {:ok, %{package: "codex_sdk", module: "Codex"}} =
-               Runner.check_provider_dependency(:codex)
+    test "returns ASM core-lane runtime info for :codex" do
+      assert {:ok,
+              %{
+                provider: :codex,
+                lane: :core,
+                cli_command: "codex",
+                cli_path_env: "CODEX_PATH",
+                core_profile_id: :codex
+              }} = Runner.check_provider_runtime(:codex)
     end
 
-    test "returns ok with info for :amp" do
-      assert {:ok, %{package: "amp_sdk", module: "AmpSdk"}} =
-               Runner.check_provider_dependency(:amp)
+    test "returns ASM core-lane runtime info for :amp" do
+      assert {:ok,
+              %{
+                provider: :amp,
+                lane: :core,
+                cli_command: "amp",
+                cli_path_env: "AMP_CLI_PATH",
+                core_profile_id: :amp
+              }} = Runner.check_provider_runtime(:amp)
     end
 
     test "returns ok nil for unknown provider" do
-      assert {:ok, nil} = Runner.check_provider_dependency(:unknown_provider)
+      assert {:ok, nil} = Runner.check_provider_runtime(:unknown_provider)
     end
   end
 end

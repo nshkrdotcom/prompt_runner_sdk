@@ -787,6 +787,7 @@ defmodule PromptRunner.Session do
       common_opts =
         []
         |> Keyword.put(:provider, provider)
+        |> Keyword.put(:lane, :core)
         |> maybe_put(:cwd, llm_config[:cwd])
         |> maybe_put(:permission_mode, llm_config[:permission_mode])
         |> maybe_put(:allowed_tools, llm_config[:allowed_tools])

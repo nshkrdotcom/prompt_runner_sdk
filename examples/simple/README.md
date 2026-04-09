@@ -2,10 +2,14 @@
 
 This example includes four prompts that write files into an isolated workspace:
 
-- Prompt 01 uses Claude Agent SDK and writes `workspace/claude-output.txt`.
-- Prompt 02 uses Codex SDK and writes `workspace/codex-output.txt`.
-- Prompt 03 uses Amp SDK and writes `workspace/amp-output.txt`.
-- Prompt 04 uses Gemini CLI SDK and writes `workspace/gemini-output.txt`.
+- Prompt 01 uses Claude and writes `workspace/claude-output.txt`.
+- Prompt 02 uses Codex and writes `workspace/codex-output.txt`.
+- Prompt 03 uses Amp and writes `workspace/amp-output.txt`.
+- Prompt 04 uses Gemini and writes `workspace/gemini-output.txt`.
+
+The standalone runner installs the local `prompt_runner_sdk` checkout plus
+`agent_session_manager`; provider execution still goes through ASM core lane,
+with no provider SDK packages.
 
 ## 1) Create the workspace
 

@@ -15,8 +15,7 @@
 </p>
 
 Prompt Runner SDK executes ordered prompt workflows against local repositories.
-This README targets `prompt_runner_sdk ~> 0.5.1` and the provider SDK releases
-published on Hex on 2026-04-09.
+This README targets `prompt_runner_sdk ~> 0.6.0`.
 
 It supports two equally valid styles:
 
@@ -44,20 +43,16 @@ future release binaries all sit on top of the same runtime.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.5.1"},
-
-    # Add the provider SDKs you actually use.
-    {:claude_agent_sdk, "~> 0.17.0"},
-    {:codex_sdk, "~> 0.16.1"},
-    {:gemini_cli_sdk, "~> 0.2.0"},
-    {:amp_sdk, "~> 0.5.0"}
+    {:prompt_runner_sdk, "~> 0.6.0"}
   ]
 end
 ```
 
-Prompt Runner keeps the provider SDKs as explicit optional deps instead of
-relying on transitive pulls from `agent_session_manager`. That makes Hex
-resolution predictable and missing-provider failures easier to diagnose.
+Prompt Runner is now an explicit `agent_session_manager` core-lane client.
+Host projects do not need `codex_sdk`, `claude_agent_sdk`, `gemini_cli_sdk`,
+or `amp_sdk` just to run Prompt Runner. Provider CLI discovery and execution
+flow through ASM plus `cli_subprocess_core`.
+
 For Codex, `cli_confirmation` auditing now accepts either hidden confirmation
 metadata or the actual launched command args as the runtime proof source.
 
@@ -205,8 +200,8 @@ mix credo --strict
 mix docs
 ```
 
-For sibling-repo development against local checkouts of `agent_session_manager`
-or the provider SDKs, opt in explicitly:
+For sibling-repo development against a local checkout of
+`agent_session_manager`, opt in explicitly:
 
 ```bash
 PROMPT_RUNNER_USE_LOCAL_DEPS=1 mix deps.get

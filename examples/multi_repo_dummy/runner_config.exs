@@ -1,14 +1,7 @@
 # Multi-Repo Dummy Example Configuration
 #
-# SDK dependencies required by this example:
-#   - codex_sdk (default provider)
-#   - claude_agent_sdk (prompt 02 override)
-#   - amp_sdk (prompt 03 override)
-#   - gemini_cli_sdk (prompt 04 override)
-#
-# When running standalone via run_prompts.exs, these are pulled automatically.
-# When using prompt_runner_sdk as a Hex dependency, add them to your mix.exs.
-# See guides/providers.md for details.
+# Prompt Runner runs this example through ASM core lane. No provider SDK
+# packages are required in the host project.
 
 base_dir = __DIR__
 repos_dir = Path.join(base_dir, "repos")
@@ -33,23 +26,23 @@ beta_dir = Path.join(repos_dir, "beta")
     %{name: "beta", path: beta_dir}
   ],
   llm: %{
-    sdk: "codex_sdk",
+    provider: "codex",
     model: "gpt-5.3-codex",
     prompt_overrides: %{
       "02" => %{
-        sdk: "claude_agent_sdk",
+        provider: "claude",
         model: "sonnet",
         permission_mode: :bypass,
         allowed_tools: ["Bash"]
       },
       "03" => %{
-        sdk: "amp_sdk",
+        provider: "amp",
         model: "amp-1",
         permission_mode: :bypass,
         allowed_tools: ["Bash"]
       },
       "04" => %{
-        sdk: "gemini_cli_sdk",
+        provider: "gemini",
         model: "gemini-2.5-flash",
         permission_mode: :bypass,
         allowed_tools: ["run_shell_command"]
