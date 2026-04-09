@@ -80,7 +80,7 @@ defmodule PromptRunner.Scaffold do
   end
 
   defp runner_content(_plan) do
-    install_entry = ~s({:prompt_runner_sdk, "~> 0.6.0"})
+    install_entry = ~s({:prompt_runner_sdk, "~> 0.6.1"})
 
     """
     #!/usr/bin/env elixir

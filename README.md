@@ -15,7 +15,7 @@
 </p>
 
 Prompt Runner SDK executes ordered prompt workflows against local repositories.
-This README targets `prompt_runner_sdk ~> 0.6.0`.
+This README targets `prompt_runner_sdk ~> 0.6.1`.
 
 It supports two equally valid styles:
 
@@ -43,7 +43,7 @@ future release binaries all sit on top of the same runtime.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.6.0"}
+    {:prompt_runner_sdk, "~> 0.6.1"}
   ]
 end
 ```

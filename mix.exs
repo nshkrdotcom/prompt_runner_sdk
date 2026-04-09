@@ -1,7 +1,7 @@
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.6.0"
+  @version "0.6.1"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
 
   def project do
@@ -35,7 +35,7 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      local_dev_or_hex_dep(:agent_session_manager, "~> 0.9.1", "../agent_session_manager"),
+      local_dev_or_hex_dep(:agent_session_manager, "~> 0.9.2", "../agent_session_manager"),
       {:jason, "~> 1.4"},
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},

@@ -1,7 +1,7 @@
 # Provider Guide
 
 Prompt Runner delegates provider execution to `agent_session_manager`.
-This guide targets `prompt_runner_sdk ~> 0.6.0`.
+This guide targets `prompt_runner_sdk ~> 0.6.1`.
 
 Supported providers:
 
@@ -17,7 +17,7 @@ Supported providers:
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.6.0"}
+    {:prompt_runner_sdk, "~> 0.6.1"}
   ]
 end
 ```

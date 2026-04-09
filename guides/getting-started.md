@@ -6,14 +6,14 @@ Prompt Runner SDK supports two starting points:
 - Legacy mode: keep explicit `runner_config.exs`, `prompts.txt`, and `commit-messages.txt`.
 
 For new projects, start with convention mode.
-This guide targets `prompt_runner_sdk ~> 0.6.0`.
+This guide targets `prompt_runner_sdk ~> 0.6.1`.
 
 ## Install
 
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.6.0"}
+    {:prompt_runner_sdk, "~> 0.6.1"}
   ]
 end
 ```

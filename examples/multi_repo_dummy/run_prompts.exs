@@ -14,7 +14,7 @@ Application.ensure_all_started(:inets)
 
 Mix.install([
   {:prompt_runner_sdk, path: Path.expand("../..", __DIR__)},
-  {:agent_session_manager, "~> 0.9.1"}
+  {:agent_session_manager, "~> 0.9.2"}
 ])
 
 args = System.argv()
