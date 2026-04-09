@@ -6,6 +6,7 @@ Prompt Runner SDK supports two starting points:
 - Legacy mode: keep explicit `runner_config.exs`, `prompts.txt`, and `commit-messages.txt`.
 
 For new projects, start with convention mode.
+This guide targets `prompt_runner_sdk ~> 0.5.0`.
 
 ## Install
 
@@ -13,7 +14,12 @@ For new projects, start with convention mode.
 def deps do
   [
     {:prompt_runner_sdk, "~> 0.5.0"},
-    {:claude_agent_sdk, "~> 0.14.0"}
+
+    # Add the provider SDKs you actually use.
+    {:claude_agent_sdk, "~> 0.17.0"},
+    {:codex_sdk, "~> 0.16.0"},
+    {:gemini_cli_sdk, "~> 0.2.0"},
+    {:amp_sdk, "~> 0.5.0"}
   ]
 end
 ```
@@ -32,6 +38,7 @@ Set the provider credentials your chosen SDK expects:
 |----------|---------|
 | Claude | `ANTHROPIC_API_KEY` |
 | Codex | `OPENAI_API_KEY` |
+| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | Amp | `AMP_API_KEY` |
 
 ## First Convention Run

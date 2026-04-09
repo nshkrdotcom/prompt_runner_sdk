@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-08
+
+### Changed
+
+- Aligned the published dependency matrix with the current Hex releases:
+  - `agent_session_manager ~> 0.9.1`
+  - `claude_agent_sdk ~> 0.17.0`
+  - `codex_sdk ~> 0.16.0`
+  - `gemini_cli_sdk ~> 0.2.0`
+  - `amp_sdk ~> 0.5.0`
+- Updated runtime missing-provider guidance to point at the current SDK ranges.
+- `PromptRunner.Scaffold` now derives provider dependencies from the configured
+  provider plus any per-prompt provider overrides instead of hardcoding a stale
+  provider list into generated `run_prompts.exs` files.
+- Synced Prompt Runner's config/session surface to the current ASM and SDK
+  contracts:
+  - normalizes provider-native and legacy permission aliases onto the shared
+    runner modes `:default | :auto | :bypass | :plan`
+  - rejects stale provider-specific inputs such as Codex `sandbox` and
+    `ask_for_approval` at config load instead of failing later during runtime
+  - preserves inherited root `timeout` and `permission_mode` values when a
+    prompt override switches providers without redefining those fields
+- Refreshed README, provider docs, getting-started docs, and example docs to
+  reflect the 0.5.0 provider matrix and current install instructions.
+- Expanded the shipped example packs and standalone `run_prompts.exs` scripts
+  to exercise all four providers: Claude, Codex, Amp, and Gemini.
+- Example setup scripts now reset their workspaces before seeding, so repeated
+  example runs start from a deterministic clean repo state.
+- Local sibling-repo development now requires explicit opt-in via
+  `PROMPT_RUNNER_USE_LOCAL_DEPS=1`, and Hex packaging tasks ignore that opt-in
+  so release builds never emit `path:` dependencies.
+- Hex package builds now exclude generated example runtime artifacts such as
+  seeded repos, workspaces, logs, and progress files.
+
+### Fixed
+
+- Removed stale Prompt Runner Claude model remapping so current short aliases
+  such as `sonnet` resolve through `claude_agent_sdk` instead of an outdated
+  hardcoded model id.
+- Aligned recovery-related prompt-control behavior with the actual current
+  runtime support in the local ASM/SDK stack:
+  - Claude no longer defaults `max_turns` to `1` when the runner does not set it
+  - Amp rejects unsupported prompt controls such as `system_prompt` and
+    `max_turns` instead of silently accepting dead config
+  - Gemini SDK startup now uses `approval_mode: :yolo` without duplicating the
+    deprecated `yolo: true` flag
+- Corrected the live example provider contracts:
+  - Codex now stays on the supported ASM shared permission modes
+    (`:default | :bypass | :plan`) instead of the invalid shared `:auto` path
+  - Amp examples now use the current `amp-1` model instead of a Claude model id
+  - Gemini examples allow the current provider-native shell tool name
+    `run_shell_command`
+  - multi-repo prompts now describe the real working-directory and sibling-repo
+    layout used at runtime
+
 ## [0.4.0] - 2026-02-11
 
 ### Added
@@ -164,7 +219,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
-[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.1.2...v0.2.0

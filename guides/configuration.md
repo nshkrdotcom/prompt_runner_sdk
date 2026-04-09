@@ -98,10 +98,19 @@ These fields do not all mean the same thing or apply at the same layer.
   - Prompt Runner's shared provider-facing permission knob.
   - This is normalized here and then interpreted by the provider adapter or
     downstream runtime.
+  - Use the shared normalized values: `:default`, `:auto`, `:bypass`, or
+    `:plan`.
+  - Codex currently only accepts `:default`, `:bypass`, or `:plan` through
+    this shared surface. Prompt Runner rejects Codex `:auto` during config
+    loading.
 - `codex_thread_opts`
-  - Codex-only thread/session options passed through to `codex_sdk`.
-  - This is where Codex-specific knobs such as `sandbox`,
-    `ask_for_approval`, and `reasoning_effort` belong.
+  - Codex-only thread/session options forwarded through the current ASM Codex
+  surface.
+  - This is where Codex-specific knobs such as `reasoning_effort`,
+    `additional_directories`, `skip_git_repo_check`, and `output_schema`
+    belong.
+  - Do not place raw Codex CLI flags such as `sandbox` or `ask_for_approval`
+    here. Those are not part of the current ASM Codex option contract.
 - `cli_confirmation`
   - Codex-only runner audit policy.
   - This checks whether the configured Codex model and reasoning settings were
@@ -143,11 +152,11 @@ CLI/API options win over those defaults.
 Prompt Runner now forwards recovery-relevant provider options through the current ASM stack instead
 of keeping a legacy adapter-specific option surface.
 
-- Claude supports `system_prompt` and `append_system_prompt`
+- Claude supports `system_prompt`, `append_system_prompt`, and `max_turns`
 - Codex supports `system_prompt` via the underlying thread base-instructions surface
 - Gemini supports `system_prompt`
-- Amp does not advertise `system_prompt`, and Prompt Runner now rejects that unsupported input
-  instead of silently dropping it
+- Amp does not advertise `system_prompt`, `append_system_prompt`, or `max_turns`, and Prompt
+  Runner now rejects those unsupported inputs instead of silently dropping them
 
 On recoverable runtime failures, Prompt Runner will attempt an exact provider-session resume with
 `Continue` before it gives up on the run.

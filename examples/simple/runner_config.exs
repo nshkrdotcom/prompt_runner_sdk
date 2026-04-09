@@ -4,6 +4,7 @@
 #   - claude_agent_sdk (prompt 01 uses Claude)
 #   - codex_sdk (prompt 02 uses Codex)
 #   - amp_sdk (prompt 03 uses Amp)
+#   - gemini_cli_sdk (prompt 04 uses Gemini)
 #
 # When running standalone via run_prompts.exs, these are pulled automatically.
 # When using prompt_runner_sdk as a Hex dependency, add them to your mix.exs.
@@ -20,7 +21,7 @@ workspace_dir = Path.join(base_dir, "workspace")
   log_dir: "logs",
   model: "sonnet",
   allowed_tools: ["Bash"],
-  permission_mode: :bypass_permissions,
+  permission_mode: :bypass,
   log_mode: :compact,
   log_meta: :none,
   events_mode: :compact,
@@ -29,8 +30,14 @@ workspace_dir = Path.join(base_dir, "workspace")
     sdk: "claude_agent_sdk",
     model: "sonnet",
     prompt_overrides: %{
-      "02" => %{sdk: "codex_sdk", model: "gpt-5.1-codex"},
-      "03" => %{sdk: "amp_sdk", model: "sonnet", permission_mode: :dangerously_allow_all}
+      "02" => %{sdk: "codex_sdk", model: "gpt-5.3-codex"},
+      "03" => %{sdk: "amp_sdk", model: "amp-1", permission_mode: :bypass},
+      "04" => %{
+        sdk: "gemini_cli_sdk",
+        model: "gemini-2.5-flash",
+        permission_mode: :bypass,
+        allowed_tools: ["run_shell_command"]
+      }
     }
   }
 }

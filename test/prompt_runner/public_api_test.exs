@@ -92,6 +92,30 @@ defmodule PromptRunner.PublicAPITest do
     assert plan.state_dir == Path.join(prompt_dir, ".prompt_runner")
   end
 
+  test "plan/2 rejects Codex shared auto permission mode" do
+    prompt_dir = tmp_dir("prompt_runner_public_api_codex_auto_prompts")
+    repo = repo_dir("prompt_runner_public_api_codex_auto_repo")
+
+    File.write!(
+      Path.join(prompt_dir, "01_auth.prompt.md"),
+      """
+      # Reconcile auth ownership
+
+      ## Mission
+
+      Align the auth architecture across code and docs.
+      """
+    )
+
+    assert {:error, {:permission_mode, {:invalid_permission_mode, :codex, :auto}}} =
+             PromptRunner.plan(prompt_dir,
+               target: repo,
+               provider: :codex,
+               model: "gpt-5.3-codex",
+               permission_mode: :auto
+             )
+  end
+
   test "plan/2 accepts explicit runtime store and committer overrides" do
     prompt_dir = tmp_dir("prompt_runner_public_api_override_prompts")
     repo = repo_dir("prompt_runner_public_api_override_repo")

@@ -10,8 +10,8 @@ defmodule PromptRunner.Session do
 
   alias CliSubprocessCore.Payload
   alias PromptRunner.LLMFacade
+  alias PromptRunner.ProviderOptions
 
-  @agent_id "prompt-runner"
   @default_stream_idle_timeout 120_000
   @stream_idle_timeout_buffer 30_000
   @emergency_timeout_ms 7 * 86_400_000
@@ -21,55 +21,6 @@ defmodule PromptRunner.Session do
   @type stream_event :: map()
   @type stream :: Enumerable.t()
   @type close_fun :: (-> :ok)
-
-  @common_provider_option_keys [
-    :cli_path,
-    :env,
-    :args,
-    :debug,
-    :ollama,
-    :ollama_model,
-    :ollama_base_url,
-    :ollama_http,
-    :ollama_timeout_ms
-  ]
-  @claude_provider_option_keys [
-    :model,
-    :system_prompt,
-    :provider_backend,
-    :external_model_overrides,
-    :anthropic_base_url,
-    :anthropic_auth_token,
-    :include_thinking,
-    :max_turns,
-    :append_system_prompt
-  ]
-  @codex_provider_option_keys [
-    :model,
-    :system_prompt,
-    :reasoning_effort,
-    :provider_backend,
-    :model_provider,
-    :oss_provider,
-    :skip_git_repo_check,
-    :output_schema,
-    :additional_directories
-  ]
-  @gemini_provider_option_keys [
-    :model,
-    :system_prompt,
-    :sandbox,
-    :extensions
-  ]
-  @amp_provider_option_keys [
-    :model,
-    :mode,
-    :include_thinking,
-    :max_turns,
-    :permissions,
-    :mcp_config,
-    :tools
-  ]
 
   @doc """
   Starts a streaming prompt session and returns a lazy event stream.
@@ -812,7 +763,6 @@ defmodule PromptRunner.Session do
         |> maybe_put(:transport_timeout_ms, resolve_effective_timeout_ms(llm_config))
         |> maybe_put(:max_stdout_buffer_bytes, resolve_max_stdout_buffer_bytes(llm_config))
         |> maybe_put(:max_stderr_buffer_bytes, resolve_max_stderr_buffer_bytes(llm_config))
-        |> maybe_put(:metadata, session_metadata(llm_config))
 
       stream_opts =
         []
@@ -827,7 +777,7 @@ defmodule PromptRunner.Session do
   defp provider_opts(:claude, llm_config) do
     provider_opts_from_sections(
       llm_config,
-      @claude_provider_option_keys,
+      ProviderOptions.keys_for(:claude),
       []
       |> maybe_put(:model, resolve_claude_model(llm_config[:model]))
       |> maybe_put(:max_turns, llm_config[:max_turns])
@@ -837,49 +787,43 @@ defmodule PromptRunner.Session do
   end
 
   defp provider_opts(:codex, llm_config) do
-    with {:ok, cwd} <- require_cwd(llm_config, :codex),
-         {:ok, provider_opts} <-
-           provider_opts_from_sections(
-             llm_config,
-             @codex_provider_option_keys,
-             []
-             |> maybe_put(:model, llm_config[:model])
-             |> maybe_put(:system_prompt, llm_config[:system_prompt])
-             |> maybe_put(:cwd, cwd)
-             |> maybe_put(:additional_directories, codex_additional_directories(llm_config))
-           ) do
-      {:ok, Keyword.put(provider_opts, :cwd, cwd)}
+    with {:ok, _cwd} <- require_cwd(llm_config, :codex) do
+      provider_opts_from_sections(
+        llm_config,
+        ProviderOptions.keys_for(:codex),
+        []
+        |> maybe_put(:model, llm_config[:model])
+        |> maybe_put(:system_prompt, llm_config[:system_prompt])
+        |> maybe_put(:additional_directories, codex_additional_directories(llm_config))
+      )
     end
   end
 
   defp provider_opts(:gemini, llm_config) do
-    with {:ok, cwd} <- require_cwd(llm_config, :gemini) do
+    with {:ok, _cwd} <- require_cwd(llm_config, :gemini) do
       provider_opts_from_sections(
         llm_config,
-        @gemini_provider_option_keys,
+        ProviderOptions.keys_for(:gemini),
         []
         |> maybe_put(:model, llm_config[:model])
         |> maybe_put(:system_prompt, llm_config[:system_prompt])
-        |> maybe_put(:cwd, cwd)
       )
     end
   end
 
   defp provider_opts(:amp, llm_config) do
-    with {:ok, cwd} <- require_cwd(llm_config, :amp) do
+    with {:ok, _cwd} <- require_cwd(llm_config, :amp) do
       provider_opts_from_sections(
         llm_config,
-        @amp_provider_option_keys,
+        ProviderOptions.keys_for(:amp),
         []
         |> maybe_put(:model, llm_config[:model])
-        |> maybe_put(:max_turns, llm_config[:max_turns])
-        |> maybe_put(:cwd, cwd)
       )
     end
   end
 
   defp provider_opts_from_sections(llm_config, provider_keys, base_opts) do
-    allowed_keys = Enum.uniq(@common_provider_option_keys ++ provider_keys)
+    allowed_keys = Enum.uniq(ProviderOptions.common_keys() ++ provider_keys)
 
     merged =
       llm_config
@@ -956,16 +900,6 @@ defmodule PromptRunner.Session do
     end
   end
 
-  defp session_metadata(llm_config) do
-    %{
-      agent_id: @agent_id,
-      prompt_runner: true,
-      cwd: llm_config[:cwd]
-    }
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
-  end
-
   # -- Legacy timeout helper surface kept for config tests
 
   defp build_run_opts(llm_config) do
@@ -1032,9 +966,6 @@ defmodule PromptRunner.Session do
   end
 
   defp resolve_claude_model(nil), do: nil
-  defp resolve_claude_model("haiku"), do: "claude-haiku-4-5-20251001"
-  defp resolve_claude_model("sonnet"), do: "claude-sonnet-4-5-20250929"
-  defp resolve_claude_model("opus"), do: "claude-opus-4-6"
   defp resolve_claude_model(model), do: model
 
   defp positive_timeout?(value), do: is_integer(value) and value > 0

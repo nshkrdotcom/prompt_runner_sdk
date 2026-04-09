@@ -8,6 +8,7 @@ defmodule PromptRunner.Plan do
   alias PromptRunner.Config
   alias PromptRunner.LLMFacade
   alias PromptRunner.Paths
+  alias PromptRunner.PermissionMode
   alias PromptRunner.Prompt
   alias PromptRunner.RunSpec
   alias PromptRunner.RuntimeStore.FileStore
@@ -94,7 +95,11 @@ defmodule PromptRunner.Plan do
     model = value_from(opts, [:model], "claude-sonnet-4-6")
 
     with {:ok, llm_sdk} <- resolve_llm_sdk(opts, model) do
-      {:ok, resolved_config(opts, result, llm_sdk, model)}
+      config = resolved_config(opts, result, llm_sdk, model)
+
+      with :ok <- validate_permission_mode(config.permission_mode, llm_sdk) do
+        {:ok, config}
+      end
     end
   end
 
@@ -134,7 +139,7 @@ defmodule PromptRunner.Plan do
       model: model,
       prompt_overrides: normalize_prompt_overrides(opts[:prompt_overrides]),
       allowed_tools: opts[:allowed_tools],
-      permission_mode: opts[:permission_mode],
+      permission_mode: PermissionMode.normalize(opts[:permission_mode], llm_sdk),
       adapter_opts: opts[:adapter_opts] || %{},
       claude_opts: opts[:claude_opts] || %{},
       codex_opts: opts[:codex_opts] || %{},
@@ -147,6 +152,18 @@ defmodule PromptRunner.Plan do
       tool_output: tool_output,
       phase_names: Map.get(result, :phase_names, %{})
     }
+  end
+
+  defp validate_permission_mode(nil, _provider), do: :ok
+
+  defp validate_permission_mode(mode, provider) do
+    case ASM.Permission.normalize(provider, mode) do
+      {:ok, _normalized} ->
+        :ok
+
+      {:error, _reason} ->
+        {:error, {:permission_mode, {:invalid_permission_mode, provider, mode}}}
+    end
   end
 
   defp build_runtime_store(%RunSpec{} = run_spec, %Config{} = config) do

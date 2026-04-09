@@ -4,6 +4,7 @@
 #   - codex_sdk (default provider)
 #   - claude_agent_sdk (prompt 02 override)
 #   - amp_sdk (prompt 03 override)
+#   - gemini_cli_sdk (prompt 04 override)
 #
 # When running standalone via run_prompts.exs, these are pulled automatically.
 # When using prompt_runner_sdk as a Hex dependency, add them to your mix.exs.
@@ -22,7 +23,7 @@ beta_dir = Path.join(repos_dir, "beta")
   log_dir: "logs",
   model: "sonnet",
   allowed_tools: ["Read", "Write", "Bash"],
-  permission_mode: :accept_edits,
+  permission_mode: :bypass,
   log_mode: :compact,
   log_meta: :none,
   events_mode: :compact,
@@ -33,22 +34,25 @@ beta_dir = Path.join(repos_dir, "beta")
   ],
   llm: %{
     sdk: "codex_sdk",
-    model: "gpt-5.1-codex",
-    codex_thread_opts: %{
-      sandbox: :workspace_write,
-      ask_for_approval: :never
-    },
+    model: "gpt-5.3-codex",
     prompt_overrides: %{
       "02" => %{
         sdk: "claude_agent_sdk",
         model: "sonnet",
-        permission_mode: :bypass_permissions,
+        permission_mode: :bypass,
         allowed_tools: ["Bash"]
       },
       "03" => %{
         sdk: "amp_sdk",
-        model: "sonnet",
-        permission_mode: :dangerously_allow_all
+        model: "amp-1",
+        permission_mode: :bypass,
+        allowed_tools: ["Bash"]
+      },
+      "04" => %{
+        sdk: "gemini_cli_sdk",
+        model: "gemini-2.5-flash",
+        permission_mode: :bypass,
+        allowed_tools: ["run_shell_command"]
       }
     }
   }

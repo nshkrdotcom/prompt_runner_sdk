@@ -15,3 +15,9 @@ chore(alpha): add notes for multi-repo demo (amp)
 
 === COMMIT 03:beta ===
 chore(beta): add notes for multi-repo demo (amp)
+
+=== COMMIT 04:alpha ===
+chore(alpha): add notes for multi-repo demo (gemini)
+
+=== COMMIT 04:beta ===
+chore(beta): add notes for multi-repo demo (gemini)

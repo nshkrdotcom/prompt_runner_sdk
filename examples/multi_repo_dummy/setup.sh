@@ -3,17 +3,17 @@ set -euo pipefail
 
 base_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repos_dir="${base_dir}/repos"
+progress_file="${base_dir}/.progress"
+logs_dir="${base_dir}/logs"
 
+rm -rf "${repos_dir}"
+rm -f "${progress_file}"
+rm -rf "${logs_dir}"
 mkdir -p "${repos_dir}"
 
 create_repo() {
   local name="$1"
   local repo_dir="${repos_dir}/${name}"
-
-  if [ -d "${repo_dir}/.git" ]; then
-    echo "Repo already exists: ${repo_dir}"
-    return
-  fi
 
   mkdir -p "${repo_dir}"
   git -C "${repo_dir}" init -q

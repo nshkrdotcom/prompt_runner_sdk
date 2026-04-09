@@ -7,6 +7,8 @@ defmodule PromptRunner.Config do
   alias PromptRunner.LLM
   alias PromptRunner.LLMFacade
   alias PromptRunner.Paths
+  alias PromptRunner.PermissionMode
+  alias PromptRunner.ProviderOptions
   alias PromptRunner.RepoTargets
   alias PromptRunner.UI
 
@@ -526,9 +528,8 @@ defmodule PromptRunner.Config do
       end)
 
     map =
-      Map.update(map, :timeout, nil, fn timeout ->
-        normalize_timeout_value(timeout)
-      end)
+      map
+      |> maybe_update_prompt_override(:timeout, &normalize_timeout_value/1)
       |> Map.update(:codex_thread_opts, %{}, &normalize_codex_thread_opts(&1, config_dir))
 
     sdk =
@@ -542,33 +543,27 @@ defmodule PromptRunner.Config do
       |> Map.put(:sdk, sdk)
       |> Map.put(:provider, sdk)
       |> Map.delete(:llm_sdk)
+      |> maybe_update_prompt_override(:permission_mode, &PermissionMode.normalize(&1, sdk))
     else
-      map
+      maybe_update_prompt_override(map, :permission_mode, &PermissionMode.normalize(&1, nil))
     end
   end
 
   defp normalize_prompt_override(_other, _config_dir), do: %{}
 
-  defp normalize_permission_mode(nil, _provider), do: nil
-
-  defp normalize_permission_mode(mode, provider) do
-    canonical_mode = legacy_permission_alias(mode)
-
-    case Permission.normalize(provider || :claude, canonical_mode) do
-      {:ok, %{normalized: normalized}} -> normalized
-      {:error, _reason} -> canonical_mode
+  defp maybe_update_prompt_override(map, key, fun) when is_map(map) and is_atom(key) do
+    if Map.has_key?(map, key) do
+      Map.update!(map, key, fun)
+    else
+      map
     end
   end
 
-  defp legacy_permission_alias(:bypass_permissions), do: :bypass
-  defp legacy_permission_alias("bypass_permissions"), do: :bypass
-  defp legacy_permission_alias(:dangerously_skip_permissions), do: :bypass
-  defp legacy_permission_alias("dangerously_skip_permissions"), do: :bypass
-  defp legacy_permission_alias(:dangerously_allow_all), do: :bypass
-  defp legacy_permission_alias("dangerously_allow_all"), do: :bypass
-  defp legacy_permission_alias(:full_auto), do: :auto
-  defp legacy_permission_alias("full_auto"), do: :auto
-  defp legacy_permission_alias(mode), do: mode
+  defp normalize_permission_mode(nil, _provider), do: nil
+
+  defp normalize_permission_mode(mode, provider) do
+    PermissionMode.normalize(mode, provider)
+  end
 
   defp deep_merge(left, right) when is_map(left) and is_map(right) do
     Map.merge(left, right, fn _k, l, r ->
@@ -670,6 +665,7 @@ defmodule PromptRunner.Config do
       |> maybe_missing_path(config.project_dir, :project_dir)
       |> maybe_missing_path(config.prompts_file, :prompts_file)
       |> maybe_missing_path(config.commit_messages_file, :commit_messages_file)
+      |> maybe_invalid_provider_option_sections(config)
       |> maybe_invalid_target_repos(config.target_repos)
 
     if errors == [] do
@@ -692,6 +688,121 @@ defmodule PromptRunner.Config do
       errors
     else
       [{key, {:path_not_found, path}} | errors]
+    end
+  end
+
+  defp maybe_invalid_provider_option_sections(errors, %__MODULE__{} = config) do
+    errors
+    |> validate_provider_option_section(:claude_opts, config.claude_opts)
+    |> validate_provider_option_section(:codex_opts, config.codex_opts)
+    |> validate_provider_option_section(:codex_thread_opts, config.codex_thread_opts)
+    |> validate_provider_option_section(:gemini_opts, config.gemini_opts)
+    |> validate_provider_option_section(:amp_opts, config.amp_opts)
+    |> validate_root_prompt_controls(config)
+    |> validate_prompt_override_option_sections(config.prompt_overrides || %{})
+    |> validate_prompt_override_prompt_controls(config)
+  end
+
+  defp validate_provider_option_section(errors, section, opts) do
+    case ProviderOptions.validate_section(section, opts) do
+      :ok ->
+        errors
+
+      {:error, {:unsupported_provider_option, key}} ->
+        [{section, {:unsupported_provider_option, key}} | errors]
+    end
+  end
+
+  defp validate_prompt_override_option_sections(errors, overrides) when is_map(overrides) do
+    Enum.reduce(overrides, errors, fn {prompt_num, override}, acc ->
+      acc
+      |> validate_prompt_override_option_section(prompt_num, :claude_opts, override[:claude_opts])
+      |> validate_prompt_override_option_section(prompt_num, :codex_opts, override[:codex_opts])
+      |> validate_prompt_override_option_section(
+        prompt_num,
+        :codex_thread_opts,
+        override[:codex_thread_opts]
+      )
+      |> validate_prompt_override_option_section(prompt_num, :gemini_opts, override[:gemini_opts])
+      |> validate_prompt_override_option_section(prompt_num, :amp_opts, override[:amp_opts])
+    end)
+  end
+
+  defp validate_prompt_override_option_sections(errors, _overrides), do: errors
+
+  defp validate_root_prompt_controls(errors, %__MODULE__{} = config) do
+    attrs = prompt_control_attrs(config)
+
+    errors
+    |> validate_prompt_controls(config.llm_sdk, attrs, & &1)
+    |> validate_permission_mode(config.llm_sdk, attrs[:permission_mode], & &1)
+  end
+
+  defp validate_prompt_override_option_section(errors, prompt_num, section, opts) do
+    case ProviderOptions.validate_section(section, opts) do
+      :ok ->
+        errors
+
+      {:error, {:unsupported_provider_option, key}} ->
+        [{{:prompt_override, prompt_num, section}, {:unsupported_provider_option, key}} | errors]
+    end
+  end
+
+  defp validate_prompt_override_prompt_controls(errors, %__MODULE__{} = config) do
+    root_controls = prompt_control_attrs(config)
+
+    Enum.reduce(config.prompt_overrides || %{}, errors, fn {prompt_num, override}, acc ->
+      provider = override_provider(override, config.llm_sdk)
+      controls = Map.merge(root_controls, prompt_control_attrs(override))
+
+      acc
+      |> validate_prompt_controls(
+        provider,
+        controls,
+        &{:prompt_override, prompt_num, &1}
+      )
+      |> validate_permission_mode(
+        provider,
+        controls[:permission_mode],
+        &{:prompt_override, prompt_num, &1}
+      )
+    end)
+  end
+
+  defp validate_prompt_controls(errors, provider, attrs, key_builder)
+       when is_atom(provider) and is_map(attrs) and is_function(key_builder, 1) do
+    provider
+    |> ProviderOptions.unsupported_prompt_controls(attrs)
+    |> Enum.reduce(errors, fn key, acc ->
+      [{key_builder.(key), {:unsupported_prompt_control, provider}} | acc]
+    end)
+  end
+
+  defp validate_prompt_controls(errors, _provider, _attrs, _key_builder), do: errors
+
+  defp validate_permission_mode(errors, _provider, nil, _key_builder), do: errors
+
+  defp validate_permission_mode(errors, provider, mode, key_builder)
+       when is_atom(provider) and is_function(key_builder, 1) do
+    case Permission.normalize(provider, mode) do
+      {:ok, _normalized} ->
+        errors
+
+      {:error, _reason} ->
+        [{key_builder.(:permission_mode), {:invalid_permission_mode, provider, mode}} | errors]
+    end
+  end
+
+  defp validate_permission_mode(errors, _provider, _mode, _key_builder), do: errors
+
+  defp prompt_control_attrs(source) when is_map(source) do
+    Map.take(source, ProviderOptions.prompt_control_keys())
+  end
+
+  defp override_provider(override, fallback) when is_map(override) do
+    case LLMFacade.normalize_provider(override[:provider] || override[:sdk]) do
+      {:error, _reason} -> fallback
+      provider -> provider
     end
   end
 

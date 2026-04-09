@@ -35,14 +35,14 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      local_or_hex_dep(:agent_session_manager, "~> 0.10.1", "../agent_session_manager"),
+      local_dev_or_hex_dep(:agent_session_manager, "~> 0.9.1", "../agent_session_manager"),
       {:jason, "~> 1.4"},
 
       # Agent SDKs (optional — consumers add the ones they need)
-      local_or_hex_dep(:codex_sdk, "~> 0.15.0", "../codex_sdk", optional: true),
-      local_or_hex_dep(:claude_agent_sdk, "~> 0.16.0", "../claude_agent_sdk", optional: true),
-      local_or_hex_dep(:amp_sdk, "~> 0.4.0", "../amp_sdk", optional: true),
-      local_or_hex_dep(:gemini_cli_sdk, "~> 0.1.0", "../gemini_cli_sdk", optional: true),
+      local_dev_or_hex_dep(:codex_sdk, "~> 0.16.0", "../codex_sdk", optional: true),
+      local_dev_or_hex_dep(:claude_agent_sdk, "~> 0.17.0", "../claude_agent_sdk", optional: true),
+      local_dev_or_hex_dep(:amp_sdk, "~> 0.5.0", "../amp_sdk", optional: true),
+      local_dev_or_hex_dep(:gemini_cli_sdk, "~> 0.2.0", "../gemini_cli_sdk", optional: true),
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -50,14 +50,26 @@ defmodule PromptRunner.MixProject do
     ]
   end
 
-  defp local_or_hex_dep(app, version, relative_path, opts \\ []) do
+  defp local_dev_or_hex_dep(app, version, relative_path, opts \\ []) do
     path = Path.expand(relative_path, __DIR__)
 
-    if File.dir?(path) do
+    if use_local_dev_deps?() and File.dir?(path) do
       {app, version, Keyword.put(opts, :path, relative_path)}
     else
       {app, version, opts}
     end
+  end
+
+  defp use_local_dev_deps? do
+    truthy_env?("PROMPT_RUNNER_USE_LOCAL_DEPS") and not hex_packaging_task?()
+  end
+
+  defp truthy_env?(name) do
+    System.get_env(name) in ~w(1 true TRUE yes YES on ON)
+  end
+
+  defp hex_packaging_task? do
+    Enum.any?(System.argv(), &(&1 in ["hex.build", "hex.publish", "hex.package"]))
   end
 
   defp description do
@@ -200,6 +212,13 @@ defmodule PromptRunner.MixProject do
       },
       maintainers: ["nshkrdotcom"],
       exclude_patterns: [
+        "examples/simple/workspace",
+        "examples/simple/logs",
+        "examples/simple/.progress",
+        "examples/multi_repo_dummy/repos",
+        "examples/multi_repo_dummy/logs",
+        "examples/multi_repo_dummy/.progress",
+        "examples/**/.git",
         "priv/plts",
         ".DS_Store"
       ]

@@ -1030,10 +1030,10 @@ defmodule PromptRunner.Runner do
     "Add {#{inspect(otp_app)}, #{inspect(version_spec)}} to the deps in your mix.exs."
   end
 
-  defp dep_fallback_spec(:codex_sdk), do: "~> 0.9.0"
-  defp dep_fallback_spec(:claude_agent_sdk), do: "~> 0.13.0"
+  defp dep_fallback_spec(:codex_sdk), do: "~> 0.16.0"
+  defp dep_fallback_spec(:claude_agent_sdk), do: "~> 0.17.0"
   defp dep_fallback_spec(:gemini_cli_sdk), do: "~> 0.2.0"
-  defp dep_fallback_spec(:amp_sdk), do: "~> 0.3"
+  defp dep_fallback_spec(:amp_sdk), do: "~> 0.5.0"
   defp dep_fallback_spec(_), do: ">= 0.0.0"
 
   @doc false

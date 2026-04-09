@@ -15,6 +15,9 @@
 </p>
 
 Prompt Runner SDK executes ordered prompt workflows against local repositories.
+This README targets `prompt_runner_sdk ~> 0.5.0` and the provider SDK releases
+published on Hex on 2026-04-08.
+
 It supports two equally valid styles:
 
 - Convention-driven execution from a directory of numbered `.prompt.md` files.
@@ -32,7 +35,7 @@ future release binaries all sit on top of the same runtime.
   API calls default to memory/noop commit.
   CLI calls default to `.prompt_runner/` state plus git commits.
 - Legacy config compatibility without migration pressure.
-- Claude, Codex, and Amp support through `agent_session_manager`.
+- Claude, Codex, Gemini, and Amp support through `agent_session_manager`.
 - Studio, compact, and verbose rendering modes.
 - Observer callbacks and an optional PubSub bridge.
 
@@ -44,12 +47,17 @@ def deps do
     {:prompt_runner_sdk, "~> 0.5.0"},
 
     # Add the provider SDKs you actually use.
-    {:claude_agent_sdk, "~> 0.14.0"},
-    {:codex_sdk, "~> 0.10.1"},
-    {:amp_sdk, "~> 0.4.0"}
+    {:claude_agent_sdk, "~> 0.17.0"},
+    {:codex_sdk, "~> 0.16.0"},
+    {:gemini_cli_sdk, "~> 0.2.0"},
+    {:amp_sdk, "~> 0.5.0"}
   ]
 end
 ```
+
+Prompt Runner keeps the provider SDKs as explicit optional deps instead of
+relying on transitive pulls from `agent_session_manager`. That makes Hex
+resolution predictable and missing-provider failures easier to diagnose.
 
 ## Quick Start
 
@@ -194,6 +202,18 @@ mix format
 mix credo --strict
 mix docs
 ```
+
+For sibling-repo development against local checkouts of `agent_session_manager`
+or the provider SDKs, opt in explicitly:
+
+```bash
+PROMPT_RUNNER_USE_LOCAL_DEPS=1 mix deps.get
+PROMPT_RUNNER_USE_LOCAL_DEPS=1 mix test
+```
+
+Hex remains the default dependency source, and `mix hex.build` /
+`mix hex.publish` ignore that local-deps opt-in so package metadata stays
+Hex-clean.
 
 ## License
 

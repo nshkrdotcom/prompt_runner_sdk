@@ -67,6 +67,54 @@ defmodule PromptRunner.ConfigTest do
     assert llm.timeout == 420_000
   end
 
+  test "prompt overrides preserve inherited timeout and permission_mode when they do not redefine them" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    prompts_path = Path.join(tmp_dir, "prompts.txt")
+    commits_path = Path.join(tmp_dir, "commit-messages.txt")
+
+    File.write!(prompts_path, "02|1|1|Beta|002.md\n")
+    File.write!(commits_path, "=== COMMIT 02 ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "002.md"), "beta\n")
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "sonnet",
+        llm: %{
+          provider: "claude",
+          timeout: 120_000,
+          permission_mode: :bypass,
+          prompt_overrides: %{
+            "02" => %{provider: "codex", model: "gpt-5.3-codex"}
+          }
+        }
+      }
+      """
+    )
+
+    assert {:ok, config} = Config.load(config_path)
+
+    prompt = %Prompt{num: "02", phase: 1, sp: 1, name: "Beta", file: "002.md", target_repos: nil}
+    llm = Config.llm_for_prompt(config, prompt)
+
+    assert llm.provider == :codex
+    assert llm.timeout == 120_000
+    assert llm.permission_mode == :bypass
+  end
+
   test "accepts studio log mode" do
     tmp_dir =
       Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
@@ -411,6 +459,204 @@ defmodule PromptRunner.ConfigTest do
 
     assert Config.llm_for_prompt(config, prompt_01).permission_mode == :bypass
     assert Config.llm_for_prompt(config, prompt_02).permission_mode == :bypass
+  end
+
+  test "rejects Codex configs that normalize to shared auto permission mode" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    prompts_path = Path.join(tmp_dir, "prompts.txt")
+    commits_path = Path.join(tmp_dir, "commit-messages.txt")
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(prompts_path, "01|1|1|Alpha|001.md\n02|1|1|Beta|002.md\n")
+    File.write!(commits_path, "=== COMMIT 01 ===\nmsg\n=== COMMIT 02 ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+    File.write!(Path.join(tmp_dir, "002.md"), "beta\n")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.3-codex",
+        llm: %{
+          sdk: "codex_sdk",
+          permission_mode: :accept_edits,
+          prompt_overrides: %{
+            "02" => %{sdk: "amp_sdk", permission_mode: "dangerously_allow_all"}
+          }
+        }
+      }
+      """
+    )
+
+    assert {:error, errors} = Config.load(config_path)
+    assert {:permission_mode, {:invalid_permission_mode, :codex, :auto}} in errors
+  end
+
+  test "rejects prompt overrides that switch Codex onto shared auto permission mode" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    prompts_path = Path.join(tmp_dir, "prompts.txt")
+    commits_path = Path.join(tmp_dir, "commit-messages.txt")
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(prompts_path, "01|1|1|Alpha|001.md\n02|1|1|Beta|002.md\n")
+    File.write!(commits_path, "=== COMMIT 01 ===\nmsg\n=== COMMIT 02 ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+    File.write!(Path.join(tmp_dir, "002.md"), "beta\n")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "haiku",
+        llm: %{
+          sdk: "claude_agent_sdk",
+          permission_mode: :bypass,
+          prompt_overrides: %{
+            "02" => %{sdk: "codex_sdk", permission_mode: :accept_edits}
+          }
+        }
+      }
+      """
+    )
+
+    assert {:error, errors} = Config.load(config_path)
+
+    assert {{:prompt_override, "02", :permission_mode}, {:invalid_permission_mode, :codex, :auto}} in errors
+  end
+
+  test "rejects unsupported codex_thread_opts keys at config load" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    prompts_path = Path.join(tmp_dir, "prompts.txt")
+    commits_path = Path.join(tmp_dir, "commit-messages.txt")
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(prompts_path, "01|1|1|Alpha|001.md\n")
+    File.write!(commits_path, "=== COMMIT 01 ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.3-codex",
+        llm: %{
+          sdk: "codex_sdk",
+          codex_thread_opts: %{sandbox: :danger_full_access}
+        }
+      }
+      """
+    )
+
+    assert {:error, errors} = Config.load(config_path)
+    assert {:codex_thread_opts, {:unsupported_provider_option, :sandbox}} in errors
+  end
+
+  test "rejects root max_turns for amp because the runtime does not support it" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+    File.write!(Path.join(tmp_dir, "commit-messages.txt"), "=== COMMIT 01 ===\nmsg\n")
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "amp-1",
+        llm: %{provider: "amp", max_turns: 2}
+      }
+      """
+    )
+
+    assert {:error, errors} = Config.load(config_path)
+    assert {:max_turns, {:unsupported_prompt_control, :amp}} in errors
+  end
+
+  test "rejects inherited prompt controls when an override switches to a provider that does not support them" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n02|1|1|Beta|002.md\n")
+
+    File.write!(
+      Path.join(tmp_dir, "commit-messages.txt"),
+      "=== COMMIT 01 ===\nmsg\n=== COMMIT 02 ===\nmsg\n"
+    )
+
+    File.write!(Path.join(tmp_dir, "001.md"), "alpha\n")
+    File.write!(Path.join(tmp_dir, "002.md"), "beta\n")
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "sonnet",
+        llm: %{
+          provider: "claude",
+          append_system_prompt: "Stay concise.",
+          prompt_overrides: %{
+            "02" => %{provider: "codex"}
+          }
+        }
+      }
+      """
+    )
+
+    assert {:error, errors} = Config.load(config_path)
+
+    assert {{:prompt_override, "02", :append_system_prompt},
+            {:unsupported_prompt_control, :codex}} in errors
   end
 
   test "rejects target repos whose paths do not exist" do
