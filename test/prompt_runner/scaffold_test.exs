@@ -28,7 +28,7 @@ defmodule PromptRunner.ScaffoldTest do
 
     runner = File.read!(runner_file)
 
-    assert runner =~ ~s({:prompt_runner_sdk, "~> 0.5.0"})
+    assert runner =~ ~s({:prompt_runner_sdk, "~> 0.5.1"})
     assert runner =~ ~s({:claude_agent_sdk, "~> 0.17.0"})
     refute runner =~ "codex_sdk"
     refute runner =~ "gemini_cli_sdk"
@@ -72,7 +72,7 @@ defmodule PromptRunner.ScaffoldTest do
 
     expected_lines = [
       ~s({:claude_agent_sdk, "~> 0.17.0"}),
-      ~s({:codex_sdk, "~> 0.16.0"}),
+      ~s({:codex_sdk, "~> 0.16.1"}),
       ~s({:gemini_cli_sdk, "~> 0.2.0"}),
       ~s({:amp_sdk, "~> 0.5.0"})
     ]

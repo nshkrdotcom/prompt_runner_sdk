@@ -1,14 +1,14 @@
 # Provider Guide
 
 Prompt Runner delegates provider execution to `agent_session_manager`.
-This guide targets `prompt_runner_sdk ~> 0.5.0`.
+This guide targets `prompt_runner_sdk ~> 0.5.1`.
 
 Supported providers:
 
-| Provider | Key | Optional dependency | Version for 0.5.0 |
+| Provider | Key | Optional dependency | Version for 0.5.1 |
 |----------|-----|---------------------|-------------------|
 | Claude | `:claude` | `claude_agent_sdk` | `~> 0.17.0` |
-| Codex | `:codex` | `codex_sdk` | `~> 0.16.0` |
+| Codex | `:codex` | `codex_sdk` | `~> 0.16.1` |
 | Gemini | `:gemini` | `gemini_cli_sdk` | `~> 0.2.0` |
 | Amp | `:amp` | `amp_sdk` | `~> 0.5.0` |
 
@@ -17,9 +17,9 @@ Supported providers:
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.5.0"},
+    {:prompt_runner_sdk, "~> 0.5.1"},
     {:claude_agent_sdk, "~> 0.17.0"},
-    {:codex_sdk, "~> 0.16.0"},
+    {:codex_sdk, "~> 0.16.1"},
     {:gemini_cli_sdk, "~> 0.2.0"},
     {:amp_sdk, "~> 0.5.0"}
   ]
@@ -99,6 +99,9 @@ That distinction matters:
   `output_schema`
 - `cli_confirmation` is not a Codex runtime permission setting; it is a Prompt
   Runner audit policy for Codex CLI confirmation events
+- Prompt Runner confirms Codex settings from the best available runtime source:
+  hidden confirmation metadata when present, otherwise the actual launched
+  `run_started` command args
 
 Normalized shared permission modes:
 
@@ -137,7 +140,7 @@ In that configuration:
 - `permission_mode` is the shared runner-level approval/edit posture
 - `reasoning_effort` and `additional_directories` are Codex-only settings
 - `cli_confirmation` controls whether Prompt Runner warns or fails when Codex
-  CLI confirmation metadata does not match expectations
+  CLI confirmation details do not match expectations
 
 Do not put raw Codex CLI thread flags such as `sandbox` or `ask_for_approval`
 under `codex_thread_opts`. The current ASM-owned Codex surface for Prompt

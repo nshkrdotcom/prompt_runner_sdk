@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-09
+
+### Changed
+
+- Bumped the published Codex dependency guidance and package spec to
+  `codex_sdk ~> 0.16.1`.
+- Refreshed README, getting-started, provider docs, scaffolded dependency
+  output, and example `Mix.install` snippets for the `0.5.1` / `0.16.1`
+  release pair.
+
+### Fixed
+
+- Codex CLI confirmation auditing now falls back to the actual launched
+  `run_started` command args when hidden confirmation metadata does not include
+  model or reasoning details, so `cli_confirmation: :require` no longer fails
+  falsely on otherwise-correct Codex runs.
+- Hidden Codex confirmation events now merge event metadata with raw
+  `thread.started` metadata before Prompt Runner evaluates the confirmation
+  payload.
+
 ## [0.5.0] - 2026-04-08
 
 ### Changed
@@ -219,7 +239,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
-[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.2.0...v0.3.0

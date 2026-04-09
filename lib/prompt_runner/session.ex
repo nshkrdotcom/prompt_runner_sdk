@@ -503,12 +503,10 @@ defmodule PromptRunner.Session do
            provider: provider
          } = event
        ) do
-    metadata = Map.get(raw, "metadata", %{})
+    metadata = codex_confirmation_metadata(event, Map.get(raw, "metadata", %{}))
     thread_id = Map.get(raw, "thread_id")
-    model = Map.get(metadata, "model")
-
-    reasoning_effort =
-      Map.get(metadata, "reasoning_effort") || Map.get(metadata, "reasoningEffort")
+    model = codex_confirmation_model(raw, metadata)
+    reasoning_effort = codex_confirmation_reasoning_effort(raw, metadata)
 
     legacy_event(
       event,
@@ -532,10 +530,10 @@ defmodule PromptRunner.Session do
            provider: provider
          } = event
        ) do
-    metadata = Map.get(raw, :metadata, %{})
+    metadata = codex_confirmation_metadata(event, Map.get(raw, :metadata, %{}))
     thread_id = Map.get(raw, :thread_id)
-    model = Map.get(metadata, :model)
-    reasoning_effort = Map.get(metadata, :reasoning_effort) || Map.get(metadata, :reasoningEffort)
+    model = codex_confirmation_model(raw, metadata)
+    reasoning_effort = codex_confirmation_reasoning_effort(raw, metadata)
 
     legacy_event(
       event,
@@ -554,6 +552,38 @@ defmodule PromptRunner.Session do
   end
 
   defp codex_hidden_confirmation_event(_event), do: nil
+
+  defp codex_confirmation_metadata(%{metadata: event_metadata}, raw_metadata) do
+    Map.merge(normalize_map(event_metadata), normalize_map(raw_metadata))
+  end
+
+  defp codex_confirmation_metadata(_event, raw_metadata), do: normalize_map(raw_metadata)
+
+  defp codex_confirmation_model(raw, metadata) do
+    confirmation_get(raw, :confirmed_model) ||
+      confirmation_get(raw, :model) ||
+      confirmation_get(metadata, :model)
+  end
+
+  defp codex_confirmation_reasoning_effort(raw, metadata) do
+    confirmation_get(raw, :confirmed_reasoning_effort) ||
+      confirmation_get(raw, :reasoning_effort) ||
+      confirmation_get(metadata, :reasoning_effort) ||
+      confirmation_get(metadata, :reasoningEffort) ||
+      confirmation_reasoning_from_config(metadata)
+  end
+
+  defp confirmation_reasoning_from_config(metadata) when is_map(metadata) do
+    metadata
+    |> confirmation_get(:config)
+    |> confirmation_get(:model_reasoning_effort)
+  end
+
+  defp confirmation_get(map, key) when is_map(map) and is_atom(key) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
+
+  defp confirmation_get(_map, _key), do: nil
 
   defp run_started_data(%Payload.RunStarted{} = payload, :codex) do
     metadata = normalize_map(payload.metadata)

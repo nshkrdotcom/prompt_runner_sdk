@@ -803,6 +803,86 @@ defmodule PromptRunner.RunnerTest do
     assert statuses["01"].status == "failed"
   end
 
+  test "accepts codex run_started command args as confirmation when metadata is absent" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_runner_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    File.write!(Path.join(tmp_dir, "001.md"), "hello\n")
+    File.write!(Path.join(tmp_dir, "prompts.txt"), "01|1|1|Alpha|001.md\n")
+
+    File.write!(
+      Path.join(tmp_dir, "commit-messages.txt"),
+      "=== COMMIT 01 ===\nchore: demo\n"
+    )
+
+    config_path = Path.join(tmp_dir, "runner_config.exs")
+
+    File.write!(
+      config_path,
+      """
+      %{
+        project_dir: "#{tmp_dir}",
+        prompts_file: "prompts.txt",
+        commit_messages_file: "commit-messages.txt",
+        progress_file: ".progress",
+        log_dir: "logs",
+        model: "gpt-5.4",
+        llm: %{
+          provider: "codex",
+          codex_thread_opts: %{reasoning_effort: :xhigh}
+        }
+      }
+      """
+    )
+
+    {:ok, _config} = Config.load(config_path)
+    {:ok, plan} = PromptRunner.plan(config_path)
+
+    Application.put_env(:prompt_runner, :llm_module, PromptRunner.LLMMock)
+    on_exit(fn -> Application.delete_env(:prompt_runner, :llm_module) end)
+
+    PromptRunner.LLMMock
+    |> expect(:start_stream, fn _llm, _prompt ->
+      stream = [
+        %{
+          type: :run_started,
+          data: %{
+            command: "/usr/bin/codex",
+            args: [
+              "exec",
+              "--json",
+              "--model",
+              "gpt-5.4",
+              "--config",
+              ~s(model_reasoning_effort="xhigh")
+            ]
+          }
+        },
+        %{type: :message_streamed, data: %{delta: "ok"}},
+        %{type: :run_completed, data: %{stop_reason: "end_turn"}}
+      ]
+
+      {:ok, stream, fn -> :ok end, %{sdk: :codex, model: "gpt-5.4", cwd: tmp_dir}}
+    end)
+
+    output =
+      ExUnit.CaptureIO.capture_io(fn ->
+        assert :ok =
+                 Runner.execute_plan(
+                   plan,
+                   [run: true, no_commit: true, cli_confirmation: "require"],
+                   [
+                     "01"
+                   ]
+                 )
+      end)
+
+    assert output =~ "LLM confirmed (codex_cli): model=gpt-5.4 reasoning=xhigh"
+  end
+
   test "writes machine-readable codex audit lines to session log" do
     tmp_dir =
       Path.join(System.tmp_dir!(), "prompt_runner_runner_#{System.unique_integer([:positive])}")

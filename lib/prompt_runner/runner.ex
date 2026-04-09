@@ -884,13 +884,18 @@ defmodule PromptRunner.Runner do
   defp extract_codex_cli_confirmation(_), do: nil
 
   defp confirmation_source(data) do
-    map_get(data, :confirmation_source) || "codex_cli.run_started"
+    map_get(data, :confirmation_source) ||
+      if(run_started_args_present?(data),
+        do: "codex_cli.run_started_args",
+        else: "codex_cli.run_started"
+      )
   end
 
   defp confirmation_model(data, metadata) do
     map_get(data, :confirmed_model) ||
       map_get(data, :model) ||
-      map_get(metadata, :model)
+      map_get(metadata, :model) ||
+      run_started_args_model(data)
   end
 
   defp confirmation_reasoning_effort(data, metadata) do
@@ -898,7 +903,8 @@ defmodule PromptRunner.Runner do
       map_get(data, :confirmed_reasoning_effort) ||
       map_get(metadata, :reasoning_effort) ||
       map_get(metadata, :reasoningEffort) ||
-      metadata_config_reasoning(metadata)
+      metadata_config_reasoning(metadata) ||
+      run_started_args_reasoning(data)
   end
 
   defp metadata_config_reasoning(metadata) do
@@ -919,6 +925,69 @@ defmodule PromptRunner.Runner do
   end
 
   defp llm_summary(llm), do: "#{llm.sdk} model=#{llm.model}"
+
+  defp run_started_args_present?(data) do
+    case map_get(data, :args) do
+      args when is_list(args) -> args != []
+      _ -> false
+    end
+  end
+
+  defp run_started_args_model(data) do
+    data
+    |> run_started_args()
+    |> option_value("--model")
+  end
+
+  defp run_started_args_reasoning(data) do
+    data
+    |> run_started_args()
+    |> config_option_values()
+    |> Enum.find_value(&config_reasoning_value/1)
+  end
+
+  defp run_started_args(data) do
+    case map_get(data, :args) do
+      args when is_list(args) -> Enum.map(args, &to_string/1)
+      _ -> []
+    end
+  end
+
+  defp option_value(args, flag) when is_list(args) and is_binary(flag) do
+    args
+    |> Enum.with_index()
+    |> Enum.find_value(fn
+      {^flag, idx} -> Enum.at(args, idx + 1)
+      _ -> nil
+    end)
+  end
+
+  defp config_option_values(args) when is_list(args) do
+    args
+    |> Enum.with_index()
+    |> Enum.flat_map(fn
+      {"--config", idx} ->
+        case Enum.at(args, idx + 1) do
+          value when is_binary(value) and value != "" -> [value]
+          _ -> []
+        end
+
+      _ ->
+        []
+    end)
+  end
+
+  defp config_reasoning_value(config_value) when is_binary(config_value) do
+    case Regex.run(
+           ~r/(?:^|[\s{,])(?:model_)?reasoning_effort\s*=\s*"?([A-Za-z0-9_-]+)"?/,
+           config_value
+         ) do
+      [_, reasoning] -> reasoning
+      _ -> nil
+    end
+  end
+
+  defp config_reasoning_value(_config_value), do: nil
 
   defp configured_codex_reasoning(llm) do
     case llm[:codex_thread_opts] do
@@ -1030,7 +1099,7 @@ defmodule PromptRunner.Runner do
     "Add {#{inspect(otp_app)}, #{inspect(version_spec)}} to the deps in your mix.exs."
   end
 
-  defp dep_fallback_spec(:codex_sdk), do: "~> 0.16.0"
+  defp dep_fallback_spec(:codex_sdk), do: "~> 0.16.1"
   defp dep_fallback_spec(:claude_agent_sdk), do: "~> 0.17.0"
   defp dep_fallback_spec(:gemini_cli_sdk), do: "~> 0.2.0"
   defp dep_fallback_spec(:amp_sdk), do: "~> 0.5.0"

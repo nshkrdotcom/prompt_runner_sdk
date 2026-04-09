@@ -8,7 +8,7 @@ defmodule PromptRunner.Scaffold do
 
   @provider_dep_specs %{
     claude: {:claude_agent_sdk, "~> 0.17.0"},
-    codex: {:codex_sdk, "~> 0.16.0"},
+    codex: {:codex_sdk, "~> 0.16.1"},
     gemini: {:gemini_cli_sdk, "~> 0.2.0"},
     amp: {:amp_sdk, "~> 0.5.0"}
   }
@@ -90,7 +90,7 @@ defmodule PromptRunner.Scaffold do
 
   defp runner_content(plan) do
     install_entries =
-      [~s({:prompt_runner_sdk, "~> 0.5.0"}) | provider_dep_lines(plan)]
+      [~s({:prompt_runner_sdk, "~> 0.5.1"}) | provider_dep_lines(plan)]
       |> Enum.map_join(",\n", &"      #{&1}")
 
     """

@@ -115,6 +115,8 @@ These fields do not all mean the same thing or apply at the same layer.
   - Codex-only runner audit policy.
   - This checks whether the configured Codex model and reasoning settings were
     actually confirmed by the CLI.
+  - Prompt Runner accepts either hidden confirmation metadata or the launched
+    `run_started` command args as the confirmation source.
 
 Practical rule:
 

@@ -59,4 +59,48 @@ defmodule PromptRunner.SessionTest do
 
     assert Session.resolve_stream_idle_timeout_for_config(%{idle_timeout: 888_000}) == 888_000
   end
+
+  test "codex hidden confirmation run_started captures provider session id and raw metadata" do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_session_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    script_path = Path.join(tmp_dir, "codex_fixture.sh")
+
+    File.write!(
+      script_path,
+      """
+      #!/usr/bin/env bash
+      printf '%s\\n' '{"type":"thread.started","thread_id":"thr_probe","metadata":{"labels":{"topic":"demo"}}}'
+      printf '%s\\n' '{"type":"turn.completed","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}'
+      """
+    )
+
+    File.chmod!(script_path, 0o755)
+
+    llm = %{
+      provider: "codex",
+      sdk: "codex_sdk",
+      model: "gpt-5.4",
+      cwd: tmp_dir,
+      permission_mode: :bypass,
+      codex_thread_opts: %{reasoning_effort: :xhigh},
+      sdk_opts: %{cli_path: script_path}
+    }
+
+    {:ok, stream, close_fun, _meta} = Session.start_stream(llm, "say ok")
+    events = Enum.take(stream, 10)
+    close_fun.()
+
+    hidden_run_started =
+      Enum.find(events, fn
+        %{type: :run_started, hidden?: true} -> true
+        _ -> false
+      end)
+
+    assert hidden_run_started.data.provider_session_id == "thr_probe"
+    assert hidden_run_started.data.metadata["labels"] == %{"topic" => "demo"}
+  end
 end
