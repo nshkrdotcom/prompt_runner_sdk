@@ -1,75 +1,115 @@
 # API Guide
 
-The public API is centered on four functions:
+The 0.7.0 API is packet-first. The CLI is a convenience layer over these
+modules.
+
+## Packet And Profile APIs
+
+Initialize the profile store:
 
 ```elixir
-PromptRunner.plan/2
-PromptRunner.validate/2
-PromptRunner.run/2
-PromptRunner.run_prompt/2
+{:ok, _paths} = PromptRunner.Profile.init()
 ```
 
-## Input Shapes
-
-`PromptRunner.run/2` accepts:
-
-- a prompt directory
-- a legacy config path
-- a list of `%PromptRunner.Prompt{}`
-- a raw prompt string via `run_prompt/2`
-
-## Planning
+Create and inspect profiles:
 
 ```elixir
-{:ok, plan} =
-  PromptRunner.plan("./prompts",
-    target: "/path/to/repo",
-    provider: :claude,
-    model: "haiku"
-  )
+{:ok, profile} =
+  PromptRunner.Profile.create("codex-fast", %{
+    "provider" => "codex",
+    "model" => "gpt-5.4",
+    "reasoning_effort" => "high"
+  })
+
+{:ok, _same_profile} = PromptRunner.Profile.load(profile.name)
+{:ok, names} = PromptRunner.Profile.list()
 ```
 
-Useful fields on `plan`:
+Create a packet and add a repo:
+
+```elixir
+{:ok, packet} = PromptRunner.Packet.new("demo", root: "/tmp")
+{:ok, packet} = PromptRunner.Packet.add_repo(packet.root, "app", "/path/to/repo", default: true)
+```
+
+Create a prompt file:
+
+```elixir
+{:ok, _path} =
+  PromptRunner.Packets.create_prompt(packet.root, %{
+    "id" => "01",
+    "phase" => 1,
+    "name" => "Create hello file",
+    "targets" => ["app"],
+    "commit" => "docs: add hello file"
+  })
+```
+
+Inspect packet health:
+
+```elixir
+{:ok, doctor_report} = PromptRunner.Packet.doctor(packet.root)
+{:ok, explain_report} = PromptRunner.Packet.explain(packet.root)
+```
+
+## Planning And Running
+
+```elixir
+{:ok, plan} = PromptRunner.plan(packet.root, interface: :cli)
+{:ok, run} = PromptRunner.run(packet.root, interface: :cli)
+```
+
+Useful plan fields:
 
 - `plan.prompts`
-- `plan.source`
+- `plan.options`
 - `plan.runtime_store`
 - `plan.committer`
 - `plan.state_dir`
 - `plan.config`
 
-## Running
+## Embedded Use
+
+API calls default to an in-memory runtime store plus a no-op committer:
 
 ```elixir
 {:ok, run} =
-  PromptRunner.run("./prompts",
-    target: "/path/to/repo",
-    provider: :claude,
-    model: "haiku"
+  PromptRunner.run(packet.root,
+    provider: :codex,
+    model: "gpt-5.4",
+    runtime_store: :memory,
+    committer: :noop
   )
 ```
 
-Single prompt:
+That keeps embedded use free of surprise filesystem writes and git commits
+unless you opt in.
+
+## Repair And Status
 
 ```elixir
-{:ok, run} =
-  PromptRunner.run_prompt(
-    "Create hello.txt with a greeting.",
-    target: "/path/to/repo",
-    provider: :claude,
-    model: "haiku"
-  )
+{:ok, status} = PromptRunner.status(packet.root)
+{:ok, repaired_run} = PromptRunner.repair(packet.root, prompt: "01", interface: :cli)
 ```
 
-## Defaults In API Mode
+`PromptRunner.status/1` returns the packet runtime state from
+`.prompt_runner/state.json`.
 
-API mode defaults to:
+## Deterministic Verification
 
-- in-memory runtime state
-- `NoopCommitter`
-- no implicit `.prompt_runner/` directory
+Run verification without executing prompts:
 
-That makes it suitable for workers, web requests, and background jobs.
+```elixir
+{:ok, plan} = PromptRunner.plan(packet.root, interface: :cli)
+{:ok, reports} = PromptRunner.Verifier.verify(plan)
+```
+
+Or verify one prompt:
+
+```elixir
+prompt = Enum.find(plan.prompts, &(&1.num == "01"))
+report = PromptRunner.Verifier.verify_prompt(plan, prompt)
+```
 
 ## Observer Callbacks
 
@@ -81,20 +121,12 @@ Supported callbacks:
 - `on_prompt_failed`
 - `on_run_completed`
 
-Example:
-
 ```elixir
 {:ok, run} =
-  PromptRunner.run("./prompts",
-    target: "/repo",
-    provider: :claude,
-    model: "haiku",
+  PromptRunner.run(packet.root,
     on_event: fn event -> IO.inspect(event.type) end
   )
 ```
-
-Raw streaming events and PromptRunner lifecycle events are both delivered to
-`on_event`.
 
 ## PubSub Bridge
 
@@ -102,32 +134,7 @@ Raw streaming events and PromptRunner lifecycle events are both delivered to
 callback = PromptRunner.Observer.PubSub.callback(MyApp.PubSub, "prompt_runner:runs")
 
 {:ok, run} =
-  PromptRunner.run("./prompts",
-    target: "/repo",
-    provider: :claude,
-    model: "haiku",
+  PromptRunner.run(packet.root,
     on_event: callback
-  )
-```
-
-## Explicit Prompt Structs
-
-```elixir
-prompts = [
-  %PromptRunner.Prompt{
-    num: "01",
-    phase: 1,
-    sp: 3,
-    name: "Schema",
-    body: "Add the missing schema field.",
-    commit_message: "feat: add missing schema field"
-  }
-]
-
-{:ok, run} =
-  PromptRunner.run(prompts,
-    target: "/repo",
-    provider: :claude,
-    model: "haiku"
   )
 ```

@@ -14,6 +14,7 @@ defmodule PromptRunner.Prompt do
           target_repos: [String.t()] | nil,
           commit_message: String.t() | nil,
           validation_commands: [String.t()],
+          verify: map(),
           metadata: map()
         }
 
@@ -28,6 +29,7 @@ defmodule PromptRunner.Prompt do
     :target_repos,
     :commit_message,
     validation_commands: [],
+    verify: %{},
     metadata: %{}
   ]
 end

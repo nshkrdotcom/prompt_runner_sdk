@@ -1,177 +1,101 @@
 # Provider Guide
 
 Prompt Runner delegates provider execution to `agent_session_manager`.
-This guide targets `prompt_runner_sdk ~> 0.6.1`.
+This guide targets `prompt_runner_sdk ~> 0.7.0`.
 
 Supported providers:
 
-| Provider | Key | CLI command | Notes |
-|----------|-----|-------------|-------|
-| Claude | `:claude` | `claude` | ASM core lane via `cli_subprocess_core` |
-| Codex | `:codex` | `codex` | ASM core lane via `cli_subprocess_core` |
-| Gemini | `:gemini` | `gemini` | ASM core lane via `cli_subprocess_core` |
-| Amp | `:amp` | `amp` | ASM core lane via `cli_subprocess_core` |
+| Provider | Key | CLI command |
+|----------|-----|-------------|
+| Claude | `:claude` | `claude` |
+| Codex | `:codex` | `codex` |
+| Gemini | `:gemini` | `gemini` |
+| Amp | `:amp` | `amp` |
 
-## Install Prompt Runner
+Prompt Runner always starts ASM sessions with `lane: :core`, so host
+applications do not need the provider SDK packages just to run Prompt Runner.
 
-```elixir
-def deps do
-  [
-    {:prompt_runner_sdk, "~> 0.6.1"}
-  ]
-end
+## Default Profile Posture
+
+`mix prompt_runner init` creates `codex-default` with:
+
+- `provider: codex`
+- `model: gpt-5.4`
+- `reasoning_effort: xhigh`
+- `permission_mode: bypass`
+- `cli_confirmation: require`
+
+Packets can use that profile directly or override any of those values locally.
+
+## Shared Provider Knobs
+
+These packet or prompt keys work across providers:
+
+- `provider`
+- `model`
+- `allowed_tools`
+- `permission_mode`
+- `timeout`
+- `system_prompt`
+- `append_system_prompt`
+- `max_turns`
+
+Normalized shared permission modes:
+
+- `default`
+- `auto`
+- `bypass`
+- `plan`
+
+Codex currently rejects shared `permission_mode: auto`, so use `default`,
+`bypass`, or `plan` for Codex packets.
+
+## Provider-Specific Option Maps
+
+Prompt Runner also accepts provider-specific maps where the underlying ASM
+surface supports them:
+
+- `claude_opts`
+- `codex_opts`
+- `codex_thread_opts`
+- `gemini_opts`
+- `amp_opts`
+
+Codex-only thread settings belong in `codex_thread_opts`, for example:
+
+```yaml
+codex_thread_opts:
+  reasoning_effort: "xhigh"
+  additional_directories:
+    - "./repos/beta"
 ```
 
-Prompt Runner always starts ASM sessions with `lane: :core`, so host apps do
-not need the provider SDK packages just to run Prompt Runner. If your host app
-also uses a provider SDK directly for some other purpose, manage that SDK as a
-separate application concern.
-
-## Selecting A Provider
-
-Convention/API mode:
-
-```elixir
-PromptRunner.run("./prompts", target: "/repo", provider: :claude, model: "haiku")
-```
-
-Legacy config:
-
-```elixir
-%{
-  model: "haiku",
-  llm: %{provider: "claude"}
-}
-```
+Do not put raw unsupported CLI flags such as `sandbox` or `ask_for_approval`
+under `codex_thread_opts`.
 
 ## Codex CLI Confirmation
 
-Codex runs can verify that the configured model and reasoning effort were
-actually confirmed by the CLI.
+Codex packets can require runtime confirmation that the configured model and
+reasoning effort actually launched:
 
-Legacy config example:
-
-```elixir
-llm: %{
-  provider: "codex",
-  model: "gpt-5.3-codex",
-  cli_confirmation: :warn,
-  codex_thread_opts: %{reasoning_effort: :xhigh}
-}
+```yaml
+provider: "codex"
+model: "gpt-5.4"
+reasoning_effort: "xhigh"
+cli_confirmation: "require"
 ```
 
 Modes:
 
-- `:off`
-- `:warn`
-- `:require`
+- `off`
+- `warn`
+- `require`
 
-## Shared Versus Codex-Specific Knobs
-
-Prompt Runner exposes two different kinds of execution settings:
-
-- shared runner/provider settings
-- Codex-only thread settings
-
-Shared settings:
-
-- `allowed_tools`
-- `permission_mode`
-
-Codex-only settings:
-
-- `codex_thread_opts`
-- `cli_confirmation`
-
-That distinction matters:
-
-- `permission_mode` is the shared knob that Prompt Runner passes into the
-  selected provider adapter
-- `codex_thread_opts` is a Codex-only option map for thread/session settings
-  that Prompt Runner still forwards through the current ASM Codex surface, such
-  as `reasoning_effort`, `additional_directories`, `skip_git_repo_check`, and
-  `output_schema`
-- `cli_confirmation` is not a Codex runtime permission setting; it is a Prompt
-  Runner audit policy for Codex CLI confirmation events
-- Prompt Runner confirms Codex settings from the best available runtime source:
-  hidden confirmation metadata when present, otherwise the actual launched
-  `run_started` command args
-
-Normalized shared permission modes:
-
-- `:default`
-- `:auto`
-- `:bypass`
-- `:plan`
-
-Provider-native CLI labels are downstream details. Keep Prompt Runner config on
-the shared normalized modes above.
-
-Codex exception:
-
-- the current ASM/Codex contract intentionally rejects shared `permission_mode:
-  :auto` for Codex
-- use `:default`, `:bypass`, or `:plan` with Prompt Runner's shared
-  `permission_mode`
-- keep Codex-specific execution settings in `codex_thread_opts`
-
-Example:
-
-```elixir
-llm: %{
-  provider: "codex",
-  permission_mode: :bypass,
-  cli_confirmation: :require,
-  codex_thread_opts: %{
-    reasoning_effort: :xhigh,
-    additional_directories: ["/repo-b"]
-  }
-}
-```
-
-In that configuration:
-
-- `permission_mode` is the shared runner-level approval/edit posture
-- `reasoning_effort` and `additional_directories` are Codex-only settings
-- `cli_confirmation` controls whether Prompt Runner warns or fails when Codex
-  CLI confirmation details do not match expectations
-
-Do not put raw Codex CLI thread flags such as `sandbox` or `ask_for_approval`
-under `codex_thread_opts`. The current ASM-owned Codex surface for Prompt
-Runner does not accept those keys.
-
-## Legacy Per-Prompt Overrides
-
-Per-prompt provider switching currently lives in legacy config via
-`prompt_overrides`:
-
-```elixir
-llm: %{
-  provider: "claude",
-  model: "haiku",
-  prompt_overrides: %{
-    "02" => %{provider: "codex", model: "gpt-5.3-codex"}
-  }
-}
-```
-
-SDK-name aliases such as `"codex_sdk"` still normalize for compatibility, but
-provider names are the standard documented format.
+Prompt Runner accepts either hidden confirmation metadata or the actual
+launched command args as the proof source.
 
 ## Working Directory Behavior
 
-Prompt Runner computes provider `cwd` from the prompt target repo when targets
-are configured. Otherwise it falls back to the configured project directory.
-
-## Provider Recovery Semantics
-
-The current provider posture is:
-
-- Claude: provider-native session history and resume are available through the current ASM runtime
-- Codex: exact thread resumption is preferred when a provider session id is known
-- Gemini: typed session history and runtime-neutral resume are available
-- Amp: thread-history resume is available, but unsupported prompt-control surfaces such as
-  `system_prompt`, `append_system_prompt`, and `max_turns` are rejected
-
-Prompt Runner uses those provider-native session surfaces only for recoverable failures. Fatal
-data-loss events such as unrecoverable overflow still terminate the run honestly.
+The provider `cwd` is the first targeted repo for the prompt. Additional repo
+paths are projected into Codex additional directories when they are part of the
+prompt target set.

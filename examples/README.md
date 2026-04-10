@@ -1,71 +1,43 @@
 # Examples
 
-Two examples covering the two use cases:
+These examples all use the 0.7.0 packet/profile workflow.
 
-| Example | Use Case | What It Shows |
-|---------|----------|---------------|
-| `simple/` | Single repo | Four-provider execution in one repo (Claude, Codex, Amp, Gemini) |
-| `multi_repo_dummy/` | Multiple repos | Per-repo targeting and commits across Claude, Codex, Amp, and Gemini |
+## Included Examples
 
-## simple/
+| Example | Focus | What It Demonstrates |
+|---------|-------|----------------------|
+| `single_repo_packet/` | Quickstart | One packet, one repo, deterministic verification, packet-local runtime state |
+| `multi_repo_packet/` | Cross-repo work | Named repos, repo-scoped verification, Codex additional directories, per-repo commits |
 
-Single repository workflow. Four prompts write files to the same repo:
-- Prompt 01: Claude
-- Prompt 02: Codex
-- Prompt 03: Amp
-- Prompt 04: Gemini
+## Common Flow
 
 From the project root:
 
 ```bash
-bash examples/simple/setup.sh
-mix run run_prompts.exs -c examples/simple/runner_config.exs --list
-mix run run_prompts.exs -c examples/simple/runner_config.exs --run 01
-mix run run_prompts.exs -c examples/simple/runner_config.exs --run 02
-mix run run_prompts.exs -c examples/simple/runner_config.exs --run 03
-mix run run_prompts.exs -c examples/simple/runner_config.exs --run 04
-bash examples/simple/cleanup.sh
+bash examples/single_repo_packet/setup.sh
+mix prompt_runner list examples/single_repo_packet
+mix prompt_runner run examples/single_repo_packet
+mix prompt_runner status examples/single_repo_packet
+bash examples/single_repo_packet/cleanup.sh
 ```
 
-## multi_repo_dummy/
-
-Multi-repository workflow. Four prompts target two repos (alpha, beta):
-- Prompt 01: Codex, targets both repos
-- Prompt 02: Claude, targets both repos
-- Prompt 03: Amp, targets both repos
-- Prompt 04: Gemini, targets both repos
-
-From the project root:
+Or:
 
 ```bash
-bash examples/multi_repo_dummy/setup.sh
-mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --list
-mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --run 01
-mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --run 02
-mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --run 03
-mix run run_prompts.exs -c examples/multi_repo_dummy/runner_config.exs --run 04
-bash examples/multi_repo_dummy/cleanup.sh
+bash examples/multi_repo_packet/setup.sh
+mix prompt_runner list examples/multi_repo_packet
+mix prompt_runner run examples/multi_repo_packet
+mix prompt_runner status examples/multi_repo_packet
+bash examples/multi_repo_packet/cleanup.sh
 ```
 
-## Which to Start With?
+## Notes
 
-- **Most users:** Start with `simple/` - it's the common case
-- **Cross-repo workflows:** Use `multi_repo_dummy/` as your reference
-
-## Recovery-Oriented Example Packs
-
-The example packs in this repo are now the primary manual proof surface for Prompt Runner’s
-resume-first recovery posture:
-
-- `examples/simple/` exercises the single-repo provider matrix
-- `examples/multi_repo_dummy/` exercises multi-repo prompt planning and execution boundaries
-
-Both example packs now rely on the current ASM session runtime, so provider-native recovery handles
-can flow through normal prompt execution.
-
-Both standalone example runners install the local `prompt_runner_sdk` checkout
-plus `agent_session_manager`; provider selection and CLI execution still flow
-through ASM core lane, with no provider SDK packages.
-
-Both `setup.sh` scripts reset and reseed their example workspace, so rerunning
-them gives you a clean starting state.
+- both examples create their repos or workspaces locally under the example
+  directory
+- both examples clear `.prompt_runner/` on setup so runs start clean
+- both examples are meant to be executed with the repository root Mix task or
+  `run_prompts.exs`
+- the repair workflow is documented in
+  `guides/verification-and-repair.md` instead of a standalone intentionally
+  failing example pack

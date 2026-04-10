@@ -5,7 +5,7 @@
 <h1 align="center">Prompt Runner SDK</h1>
 
 <p align="center">
-  <strong>Convention-driven prompt orchestration for Elixir, Mix, and production applications</strong>
+  <strong>Packet-first prompt execution for Elixir, Mix, and local CLI workflows</strong>
 </p>
 
 <p align="center">
@@ -14,182 +14,221 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
 </p>
 
-Prompt Runner SDK executes ordered prompt workflows against local repositories.
-This README targets `prompt_runner_sdk ~> 0.6.1`.
+Prompt Runner SDK executes packetized prompt workflows against local
+repositories. This README targets `prompt_runner_sdk ~> 0.7.0`.
 
-It supports two equally valid styles:
+`0.7.0` is a breaking redesign:
 
-- Convention-driven execution from a directory of numbered `.prompt.md` files.
-- Explicit legacy execution from `runner_config.exs`, `prompts.txt`, and `commit-messages.txt`.
+- packets replace duplicated control files
+- profiles replace ad hoc global defaults
+- completion is verifier-owned, not provider-owned
+- retry and repair are built into the runtime
 
-The core engine is library-first. The CLI, Mix task, standalone script, and
-future release binaries all sit on top of the same runtime.
+The same runtime is exposed through public Elixir modules and the CLI.
 
 ## Highlights
 
-- `PromptRunner.run/2`, `plan/2`, `validate/2`, and `run_prompt/2` for embedded use.
-- `mix prompt_runner ...` for local workflows.
-- Convention mode with optional front matter and heading-based metadata.
-- Runtime store defaults that are safe by context:
-  API calls default to memory/noop commit.
-  CLI calls default to `.prompt_runner/` state plus git commits.
-- Legacy config compatibility without migration pressure.
-- Claude, Codex, Gemini, and Amp support through `agent_session_manager`.
-- Studio, compact, and verbose rendering modes.
-- Observer callbacks and an optional PubSub bridge.
+- one packet manifest: `prompt_runner_packet.md`
+- one prompt format: `*.prompt.md` with YAML front matter
+- home-scoped profiles under `~/.config/prompt_runner/`
+- deterministic completion contracts plus generated checklist views
+- retry and repair based on verifier state
+- public packet/profile/runtime APIs plus matching CLI commands
+- Claude, Codex, Gemini, and Amp support through `agent_session_manager`
+- no direct provider SDK dependencies required in host applications
 
 ## Installation
 
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.6.1"}
+    {:prompt_runner_sdk, "~> 0.7.0"}
   ]
 end
 ```
 
-Prompt Runner is now an explicit `agent_session_manager` core-lane client.
-Host projects do not need `codex_sdk`, `claude_agent_sdk`, `gemini_cli_sdk`,
-or `amp_sdk` just to run Prompt Runner. Provider CLI discovery and execution
-flow through ASM plus `cli_subprocess_core`.
+```bash
+mix deps.get
+```
 
-For Codex, `cli_confirmation` auditing now accepts either hidden confirmation
-metadata or the actual launched command args as the runtime proof source.
+Prompt Runner is an explicit `agent_session_manager` core-lane client. Host
+projects do not need `codex_sdk`, `claude_agent_sdk`, `gemini_cli_sdk`, or
+`amp_sdk` just to use Prompt Runner.
 
 ## Quick Start
 
-### 1. Create a prompt directory
+Initialize Prompt Runner once per machine:
 
-`prompts/01_auth.prompt.md`
+```bash
+mix prompt_runner init
+```
+
+Create a packet:
+
+```bash
+mix prompt_runner packet new demo
+mix prompt_runner repo add app /path/to/repo --packet demo --default
+mix prompt_runner prompt new 01 \
+  --packet demo \
+  --phase 1 \
+  --name "Create hello file" \
+  --targets app \
+  --commit "docs: add hello file"
+```
+
+Edit `demo/prompts/01_create_hello_file.prompt.md`:
 
 ```markdown
-# Reconcile auth ownership
+---
+id: "01"
+phase: 1
+name: "Create hello file"
+targets:
+  - "app"
+commit: "docs: add hello file"
+verify:
+  files_exist:
+    - "hello.txt"
+  contains:
+    - path: "hello.txt"
+      text: "Hello from Prompt Runner"
+  changed_paths_only:
+    - "hello.txt"
+---
+# Create hello file
 
 ## Mission
 
-Align the auth architecture across code and docs.
-
-## Validation Commands
-
-- `mix test`
+Create `hello.txt` with exactly one line: `Hello from Prompt Runner`.
+Do not modify any other files. Respond with exactly `ok`.
 ```
 
-### 2. Run it from Mix
+Inspect, run, and check status:
 
 ```bash
-mix prompt_runner run ./prompts --target /path/to/repo --provider claude --model haiku
+mix prompt_runner list demo
+mix prompt_runner plan demo
+mix prompt_runner run demo
+mix prompt_runner status demo
 ```
 
-### 3. List or inspect the plan
+Packet-local runtime state is written to `demo/.prompt_runner/`.
 
-```bash
-mix prompt_runner list ./prompts --target /path/to/repo
-mix prompt_runner plan ./prompts --target /path/to/repo
+## Packet Model
+
+A packet directory is the primary unit of work:
+
+```text
+demo/
+  prompt_runner_packet.md
+  prompts/
+    01_create_hello_file.prompt.md
+    01_create_hello_file.prompt.checklist.md
+  .prompt_runner/
+    state.json
+    progress.log
+    logs/
 ```
 
-CLI runs store progress and logs in `./prompts/.prompt_runner/` by default.
+Core files:
+
+- `prompt_runner_packet.md`
+  packet-level repos, defaults, and phase names
+- `*.prompt.md`
+  one prompt per file
+- `*.prompt.checklist.md`
+  generated human view of the deterministic verification contract
+- `.prompt_runner/state.json`
+  packet-local attempt and verifier history
 
 ## Programmatic API
 
-```elixir
-{:ok, plan} =
-  PromptRunner.plan("./prompts",
-    target: "/path/to/repo",
-    provider: :claude,
-    model: "haiku"
-  )
-
-{:ok, run} =
-  PromptRunner.run("./prompts",
-    target: "/path/to/repo",
-    provider: :claude,
-    model: "haiku",
-    on_event: fn event -> IO.inspect(event.type) end
-  )
-```
-
-Single prompt execution works without any files:
+The CLI is a thin layer over public modules:
 
 ```elixir
+{:ok, _paths} = PromptRunner.Profile.init()
+{:ok, packet} = PromptRunner.Packet.new("demo", root: "/tmp")
+{:ok, packet} = PromptRunner.Packet.add_repo(packet.root, "app", "/path/to/repo", default: true)
+
+{:ok, _prompt_path} =
+  PromptRunner.Packets.create_prompt(packet.root, %{
+    "id" => "01",
+    "phase" => 1,
+    "name" => "Create hello file",
+    "targets" => ["app"],
+    "commit" => "docs: add hello file"
+  })
+
+{:ok, plan} = PromptRunner.plan(packet.root, interface: :cli)
+{:ok, run} = PromptRunner.run(packet.root, interface: :cli)
+{:ok, status} = PromptRunner.status(packet.root)
+```
+
+For embedded use, `PromptRunner.run/2` defaults to an in-memory runtime store
+plus a no-op committer:
+
+```elixir
 {:ok, run} =
-  PromptRunner.run_prompt(
-    "Create hello.txt with a greeting.",
-    target: "/path/to/repo",
-    provider: :claude,
-    model: "haiku"
+  PromptRunner.run("/path/to/packet",
+    provider: :codex,
+    model: "gpt-5.4",
+    committer: :noop,
+    runtime_store: :memory
   )
 ```
 
-API calls default to:
+## Verification, Retry, and Repair
 
-- `MemoryStore` for progress/state.
-- `NoopCommitter` for post-run behavior.
+Prompt Runner no longer equates provider success with completion.
 
-That keeps embedded production use free of surprise filesystem writes and git
-commits unless you explicitly opt into them.
+Each prompt can declare a deterministic completion contract with checks such as:
 
-## CLI Surfaces
+- `files_exist`
+- `files_absent`
+- `contains`
+- `matches`
+- `commands`
+- `changed_paths_only`
 
-### Mix task
+After every attempt, the runner verifies the contract:
 
-```bash
-mix prompt_runner list ./prompts --target /repo
-mix prompt_runner run ./prompts --target /repo
-mix prompt_runner validate ./prompts --target /repo
-mix prompt_runner scaffold ./prompts --output ./generated --target /repo
-```
+- verifier pass: prompt completes
+- verifier fail after provider success: synthesize a repair prompt
+- transient provider failure plus verifier pass: accept completion
+- terminal policy/config failure: fail honestly even if files happen to exist
 
-### Standalone script
-
-The root `run_prompts.exs` file remains available for legacy config-driven runs:
-
-```bash
-mix run run_prompts.exs --config runner_config.exs --run 01
-```
-
-### Escript
+Generate checklist views from the contract:
 
 ```bash
-mix escript.build
-./prompt_runner list ./prompts --target /repo
+mix prompt_runner checklist sync demo
 ```
 
-## Legacy Config Mode
+## CLI Entry Points
 
-Existing v0.4 projects continue to work:
+Use any of these:
 
-```bash
-mix run run_prompts.exs --config runner_config.exs --list
-mix run run_prompts.exs --config runner_config.exs --run 01
-mix run run_prompts.exs --config runner_config.exs --run --all
-```
-
-Legacy config is still the right fit when you want:
-
-- hand-authored `prompts.txt`
-- hand-authored `commit-messages.txt`
-- per-prompt provider overrides via `prompt_overrides`
-- fixed checked-in runner files
-
-## Documentation Map
-
-- [Getting Started](guides/getting-started.md)
-- [Convention Mode](guides/convention-mode.md)
-- [CLI Guide](guides/cli.md)
-- [API Guide](guides/api.md)
-- [Configuration Reference](guides/configuration.md)
-- [Legacy Config Mode](guides/legacy-config.md)
-- [Provider Guide](guides/providers.md)
-- [Rendering Modes](guides/rendering.md)
-- [Multi-Repository Workflows](guides/multi-repo.md)
-- [Architecture](guides/architecture.md)
-- [Migration Notes](guides/migration.md)
-- [Examples](examples/README.md)
+- `mix prompt_runner ...`
+- `mix run run_prompts.exs -- ...`
+- `prompt_runner ...` after `mix escript.build`
 
 ## Examples
 
-- `examples/simple/` shows the explicit legacy single-repo workflow.
-- `examples/multi_repo_dummy/` shows explicit multi-repo commits.
+- [examples/README.md](examples/README.md)
+- [examples/single_repo_packet/README.md](examples/single_repo_packet/README.md)
+- [examples/multi_repo_packet/README.md](examples/multi_repo_packet/README.md)
+
+## Documentation
+
+- [Getting Started](guides/getting-started.md)
+- [CLI Guide](guides/cli.md)
+- [API Guide](guides/api.md)
+- [Packet Manifest Reference](guides/configuration.md)
+- [Profiles](guides/profiles.md)
+- [Provider Guide](guides/providers.md)
+- [Verification And Repair](guides/verification-and-repair.md)
+- [Multi-Repository Packets](guides/multi-repo.md)
+- [Rendering Modes](guides/rendering.md)
+- [Architecture](guides/architecture.md)
 
 ## Development
 
@@ -208,24 +247,10 @@ PROMPT_RUNNER_USE_LOCAL_DEPS=1 mix deps.get
 PROMPT_RUNNER_USE_LOCAL_DEPS=1 mix test
 ```
 
-Hex remains the default dependency source, and `mix hex.build` /
+Hex remains the default dependency source. `mix hex.build` and
 `mix hex.publish` ignore that local-deps opt-in so package metadata stays
 Hex-clean.
 
 ## License
 
 MIT
-## Resume-First Recovery
-
-`prompt_runner_sdk` now treats provider-native session continuation as the first recovery path for
-recoverable transport/protocol failures.
-
-- prompt runs cache provider-native recovery metadata as the stream progresses
-- recoverable protocol/transport failures trigger an exact-session resume attempt with `Continue`
-  before any prompt replay is considered
-- the runner preserves the original/root provider error and attaches any failed recovery attempt as
-  secondary context instead of overwriting it with generic transport noise
-- prompt-numbering `--continue` remains distinct from provider session continuation
-
-This repo now depends on the current `agent_session_manager` session runtime rather than the older
-adapter seam so those recovery handles can flow end to end.

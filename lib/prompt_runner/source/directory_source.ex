@@ -5,6 +5,7 @@ defmodule PromptRunner.Source.DirectorySource do
 
   @behaviour PromptRunner.Source
 
+  alias PromptRunner.FrontMatter
   alias PromptRunner.Prompt
   alias PromptRunner.Source.Result
 
@@ -52,12 +53,14 @@ defmodule PromptRunner.Source.DirectorySource do
   defp build_prompt(path) do
     body = File.read!(path)
     {metadata, content} = parse_front_matter(body)
-    heading_name = parse_h1(content)
+    heading_name = metadata["name"] || parse_h1(content)
     mission = parse_mission(content)
     validation = validation_commands(metadata, content)
     {targets, inferred_paths} = parse_targets(metadata, content)
+    verify = verify_contract(metadata, validation)
+    llm_override = llm_override(metadata)
 
-    num = normalize_num(metadata["num"] || filename_num(path) || "01")
+    num = normalize_num(metadata["id"] || metadata["num"] || filename_num(path) || "01")
     phase = normalize_integer(metadata["phase"], 1)
     sp = normalize_integer(metadata["sp"], 1)
 
@@ -65,7 +68,10 @@ defmodule PromptRunner.Source.DirectorySource do
       metadata["commit"] ||
         auto_commit_message(heading_name || basename_name(path), mission)
 
-    metadata = Map.put(metadata, "inferred_target_paths", inferred_paths)
+    metadata =
+      metadata
+      |> Map.put("inferred_target_paths", inferred_paths)
+      |> Map.put("llm_override", llm_override)
 
     %Prompt{
       num: num,
@@ -78,79 +84,16 @@ defmodule PromptRunner.Source.DirectorySource do
       target_repos: targets,
       commit_message: commit_message,
       validation_commands: validation,
+      verify: verify,
       metadata: metadata
     }
   end
 
   defp parse_front_matter(text) do
-    case Regex.run(~r/\A---\n(.*?)\n---\n/s, text, capture: :all_but_first) do
-      [front_matter] ->
-        metadata = parse_simple_yaml(front_matter)
-        content = String.replace_prefix(text, "---\n#{front_matter}\n---\n", "")
-        {metadata, content}
-
-      _ ->
-        {%{}, text}
+    case FrontMatter.parse(text) do
+      {:ok, %{attributes: metadata, body: content}} -> {metadata, content}
+      {:error, _reason} -> {%{}, text}
     end
-  end
-
-  defp parse_simple_yaml(text) do
-    lines = String.split(text, "\n", trim: true)
-
-    Enum.reduce(lines, {%{}, nil}, &parse_yaml_line/2)
-    |> elem(0)
-  end
-
-  defp parse_yaml_line(line, {acc, current_list_key}) do
-    cond do
-      String.starts_with?(line, "  - ") and current_list_key ->
-        append_yaml_list_item(acc, current_list_key, line)
-
-      String.contains?(line, ":") ->
-        parse_yaml_key_value(acc, line)
-
-      true ->
-        {acc, current_list_key}
-    end
-  end
-
-  defp append_yaml_list_item(acc, current_list_key, line) do
-    item = line |> String.replace_prefix("  - ", "") |> strip_quotes()
-    updated = Map.update(acc, current_list_key, [item], &(&1 ++ [item]))
-    {updated, current_list_key}
-  end
-
-  defp parse_yaml_key_value(acc, line) do
-    [raw_key, raw_value] = String.split(line, ":", parts: 2)
-    key = String.trim(raw_key)
-    value = parse_yaml_value(String.trim(raw_value))
-    {Map.put(acc, key, value), next_list_key(value, key)}
-  end
-
-  defp parse_yaml_value(""), do: []
-
-  defp parse_yaml_value(value) do
-    if String.starts_with?(value, "[") and String.ends_with?(value, "]") do
-      value
-      |> String.trim_leading("[")
-      |> String.trim_trailing("]")
-      |> String.split(",", trim: true)
-      |> Enum.map(&(String.trim(&1) |> strip_quotes()))
-    else
-      strip_quotes(value)
-    end
-  end
-
-  defp next_list_key([], key), do: key
-  defp next_list_key(_value, _key), do: nil
-
-  defp strip_quotes(value) do
-    value
-    |> String.trim()
-    |> String.trim_leading("\"")
-    |> String.trim_trailing("\"")
-    |> String.trim_leading("'")
-    |> String.trim_trailing("'")
   end
 
   defp parse_h1(text) do
@@ -197,14 +140,69 @@ defmodule PromptRunner.Source.DirectorySource do
   end
 
   defp validation_commands(metadata, text) do
-    case metadata["validation"] do
+    case metadata["validation"] || get_in(metadata, ["verify", "commands"]) do
       commands when is_list(commands) and commands != [] ->
-        Enum.map(commands, &to_string/1)
+        Enum.map(commands, fn
+          %{"run" => run} -> run
+          %{"command" => command} -> command
+          other -> to_string(other)
+        end)
 
       _ ->
         parse_validation_commands(text)
     end
   end
+
+  defp verify_contract(metadata, validation_commands) do
+    case metadata["verify"] do
+      contract when is_map(contract) ->
+        stringify_keys(contract)
+        |> Map.put_new("commands", validation_commands)
+
+      _ ->
+        if validation_commands == [] do
+          %{}
+        else
+          %{"commands" => validation_commands}
+        end
+    end
+  end
+
+  defp llm_override(metadata) do
+    metadata
+    |> Map.take([
+      "provider",
+      "model",
+      "reasoning_effort",
+      "permission_mode",
+      "allowed_tools",
+      "adapter_opts",
+      "claude_opts",
+      "codex_opts",
+      "codex_thread_opts",
+      "gemini_opts",
+      "amp_opts",
+      "cli_confirmation",
+      "timeout",
+      "system_prompt",
+      "append_system_prompt",
+      "max_turns"
+    ])
+    |> maybe_put_codex_reasoning()
+  end
+
+  defp maybe_put_codex_reasoning(%{"reasoning_effort" => value} = attrs)
+       when is_binary(value) and value != "" do
+    codex_thread_opts =
+      attrs
+      |> Map.get("codex_thread_opts", %{})
+      |> stringify_keys()
+      |> Map.put("reasoning_effort", value)
+
+    Map.put(attrs, "codex_thread_opts", codex_thread_opts)
+  end
+
+  defp maybe_put_codex_reasoning(attrs), do: attrs
 
   defp parse_targets(metadata, text) do
     if is_list(metadata["targets"]) do
@@ -335,4 +333,14 @@ defmodule PromptRunner.Source.DirectorySource do
     |> Path.basename()
     |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
   end
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} ->
+      {to_string(key), normalize_value(value)}
+    end)
+  end
+
+  defp normalize_value(value) when is_map(value), do: stringify_keys(value)
+  defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
+  defp normalize_value(value), do: value
 end

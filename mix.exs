@@ -1,7 +1,7 @@
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.6.1"
+  @version "0.7.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
 
   def project do
@@ -37,6 +37,7 @@ defmodule PromptRunner.MixProject do
     [
       local_dev_or_hex_dep(:agent_session_manager, "~> 0.9.2", "../agent_session_manager"),
       {:jason, "~> 1.4"},
+      {:yaml_elixir, "~> 2.11"},
       {:mox, "~> 1.1", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -68,9 +69,9 @@ defmodule PromptRunner.MixProject do
 
   defp description do
     """
-    Prompt Runner SDK - Convention-driven and legacy-config prompt orchestration
-    for Elixir, Mix, and production applications with streaming output,
-    provider abstractions, runtime stores, and git integration.
+    Prompt Runner SDK - packet-first prompt execution for Elixir and CLI
+    workflows with verifier-owned completion, retry, repair, and git-aware
+    repository orchestration.
     """
   end
 
@@ -95,42 +96,37 @@ defmodule PromptRunner.MixProject do
         "CHANGELOG.md",
         "LICENSE",
         {"guides/getting-started.md", filename: "getting-started", title: "Getting Started"},
-        {"guides/convention-mode.md", filename: "convention-mode", title: "Convention Mode"},
         {"guides/cli.md", filename: "cli", title: "CLI Guide"},
         {"guides/api.md", filename: "api", title: "API Guide"},
-        {"guides/configuration.md", filename: "configuration", title: "Configuration Reference"},
-        {"guides/legacy-config.md", filename: "legacy-config", title: "Legacy Config Mode"},
+        {"guides/configuration.md",
+         filename: "configuration", title: "Packet Manifest Reference"},
+        {"guides/profiles.md", filename: "profiles", title: "Profiles"},
         {"guides/providers.md", filename: "providers", title: "Provider Guide"},
+        {"guides/verification-and-repair.md",
+         filename: "verification-and-repair", title: "Verification And Repair"},
         {"guides/rendering.md", filename: "rendering", title: "Rendering Modes"},
-        {"guides/multi-repo.md", filename: "multi-repo", title: "Multi-Repository Workflows"},
+        {"guides/multi-repo.md", filename: "multi-repo", title: "Multi-Repository Packets"},
         {"guides/architecture.md", filename: "architecture", title: "Architecture"},
-        {"guides/migration.md", filename: "migration", title: "Migration Notes"},
         {"examples/README.md", filename: "examples", title: "Examples Overview"},
-        {"examples/simple/README.md", filename: "example-simple", title: "Simple Example"},
-        {"examples/multi_repo_dummy/README.md",
-         filename: "example-multi-repo", title: "Multi-Repo Example"}
+        {"examples/single_repo_packet/README.md",
+         filename: "example-single-repo", title: "Single Repo Packet Example"},
+        {"examples/multi_repo_packet/README.md",
+         filename: "example-multi-repo", title: "Multi-Repo Packet Example"}
       ],
       groups_for_extras: [
         Overview: ["readme", "getting-started"],
-        Workflows: [
-          "convention-mode",
-          "cli",
-          "api",
-          "legacy-config",
-          "multi-repo"
-        ],
+        Authoring: ["cli", "configuration", "profiles", "multi-repo"],
         Configuration: [
           "configuration",
           "providers",
+          "verification-and-repair",
           "rendering"
         ],
-        Architecture: [
-          "architecture",
-          "migration"
-        ],
+        Embedding: ["api"],
+        Architecture: ["architecture"],
         Examples: [
           "examples",
-          "example-simple",
+          "example-single-repo",
           "example-multi-repo"
         ],
         Reference: [
@@ -141,6 +137,11 @@ defmodule PromptRunner.MixProject do
       groups_for_modules: [
         "Core API": [
           PromptRunner,
+          PromptRunner.Packet,
+          PromptRunner.Packets,
+          PromptRunner.Profile,
+          PromptRunner.Verifier,
+          PromptRunner.Runtime,
           PromptRunner.Run,
           PromptRunner.RunSpec,
           PromptRunner.Plan,
@@ -151,8 +152,8 @@ defmodule PromptRunner.MixProject do
         Sources: [
           PromptRunner.Source,
           PromptRunner.Source.Result,
+          PromptRunner.Source.PacketSource,
           PromptRunner.Source.DirectorySource,
-          PromptRunner.Source.LegacyConfigSource,
           PromptRunner.Source.ListSource,
           PromptRunner.Source.SinglePromptSource
         ],
@@ -169,11 +170,11 @@ defmodule PromptRunner.MixProject do
         ],
         Configuration: [
           PromptRunner.Config,
-          PromptRunner.Prompts,
           PromptRunner.Prompt,
-          PromptRunner.CommitMessages,
-          PromptRunner.Progress,
-          PromptRunner.Scaffold
+          PromptRunner.FrontMatter,
+          PromptRunner.Paths,
+          PromptRunner.PermissionMode,
+          PromptRunner.ProviderOptions
         ],
         "LLM Integration": [
           PromptRunner.LLM,
@@ -184,7 +185,12 @@ defmodule PromptRunner.MixProject do
           PromptRunner.Observer.PubSub,
           PromptRunner.UI
         ],
-        Utilities: [
+        Compatibility: [
+          PromptRunner.Source.LegacyConfigSource,
+          PromptRunner.Prompts,
+          PromptRunner.CommitMessages,
+          PromptRunner.Progress,
+          PromptRunner.Scaffold,
           PromptRunner.Validator,
           PromptRunner.RepoTargets,
           PromptRunner.Git
@@ -206,12 +212,15 @@ defmodule PromptRunner.MixProject do
       },
       maintainers: ["nshkrdotcom"],
       exclude_patterns: [
-        "examples/simple/workspace",
-        "examples/simple/logs",
-        "examples/simple/.progress",
-        "examples/multi_repo_dummy/repos",
-        "examples/multi_repo_dummy/logs",
-        "examples/multi_repo_dummy/.progress",
+        "examples/**/.prompt_runner",
+        "examples/**/.prompt_runner/**",
+        "examples/**/workspace",
+        "examples/**/workspace/**",
+        "examples/**/repos",
+        "examples/**/repos/**",
+        "examples/**/logs",
+        "examples/**/logs/**",
+        "examples/**/.progress",
         "examples/**/.git",
         "priv/plts",
         ".DS_Store"

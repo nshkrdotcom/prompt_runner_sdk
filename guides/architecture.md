@@ -1,60 +1,50 @@
 # Architecture
 
-Prompt Runner has one core runtime and several entrypoints layered on top.
+Prompt Runner 0.7.0 is organized around one packet runtime with both CLI and
+SDK entry points.
 
-## Entry Points
-
-- `PromptRunner.run/2`
-- `PromptRunner.plan/2`
-- `PromptRunner.validate/2`
-- `PromptRunner.run_prompt/2`
-- `PromptRunner.CLI`
-- `Mix.Tasks.PromptRunner`
-- `run_prompts.exs`
-
-## Core Runtime Flow
+## Runtime Flow
 
 ```text
-input
-  -> RunSpec
-  -> Source.load/2
-  -> Plan.build/1
-  -> Runner
-  -> RuntimeStore + Committer + Rendering
+packet dir
+  -> PromptRunner.Packet / PromptRunner.Source.PacketSource
+  -> PromptRunner.Plan
+  -> PromptRunner.Runner
+  -> PromptRunner.Session
+  -> PromptRunner.Verifier
+  -> PromptRunner.Runtime + RuntimeStore + Committer
 ```
 
-## Sources
+## Core Concepts
 
-- `PromptRunner.Source.DirectorySource`
-- `PromptRunner.Source.LegacyConfigSource`
-- `PromptRunner.Source.ListSource`
-- `PromptRunner.Source.SinglePromptSource`
+- `PromptRunner.Profile`
+  home-scoped defaults
+- `PromptRunner.Packet`
+  packet manifest loader and doctor surface
+- `PromptRunner.Packets`
+  prompt creation and checklist sync
+- `PromptRunner.Plan`
+  fully resolved execution plan
+- internal runner pipeline
+  execution, retry, repair, and completion logic
+- `PromptRunner.Verifier`
+  deterministic completion contracts
+- `PromptRunner.Runtime`
+  packet-local attempt history and status state
 
-All sources normalize their input into prompt structs plus commit metadata.
+## Completion Model
 
-## Runtime Stores
+Prompt Runner no longer treats provider success as completion.
 
-- `PromptRunner.RuntimeStore.FileStore`
-- `PromptRunner.RuntimeStore.MemoryStore`
-- `PromptRunner.RuntimeStore.NoopStore`
+Completion is owned by the verifier:
 
-The runtime store owns progress tracking and log destination selection.
+- provider success + verifier pass => complete
+- provider success + verifier fail => repair
+- transient provider failure + verifier pass => complete
+- terminal provider or policy failure => fail
 
-## Committers
+## Recovery Model
 
-- `PromptRunner.Committer.GitCommitter`
-- `PromptRunner.Committer.NoopCommitter`
-- `PromptRunner.Committer.CallbackCommitter`
-
-CLI and legacy runs default to git commits.
-API runs default to no-op commits.
-
-## Rendering
-
-Streaming output is handled through `agent_session_manager` renderers and sinks:
-
-- compact
-- verbose
-- studio
-
-PromptRunner adds lifecycle callbacks and observer hooks around that stream.
+Prompt Runner prefers provider-native session continuation for recoverable
+transport failures. Repair is a separate higher-level step driven by unmet
+verifier items.

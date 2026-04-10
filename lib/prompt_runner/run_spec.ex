@@ -3,13 +3,15 @@ defmodule PromptRunner.RunSpec do
   Normalized description of a requested prompt run before planning.
   """
 
+  alias PromptRunner.Packet
   alias PromptRunner.Prompt
   alias PromptRunner.Source.DirectorySource
   alias PromptRunner.Source.LegacyConfigSource
   alias PromptRunner.Source.ListSource
+  alias PromptRunner.Source.PacketSource
   alias PromptRunner.Source.SinglePromptSource
 
-  @type input_type :: :directory | :legacy_config | :prompt_list | :single_prompt
+  @type input_type :: :packet | :directory | :legacy_config | :prompt_list | :single_prompt
 
   @type t :: %__MODULE__{
           input: term(),
@@ -73,10 +75,15 @@ defmodule PromptRunner.RunSpec do
 
   defp build_directory_spec(input, interface, opts) do
     {source, input_type, resolved_interface} =
-      if legacy_directory?(input) do
-        {LegacyConfigSource, :legacy_config, :legacy}
-      else
-        {DirectorySource, :directory, interface}
+      cond do
+        Packet.exists?(input) ->
+          {PacketSource, :packet, interface}
+
+        legacy_directory?(input) ->
+          {LegacyConfigSource, :legacy_config, :legacy}
+
+        true ->
+          {DirectorySource, :directory, interface}
       end
 
     {:ok,

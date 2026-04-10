@@ -1,83 +1,193 @@
 defmodule PromptRunner.CLI do
   @moduledoc """
-  Command-line entrypoint for convention and legacy PromptRunner workflows.
+  Command-line entrypoint for the Prompt Runner packet workflow.
   """
 
   alias PromptRunner
+  alias PromptRunner.Packet
+  alias PromptRunner.Packets
+  alias PromptRunner.Profile
   alias PromptRunner.Runner
   alias PromptRunner.UI
 
   @spec main(list()) :: :ok | no_return()
   def main(args \\ System.argv()) do
-    {opts, remaining, _invalid} = parse_args(args)
+    args
+    |> parse_command()
+    |> dispatch_command()
+  end
 
-    cond do
-      opts[:help] ->
-        show_help()
+  defp run_init(rest) do
+    {opts, _remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [default_profile: :string],
+        aliases: [p: :default_profile]
+      )
 
-      command = command_from_args(remaining) ->
-        run_command(command, tl(remaining), opts)
+    {:ok, paths} = Profile.init(default_profile: opts[:default_profile])
+    IO.puts(UI.green("Prompt Runner initialized"))
+    IO.puts("  config: #{paths.config_file}")
+    IO.puts("  profile: #{paths.profile_file}")
+    :ok
+  end
 
-      legacy_mode?(opts) ->
-        run_legacy(opts, remaining)
+  defp run_profile_new(name, rest) do
+    {opts, _remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [
+          provider: :string,
+          model: :string,
+          reasoning: :string,
+          permission: :string,
+          tools: :string,
+          cli_confirmation: :string,
+          retry_attempts: :integer,
+          auto_repair: :boolean
+        ]
+      )
 
-      true ->
-        handle_missing_input()
+    attrs =
+      %{}
+      |> maybe_put("provider", opts[:provider])
+      |> maybe_put("model", opts[:model])
+      |> maybe_put("reasoning_effort", opts[:reasoning])
+      |> maybe_put("permission_mode", opts[:permission])
+      |> maybe_put("cli_confirmation", opts[:cli_confirmation])
+      |> maybe_put("retry_attempts", opts[:retry_attempts])
+      |> maybe_put("auto_repair", opts[:auto_repair])
+      |> maybe_put("allowed_tools", parse_csv(opts[:tools]))
+
+    case Profile.create(name, attrs) do
+      {:ok, profile} ->
+        IO.puts(UI.green("Created profile #{profile.name}"))
+        IO.puts("  path: #{profile.path}")
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
     end
   end
 
-  defp parse_args(args) do
-    OptionParser.parse(args,
-      switches: [
-        help: :boolean,
-        config: :string,
-        list: :boolean,
-        validate: :boolean,
-        dry_run: :boolean,
-        run: :boolean,
-        no_commit: :boolean,
-        require_cli_confirmation: :boolean,
-        cli_confirmation: :string,
-        project_dir: :string,
-        repo_override: :keep,
-        log_mode: :string,
-        log_meta: :string,
-        events_mode: :string,
-        tool_output: :string,
-        phase: :integer,
-        all: :boolean,
-        continue: :boolean,
-        target: :keep,
-        targets: :keep,
-        provider: :string,
-        model: :string,
-        output: :string,
-        state_dir: :string,
-        no_state: :boolean,
-        runtime_store: :string,
-        committer: :string
-      ],
-      aliases: [
-        h: :help,
-        c: :config,
-        l: :list,
-        v: :validate
-      ]
-    )
+  defp run_profile_list(_rest) do
+    {:ok, profiles} = Profile.list()
+    Enum.each(profiles, &IO.puts(&1))
+    :ok
   end
 
-  defp command_from_args([command | _])
-       when command in ["run", "list", "validate", "plan", "scaffold"],
-       do: command
+  defp run_packet_new(name, rest) do
+    {opts, _remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [root: :string, profile: :string],
+        aliases: [p: :profile]
+      )
 
-  defp command_from_args(_), do: nil
+    case Packet.new(name, root: opts[:root], profile: opts[:profile]) do
+      {:ok, packet} ->
+        IO.puts(UI.green("Created packet #{packet.name}"))
+        IO.puts("  root: #{packet.root}")
+        IO.puts("  manifest: #{packet.manifest_path}")
+        :ok
 
-  defp legacy_mode?(opts) do
-    opts[:config] != nil or opts[:list] or opts[:validate] or opts[:dry_run] or opts[:run]
+      {:error, reason} ->
+        handle_error(reason)
+    end
   end
 
-  defp run_command("list", [source | _rest], opts) do
-    case PromptRunner.plan(source, cli_opts(opts)) do
+  defp run_packet_doctor(rest) do
+    packet_dir = packet_dir(rest)
+
+    case Packet.doctor(packet_dir) do
+      {:ok, report} ->
+        IO.puts(Jason.encode!(report, pretty: true))
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
+  end
+
+  defp run_packet_explain(rest) do
+    packet_dir = packet_dir(rest)
+
+    case Packet.explain(packet_dir) do
+      {:ok, report} ->
+        IO.puts(Jason.encode!(report, pretty: true))
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
+  end
+
+  defp run_repo_add(name, path, rest) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [packet: :string, default: :boolean]
+      )
+
+    packet_dir = packet_dir(remaining, opts[:packet])
+
+    case Packet.add_repo(packet_dir, name, path, default: opts[:default]) do
+      {:ok, packet} ->
+        IO.puts(UI.green("Updated packet #{packet.name}"))
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
+  end
+
+  defp run_prompt_new(id, rest) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [
+          packet: :string,
+          phase: :integer,
+          name: :string,
+          targets: :string,
+          commit: :string
+        ]
+      )
+
+    packet_dir = packet_dir(remaining, opts[:packet])
+
+    attrs =
+      %{}
+      |> maybe_put("id", id)
+      |> maybe_put("phase", opts[:phase])
+      |> maybe_put("name", opts[:name])
+      |> maybe_put("targets", parse_csv(opts[:targets]))
+      |> maybe_put("commit", opts[:commit])
+
+    case Packets.create_prompt(packet_dir, attrs) do
+      {:ok, path} ->
+        IO.puts(UI.green("Created prompt #{id}"))
+        IO.puts("  path: #{path}")
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
+  end
+
+  defp run_checklist_sync(rest) do
+    packet_dir = packet_dir(rest)
+
+    case Packets.sync_checklists(packet_dir) do
+      {:ok, paths} ->
+        IO.puts(UI.green("Synchronized checklists"))
+        Enum.each(paths, &IO.puts("  #{&1}"))
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
+  end
+
+  defp run_list(rest) do
+    packet_dir = packet_dir(rest)
+
+    case PromptRunner.plan(packet_dir, interface: :cli) do
       {:ok, plan} ->
         Runner.list_plan(plan)
         :ok
@@ -87,15 +197,10 @@ defmodule PromptRunner.CLI do
     end
   end
 
-  defp run_command("validate", [source | _rest], opts) do
-    case PromptRunner.validate(source, cli_opts(opts)) do
-      :ok -> :ok
-      {:error, reason} -> handle_error(reason)
-    end
-  end
+  defp run_plan(rest) do
+    packet_dir = packet_dir(rest)
 
-  defp run_command("plan", [source | _rest], opts) do
-    case PromptRunner.plan(source, cli_opts(opts)) do
+    case PromptRunner.plan(packet_dir, interface: :cli) do
       {:ok, plan} ->
         print_plan_summary(plan)
         :ok
@@ -105,38 +210,141 @@ defmodule PromptRunner.CLI do
     end
   end
 
-  defp run_command("run", [source | _rest], opts) do
-    case PromptRunner.run(source, cli_opts(opts)) do
-      {:ok, _run} -> :ok
-      {:error, reason} -> handle_error(reason)
-    end
-  end
+  defp run_run(rest) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [
+          all: :boolean,
+          phase: :integer,
+          no_commit: :boolean,
+          provider: :string,
+          model: :string,
+          log_mode: :string,
+          log_meta: :string,
+          events_mode: :string,
+          tool_output: :string,
+          cli_confirmation: :string,
+          runtime_store: :string,
+          committer: :string
+        ]
+      )
 
-  defp run_command("scaffold", [source | _rest], opts) do
-    case PromptRunner.scaffold(source, cli_opts(opts)) do
-      {:ok, paths} ->
-        IO.puts(UI.green("Scaffolded PromptRunner files"))
-        IO.puts("  prompts: #{paths.prompts_file}")
-        IO.puts("  commits: #{paths.commit_messages_file}")
-        IO.puts("  config: #{paths.config_file}")
-        IO.puts("  runner: #{paths.runner_file}")
-        :ok
+    {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining)
+
+    case PromptRunner.plan(packet_dir, cli_opts(opts)) do
+      {:ok, plan} ->
+        cli_run_opts =
+          opts
+          |> cli_opts()
+          |> Keyword.put(:run, true)
+          |> maybe_put(:all, opts[:all] || prompt_ids == [])
+          |> maybe_put(:phase, opts[:phase])
+          |> maybe_put(:no_commit, opts[:no_commit])
+
+        case Runner.execute_plan(plan, cli_run_opts, prompt_ids) do
+          :ok -> :ok
+          {:error, reason} -> handle_error(reason)
+        end
 
       {:error, reason} ->
         handle_error(reason)
     end
   end
 
-  defp run_command(_command, _args, _opts) do
-    handle_missing_input()
+  defp run_repair(rest) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [packet: :string, no_commit: :boolean]
+      )
+
+    case remaining do
+      [prompt_id] ->
+        packet_dir = packet_dir([], opts[:packet])
+
+        case PromptRunner.repair(packet_dir,
+               prompt: prompt_id,
+               interface: :cli,
+               no_commit: opts[:no_commit]
+             ) do
+          {:ok, _run} -> :ok
+          {:error, reason} -> handle_error(reason)
+        end
+
+      _ ->
+        handle_error(:missing_prompt_id)
+    end
   end
 
+  defp run_status(rest) do
+    packet_dir = packet_dir(rest)
+
+    {:ok, status} = PromptRunner.status(packet_dir)
+    IO.puts(Jason.encode!(status, pretty: true))
+    :ok
+  end
+
+  defp packet_dir([], explicit), do: explicit || File.cwd!()
+  defp packet_dir([candidate | _rest], nil), do: candidate
+  defp packet_dir(_remaining, explicit), do: explicit
+
+  defp packet_dir(remaining), do: packet_dir(remaining, nil)
+
+  defp packet_and_prompt_ids([]), do: {File.cwd!(), []}
+
+  defp packet_and_prompt_ids([first | rest]) do
+    if String.starts_with?(first, "-") do
+      {File.cwd!(), []}
+    else
+      prompt_ids = Enum.reject(rest, &String.starts_with?(&1, "-"))
+
+      if File.dir?(first) do
+        {first, normalize_prompt_ids(prompt_ids)}
+      else
+        {File.cwd!(), normalize_prompt_ids([first | prompt_ids])}
+      end
+    end
+  end
+
+  defp parse_command(["init" | rest]), do: {:init, rest}
+  defp parse_command(["profile", "new", name | rest]), do: {:profile_new, name, rest}
+  defp parse_command(["profile", "list" | rest]), do: {:profile_list, rest}
+  defp parse_command(["packet", "new", name | rest]), do: {:packet_new, name, rest}
+  defp parse_command(["packet", "doctor" | rest]), do: {:packet_doctor, rest}
+  defp parse_command(["packet", "explain" | rest]), do: {:packet_explain, rest}
+  defp parse_command(["repo", "add", name, path | rest]), do: {:repo_add, name, path, rest}
+  defp parse_command(["prompt", "new", id | rest]), do: {:prompt_new, id, rest}
+  defp parse_command(["checklist", "sync" | rest]), do: {:checklist_sync, rest}
+  defp parse_command(["list" | rest]), do: {:list, rest}
+  defp parse_command(["plan" | rest]), do: {:plan, rest}
+  defp parse_command(["run" | rest]), do: {:run, rest}
+  defp parse_command(["repair" | rest]), do: {:repair, rest}
+  defp parse_command(["status" | rest]), do: {:status, rest}
+  defp parse_command(["help" | _rest]), do: :help
+  defp parse_command(["--help" | _rest]), do: :help
+  defp parse_command(["-h" | _rest]), do: :help
+  defp parse_command([]), do: :help
+  defp parse_command(_args), do: :unknown
+
+  defp dispatch_command({:init, rest}), do: run_init(rest)
+  defp dispatch_command({:profile_new, name, rest}), do: run_profile_new(name, rest)
+  defp dispatch_command({:profile_list, rest}), do: run_profile_list(rest)
+  defp dispatch_command({:packet_new, name, rest}), do: run_packet_new(name, rest)
+  defp dispatch_command({:packet_doctor, rest}), do: run_packet_doctor(rest)
+  defp dispatch_command({:packet_explain, rest}), do: run_packet_explain(rest)
+  defp dispatch_command({:repo_add, name, path, rest}), do: run_repo_add(name, path, rest)
+  defp dispatch_command({:prompt_new, id, rest}), do: run_prompt_new(id, rest)
+  defp dispatch_command({:checklist_sync, rest}), do: run_checklist_sync(rest)
+  defp dispatch_command({:list, rest}), do: run_list(rest)
+  defp dispatch_command({:plan, rest}), do: run_plan(rest)
+  defp dispatch_command({:run, rest}), do: run_run(rest)
+  defp dispatch_command({:repair, rest}), do: run_repair(rest)
+  defp dispatch_command({:status, rest}), do: run_status(rest)
+  defp dispatch_command(:help), do: show_help()
+  defp dispatch_command(:unknown), do: handle_error(:unknown_command)
+
   defp cli_opts(opts) do
-    opts
+    []
     |> Keyword.put(:interface, :cli)
-    |> maybe_put(:target, opts[:target])
-    |> maybe_put(:project_dir, opts[:project_dir])
-    |> maybe_put(:repo_override, opts[:repo_override])
     |> maybe_put(:provider, opts[:provider])
     |> maybe_put(:model, opts[:model])
     |> maybe_put(:log_mode, opts[:log_mode])
@@ -144,35 +352,35 @@ defmodule PromptRunner.CLI do
     |> maybe_put(:events_mode, opts[:events_mode])
     |> maybe_put(:tool_output, opts[:tool_output])
     |> maybe_put(:cli_confirmation, opts[:cli_confirmation])
-    |> maybe_put(:require_cli_confirmation, opts[:require_cli_confirmation])
-    |> maybe_put(:output, opts[:output])
-    |> maybe_put(:state_dir, opts[:state_dir])
-    |> maybe_put(:no_state, opts[:no_state])
     |> maybe_put(:runtime_store, opts[:runtime_store])
     |> maybe_put(:committer, opts[:committer])
   end
 
-  defp maybe_put(opts, _key, nil), do: opts
-  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
+  defp parse_csv(nil), do: nil
 
-  defp run_legacy(opts, remaining) do
-    if opts[:config] == nil do
-      handle_missing_config()
-    else
-      case PromptRunner.plan(opts[:config], cli_opts(opts)) do
-        {:ok, plan} ->
-          handle_runner_result(Runner.execute_plan(plan, opts, remaining))
+  defp parse_csv(value) when is_binary(value) do
+    value
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+  end
 
-        error ->
-          handle_config_error(error)
-      end
-    end
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value) when is_map(map), do: Map.put(map, key, value)
+  defp maybe_put(opts, key, value) when is_list(opts), do: Keyword.put(opts, key, value)
+
+  defp normalize_prompt_ids(ids) do
+    Enum.map(ids, fn id ->
+      id
+      |> String.trim()
+      |> String.pad_leading(2, "0")
+    end)
   end
 
   defp print_plan_summary(plan) do
     IO.puts("")
     IO.puts(UI.bold("PromptRunner Plan"))
-    IO.puts("Source: #{plan.source_root || inspect(plan.source)}")
+    IO.puts("Packet: #{plan.source_root || inspect(plan.source)}")
     IO.puts("Prompts: #{length(plan.prompts)}")
     IO.puts("Provider: #{plan.config.llm_sdk}")
     IO.puts("Model: #{plan.config.model}")
@@ -184,24 +392,16 @@ defmodule PromptRunner.CLI do
     IO.puts("")
   end
 
-  defp handle_runner_result(:ok), do: :ok
-
-  defp handle_runner_result({:error, :no_command}) do
-    show_help()
-    System.halt(1)
-  end
-
-  defp handle_runner_result({:error, :no_target}) do
-    IO.puts(UI.red("ERROR: No target specified"))
-    show_help()
-    System.halt(1)
-  end
-
-  defp handle_runner_result({:error, reason}), do: handle_error(reason)
-
   @spec handle_error(term()) :: no_return()
-  defp handle_error(errors) when is_list(errors) do
-    handle_config_error({:error, errors})
+  defp handle_error(:missing_prompt_id) do
+    IO.puts(UI.red("ERROR: prompt id is required"))
+    System.halt(1)
+  end
+
+  defp handle_error(:unknown_command) do
+    IO.puts(UI.red("ERROR: unknown command"))
+    show_help()
+    System.halt(1)
   end
 
   defp handle_error(reason) do
@@ -209,93 +409,31 @@ defmodule PromptRunner.CLI do
     System.halt(1)
   end
 
-  @spec handle_config_error({:error, term()}) :: no_return()
-  defp handle_config_error({:error, {:config_not_found, path}}) do
-    IO.puts(UI.red("ERROR: Config file not found: #{path}"))
-    System.halt(1)
-  end
-
-  defp handle_config_error({:error, {:invalid_llm_sdk, reason}}) do
-    IO.puts(UI.red("ERROR: Invalid llm provider/sdk: #{inspect(reason)}"))
-    System.halt(1)
-  end
-
-  defp handle_config_error({:error, errors}) when is_list(errors) do
-    IO.puts(UI.red("ERROR: Config validation failed"))
-
-    Enum.each(Enum.reverse(errors), fn error ->
-      IO.puts("  - #{format_validation_error(error)}")
-    end)
-
-    System.halt(1)
-  end
-
-  defp handle_config_error({:error, reason}), do: handle_error(reason)
-
-  @spec handle_missing_config() :: no_return()
-  defp handle_missing_config do
-    IO.puts(UI.red("ERROR: --config is required for legacy mode"))
-    IO.puts("")
-    IO.puts("Usage: mix run run_prompts.exs --config <config_file> [command] [options]")
-    IO.puts("")
-    IO.puts("Run with --help for more information.")
-    System.halt(1)
-  end
-
-  @spec handle_missing_input() :: no_return()
-  defp handle_missing_input do
-    IO.puts(UI.red("ERROR: no command or source path provided"))
-    IO.puts("")
-    show_help()
-    System.halt(1)
-  end
-
   defp show_help do
-    IO.puts("")
-    IO.puts(UI.bold("PromptRunner"))
-    IO.puts("")
-    IO.puts("Convention-driven mode:")
-    IO.puts("  prompt_runner list <prompt_dir> [--target /path/to/repo]")
-    IO.puts("  prompt_runner run <prompt_dir> [--target /path/to/repo]")
-    IO.puts("  prompt_runner validate <prompt_dir> [--target /path/to/repo]")
-    IO.puts("  prompt_runner plan <prompt_dir> [--target /path/to/repo]")
-    IO.puts("  prompt_runner scaffold <prompt_dir> [--output ./generated]")
-    IO.puts("")
-    IO.puts("Legacy mode:")
-    IO.puts("  mix run run_prompts.exs --config runner_config.exs --list")
-    IO.puts("  mix run run_prompts.exs --config runner_config.exs --run 01")
-    IO.puts("")
-  end
+    IO.puts("""
 
-  defp format_validation_error({key, :missing_value}) do
-    "#{format_validation_key(key)} is required"
-  end
+    Prompt Runner 0.7.0
 
-  defp format_validation_error({key, {:path_not_found, path}}) do
-    "#{format_validation_key(key)} path not found: #{path}"
-  end
+    Setup:
+      prompt_runner init
+      prompt_runner profile new NAME [--provider codex --model gpt-5.4 --reasoning xhigh]
+      prompt_runner profile list
 
-  defp format_validation_error({key, {:not_a_directory, path}}) do
-    "#{format_validation_key(key)} is not a directory: #{path}"
-  end
+    Packet authoring:
+      prompt_runner packet new NAME [--root DIR] [--profile NAME]
+      prompt_runner packet doctor [PACKET_DIR]
+      prompt_runner packet explain [PACKET_DIR]
+      prompt_runner repo add NAME PATH [--packet PACKET_DIR] [--default]
+      prompt_runner prompt new ID [--packet PACKET_DIR] --phase N --name "..."
+      prompt_runner checklist sync [PACKET_DIR]
 
-  defp format_validation_error({key, {:not_git_repo, path}}) do
-    "#{format_validation_key(key)} is not a git repository: #{path}"
-  end
+    Execution:
+      prompt_runner list [PACKET_DIR]
+      prompt_runner plan [PACKET_DIR]
+      prompt_runner run [PACKET_DIR] [PROMPT_ID...]
+      prompt_runner repair [--packet PACKET_DIR] PROMPT_ID
+      prompt_runner status [PACKET_DIR]
 
-  defp format_validation_error({key, {:git_unavailable, path}}) do
-    "#{format_validation_key(key)} could not be verified because git is not available: #{path}"
+    """)
   end
-
-  defp format_validation_error({key, {:invalid_timeout, timeout}}) do
-    "#{format_validation_key(key)} is invalid: #{inspect(timeout)}"
-  end
-
-  defp format_validation_error({key, detail}) do
-    "#{format_validation_key(key)}: #{inspect(detail)}"
-  end
-
-  defp format_validation_key({:target_repo, name}), do: "target repo #{name}"
-  defp format_validation_key(key) when is_atom(key), do: Atom.to_string(key)
-  defp format_validation_key(key), do: inspect(key)
 end

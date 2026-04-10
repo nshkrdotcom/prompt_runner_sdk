@@ -1,76 +1,67 @@
-# Multi-Repository Workflows
+# Multi-Repository Packets
 
-Prompt Runner supports multi-repo execution in both legacy and convention mode.
+Multi-repo packets declare repos in the packet manifest and select them per
+prompt through `targets`.
 
-## Convention Mode
-
-Use repeated named `--target` flags:
-
-```bash
-mix prompt_runner run ./prompts \
-  --target app:/path/to/app \
-  --target lib:/path/to/lib \
-  --provider claude \
-  --model haiku
-```
-
-Then target a prompt at one of those repos with front matter:
+## Packet Manifest Example
 
 ```markdown
 ---
-targets: [app]
+name: "multi-repo-demo"
+provider: "codex"
+model: "gpt-5.4"
+reasoning_effort: "xhigh"
+permission_mode: "bypass"
+codex_thread_opts:
+  additional_directories:
+    - "./repos/beta"
+repos:
+  alpha:
+    path: "./repos/alpha"
+    default: true
+  beta:
+    path: "./repos/beta"
 ---
+# Multi Repo Demo
 ```
 
-Or infer the repo from a path:
+## Prompt Targeting
 
-```markdown
-## Repository Root
+Target both repos:
 
-- `/path/to/app`
+```yaml
+targets:
+  - "alpha"
+  - "beta"
 ```
 
-## Legacy Mode
+Or target one repo but still make a sibling repo available to Codex through
+packet-level `codex_thread_opts.additional_directories`.
 
-Legacy config remains the richer multi-repo surface when you need:
+## Repo-Scoped Verification
 
-- `repo_groups`
-- per-repo commit messages
-- explicit checked-in repo manifests
+Verification entries can be scoped to a specific repo:
 
-Example:
-
-```elixir
-%{
-  project_dir: "/workspace",
-  target_repos: [
-    %{name: "frontend", path: "/path/to/frontend", default: true},
-    %{name: "backend", path: "/path/to/backend"}
-  ],
-  repo_groups: %{
-    "all" => ["frontend", "backend"]
-  }
-}
+```yaml
+verify:
+  files_exist:
+    - repo: "alpha"
+      path: "NOTES.md"
+    - repo: "beta"
+      path: "NOTES.md"
+  changed_paths_only:
+    - repo: "alpha"
+      path: "NOTES.md"
+    - repo: "beta"
+      path: "NOTES.md"
 ```
 
-Prompt target column in `prompts.txt`:
-
-```text
-01|1|5|Setup both|001-setup.md|@all
-```
-
-Per-repo commit message markers:
-
-```text
-=== COMMIT 01:frontend ===
-feat(frontend): initial setup
-
-=== COMMIT 01:backend ===
-feat(backend): initial setup
-```
+That keeps multi-repo prompts deterministic and makes stray file creation show
+up as a verifier failure.
 
 ## Commit Behavior
 
-- Convention/API mode defaults to `NoopCommitter` unless you opt into CLI or git-backed runs.
-- CLI and legacy runs default to git commits.
-- Multi-repo git commits are applied repo by repo after a successful prompt run.
+CLI packet runs default to git commits. Multi-repo commits are applied repo by
+repo after verification passes.
+
+API runs default to a no-op committer unless you opt into git.

@@ -1,0 +1,56 @@
+# Profiles
+
+Profiles are home-scoped defaults stored under:
+
+```text
+~/.config/prompt_runner/
+  config.md
+  profiles/
+    codex-default.md
+```
+
+## Initialize
+
+```bash
+mix prompt_runner init
+```
+
+That creates:
+
+- `config.md`
+- `profiles/codex-default.md`
+
+## Default Profile
+
+`codex-default` is optimized for local packet work:
+
+- `provider: codex`
+- `model: gpt-5.4`
+- `reasoning_effort: xhigh`
+- `permission_mode: bypass`
+- `allowed_tools: Read, Edit, Write, Bash`
+- `cli_confirmation: require`
+- `retry_attempts: 2`
+- `auto_repair: true`
+
+## Create Another Profile
+
+```bash
+mix prompt_runner profile new claude-safe \
+  --provider claude \
+  --model sonnet \
+  --permission default \
+  --tools Read,Bash
+```
+
+## Precedence
+
+The intended authoring precedence is:
+
+1. profile defaults
+2. packet manifest values
+3. prompt front matter overrides
+4. explicit CLI or API options
+
+Use profiles for standing preferences, packets for team-shared defaults, and
+prompt front matter only when a prompt genuinely needs a local override.

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-10
+
+### Changed
+
+- Breaking change: redesigned Prompt Runner around packet directories,
+  `prompt_runner_packet.md`, and prompt-local YAML front matter instead of the
+  older duplicated control-file workflow.
+- Added home-scoped profiles under `~/.config/prompt_runner/` and aligned the
+  CLI around packet/profile authoring commands.
+- Added first-class packet APIs:
+  - `PromptRunner.Packet`
+  - `PromptRunner.Packets`
+  - `PromptRunner.Profile`
+  - `PromptRunner.Runtime`
+  - `PromptRunner.Verifier`
+- Made completion verifier-owned. Prompt runs now record deterministic verifier
+  reports in packet-local runtime state and use those reports to drive retry
+  and repair decisions.
+- Rebuilt the shipped examples as packet-native examples:
+  - `examples/single_repo_packet`
+  - `examples/multi_repo_packet`
+- Rewrote the README, guides, and HexDocs menu around the packet/profile model.
+
+### Fixed
+
+- Packet, profile, and prompt-local execution options now normalize correctly
+  at plan-build time, so packet-defined `provider`, `model`,
+  `reasoning_effort`, and `codex_thread_opts` actually reach runtime
+  execution.
+- `mix prompt_runner run ...` now sets the correct command flag before
+  delegating to the runner.
+- `changed_paths_only` verification now inherits the prompt's default repo
+  scope when entries omit an explicit `repo`.
+- Packet runtime state now serializes common result tuples into readable JSON
+  maps instead of opaque tuple placeholders.
+
 ## [0.6.1] - 2026-04-09
 
 ### Changed
@@ -272,7 +308,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
-[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.5.0...v0.5.1

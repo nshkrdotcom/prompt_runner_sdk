@@ -1,6 +1,6 @@
 defmodule PromptRunner.Scaffold do
   @moduledoc """
-  Generates legacy PromptRunner files from a convention-based prompt directory.
+  Compatibility helper that generates the older explicit file set from a plan.
   """
 
   alias PromptRunner.Plan
@@ -80,7 +80,7 @@ defmodule PromptRunner.Scaffold do
   end
 
   defp runner_content(_plan) do
-    install_entry = ~s({:prompt_runner_sdk, "~> 0.6.1"})
+    install_entry = ~s({:prompt_runner_sdk, "~> 0.7.0"})
 
     """
     #!/usr/bin/env elixir

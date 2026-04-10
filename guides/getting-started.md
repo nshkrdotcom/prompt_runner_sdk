@@ -1,24 +1,16 @@
 # Getting Started
 
-Prompt Runner SDK supports two starting points:
-
-- Convention mode: point the runner at a directory of `.prompt.md` files.
-- Legacy mode: keep explicit `runner_config.exs`, `prompts.txt`, and `commit-messages.txt`.
-
-For new projects, start with convention mode.
-This guide targets `prompt_runner_sdk ~> 0.6.1`.
+This guide targets `prompt_runner_sdk ~> 0.7.0`.
 
 ## Install
 
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.6.1"}
+    {:prompt_runner_sdk, "~> 0.7.0"}
   ]
 end
 ```
-
-Fetch dependencies:
 
 ```bash
 mix deps.get
@@ -26,7 +18,7 @@ mix deps.get
 
 ## Provider Credentials
 
-Set the provider CLI credentials your chosen provider expects:
+Set the CLI credentials your chosen provider expects:
 
 | Provider | Env Var |
 |----------|---------|
@@ -35,88 +27,111 @@ Set the provider CLI credentials your chosen provider expects:
 | Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | Amp | `AMP_API_KEY` |
 
-## First Convention Run
+## Initialize Prompt Runner
 
-Create `prompts/01_hello.prompt.md`:
+Initialize the home-scoped profile store once:
+
+```bash
+mix prompt_runner init
+```
+
+This creates:
+
+```text
+~/.config/prompt_runner/
+  config.md
+  profiles/
+    codex-default.md
+```
+
+## Create A Packet
+
+```bash
+mix prompt_runner packet new demo
+mix prompt_runner repo add app /path/to/repo --packet demo --default
+mix prompt_runner prompt new 01 \
+  --packet demo \
+  --phase 1 \
+  --name "Create hello file" \
+  --targets app \
+  --commit "docs: add hello file"
+```
+
+That creates:
+
+```text
+demo/
+  prompt_runner_packet.md
+  prompts/
+    01_create_hello_file.prompt.md
+```
+
+## Add A Deterministic Contract
+
+Edit `demo/prompts/01_create_hello_file.prompt.md`:
 
 ```markdown
-# Create hello.txt
+---
+id: "01"
+phase: 1
+name: "Create hello file"
+targets:
+  - "app"
+commit: "docs: add hello file"
+verify:
+  files_exist:
+    - "hello.txt"
+  contains:
+    - path: "hello.txt"
+      text: "Hello from Prompt Runner"
+  changed_paths_only:
+    - "hello.txt"
+---
+# Create hello file
 
 ## Mission
 
-Create `hello.txt` with the text `Hello from PromptRunner`.
+Create `hello.txt` with exactly one line: `Hello from Prompt Runner`.
+Do not modify any other files. Respond with exactly `ok`.
 ```
 
-Run it:
+Generate the checklist view:
 
 ```bash
-mix prompt_runner run ./prompts --target /path/to/repo --provider claude --model haiku
+mix prompt_runner checklist sync demo
 ```
 
-Useful companion commands:
+## Inspect And Run
 
 ```bash
-mix prompt_runner list ./prompts --target /path/to/repo
-mix prompt_runner plan ./prompts --target /path/to/repo
-mix prompt_runner validate ./prompts --target /path/to/repo
+mix prompt_runner list demo
+mix prompt_runner plan demo
+mix prompt_runner run demo
+mix prompt_runner status demo
 ```
 
-## What Gets Created
+`status` prints `.prompt_runner/state.json` as formatted JSON.
 
-CLI convention runs create:
+## What Gets Created At Runtime
+
+CLI packet runs create:
 
 ```text
-prompts/
-  01_hello.prompt.md
+demo/
   .prompt_runner/
+    state.json
     progress.log
     logs/
 ```
 
-API runs do not create this state by default.
-
-## First API Run
-
-```elixir
-{:ok, run} =
-  PromptRunner.run("./prompts",
-    target: "/path/to/repo",
-    provider: :claude,
-    model: "haiku"
-  )
-```
-
-Or run one ad hoc prompt:
-
-```elixir
-{:ok, run} =
-  PromptRunner.run_prompt(
-    "Create hello.txt with the text Hello from PromptRunner.",
-    target: "/path/to/repo",
-    provider: :claude,
-    model: "haiku"
-  )
-```
-
-## If You Need Explicit Files
-
-Generate the legacy files from a prompt directory:
-
-```bash
-mix prompt_runner scaffold ./prompts --output ./generated --target /path/to/repo
-```
-
-That writes:
-
-- `prompts.txt`
-- `commit-messages.txt`
-- `runner_config.exs`
-- `run_prompts.exs`
+API runs default to in-memory state plus a no-op committer unless you opt into
+file-backed state or git commits.
 
 ## Next Steps
 
-- [Convention Mode](convention-mode.md)
 - [CLI Guide](cli.md)
 - [API Guide](api.md)
-- [Configuration Reference](configuration.md)
-- [Legacy Config Mode](legacy-config.md)
+- [Packet Manifest Reference](configuration.md)
+- [Profiles](profiles.md)
+- [Verification And Repair](verification-and-repair.md)
+- [Examples](../examples/README.md)

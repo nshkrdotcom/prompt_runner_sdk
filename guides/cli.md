@@ -1,48 +1,104 @@
 # CLI Guide
 
-Prompt Runner exposes three CLI entrypoints:
+Prompt Runner exposes the same CLI through three entry points:
 
 - `mix prompt_runner ...`
+- `mix run run_prompts.exs -- ...`
 - `./prompt_runner ...` after `mix escript.build`
-- `mix run run_prompts.exs --config ...` for legacy mode
 
-## Convention Commands
+All commands operate on a packet directory. If you omit the directory, Prompt
+Runner uses the current working directory.
+
+## Setup Commands
+
+Initialize the global profile store:
 
 ```bash
-mix prompt_runner list ./prompts --target /repo
-mix prompt_runner plan ./prompts --target /repo
-mix prompt_runner validate ./prompts --target /repo
-mix prompt_runner run ./prompts --target /repo
-mix prompt_runner scaffold ./prompts --output ./generated --target /repo
+mix prompt_runner init
 ```
 
-## Common Flags
-
-| Flag | Meaning |
-|------|---------|
-| `--target /path` | Single default target repo |
-| `--target name:/path` | Named target repo, repeatable |
-| `--provider claude|codex|amp` | Provider selection |
-| `--model MODEL` | Model name |
-| `--output DIR` | Scaffold output directory |
-| `--state-dir DIR` | Override the CLI runtime state directory |
-| `--no-state` | Disable file-backed runtime state |
-| `--runtime-store file|memory|noop` | Select the runtime store |
-| `--committer git|noop` | Select the post-run committer |
-| `--log-mode compact|verbose|studio` | Renderer mode |
-| `--log-meta none|full` | Failure detail mode |
-| `--events-mode compact|full|off` | JSONL event log mode |
-| `--tool-output summary|preview|full` | Studio tool output verbosity |
-
-## Legacy Mode
-
-Legacy mode is still available and still requires `--config`:
+Create and inspect profiles:
 
 ```bash
-mix run run_prompts.exs --config runner_config.exs --list
-mix run run_prompts.exs --config runner_config.exs --run 01
-mix run run_prompts.exs --config runner_config.exs --run --all
-mix run run_prompts.exs --config runner_config.exs --validate
+mix prompt_runner profile new codex-fast --provider codex --model gpt-5.4 --reasoning high
+mix prompt_runner profile list
+```
+
+## Packet Authoring Commands
+
+Create a packet:
+
+```bash
+mix prompt_runner packet new demo
+mix prompt_runner repo add app /path/to/repo --packet demo --default
+mix prompt_runner prompt new 01 --packet demo --phase 1 --name "Create hello" --targets app --commit "docs: add hello"
+mix prompt_runner checklist sync demo
+```
+
+Inspect packet metadata and runtime readiness:
+
+```bash
+mix prompt_runner packet explain demo
+mix prompt_runner packet doctor demo
+```
+
+## Execution Commands
+
+List and plan:
+
+```bash
+mix prompt_runner list demo
+mix prompt_runner plan demo
+```
+
+Run everything:
+
+```bash
+mix prompt_runner run demo
+```
+
+Run specific prompts:
+
+```bash
+mix prompt_runner run demo 01 02
+mix prompt_runner run demo --phase 2
+```
+
+Repair a failed prompt from stored verifier state:
+
+```bash
+mix prompt_runner repair --packet demo 02
+```
+
+Print runtime status JSON:
+
+```bash
+mix prompt_runner status demo
+```
+
+## Useful Execution Flags
+
+`run` accepts:
+
+- `--provider`
+- `--model`
+- `--log-mode`
+- `--log-meta`
+- `--events-mode`
+- `--tool-output`
+- `--cli-confirmation`
+- `--runtime-store`
+- `--committer`
+- `--no-commit`
+
+Example:
+
+```bash
+mix prompt_runner run demo \
+  --provider codex \
+  --model gpt-5.4 \
+  --log-mode compact \
+  --cli-confirmation require
 ```
 
 ## Escript
@@ -53,23 +109,9 @@ Build once:
 mix escript.build
 ```
 
-Use anywhere with Erlang/OTP available:
+Then use the same commands:
 
 ```bash
-./prompt_runner run ./prompts --target /repo --provider claude --model haiku
+./prompt_runner run demo
+./prompt_runner status demo
 ```
-
-## Scaffold Command
-
-`scaffold` converts convention prompts into explicit legacy files:
-
-```bash
-mix prompt_runner scaffold ./prompts --output ./generated --target /repo
-```
-
-Generated artifacts:
-
-- `prompts.txt`
-- `commit-messages.txt`
-- `runner_config.exs`
-- `run_prompts.exs`

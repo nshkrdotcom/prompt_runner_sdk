@@ -9,6 +9,7 @@ defmodule PromptRunner.Plan do
   alias PromptRunner.LLMFacade
   alias PromptRunner.Paths
   alias PromptRunner.PermissionMode
+  alias PromptRunner.Profile
   alias PromptRunner.Prompt
   alias PromptRunner.RunSpec
   alias PromptRunner.RuntimeStore.FileStore
@@ -26,6 +27,7 @@ defmodule PromptRunner.Plan do
 
   @type t :: %__MODULE__{
           config: Config.t(),
+          options: map(),
           prompts: [Prompt.t()],
           commit_messages: %{optional({String.t(), String.t() | nil}) => String.t()},
           source: module(),
@@ -41,6 +43,7 @@ defmodule PromptRunner.Plan do
 
   defstruct [
     :config,
+    :options,
     :prompts,
     :commit_messages,
     :source,
@@ -57,10 +60,11 @@ defmodule PromptRunner.Plan do
   @spec build(RunSpec.t()) :: {:ok, t()} | {:error, term()}
   def build(%RunSpec{} = run_spec) do
     with {:ok, %Result{} = result} <- run_spec.source.load(run_spec.input, run_spec.opts),
-         {:ok, config} <- build_config(run_spec, result),
+         merged_opts <- merged_opts(run_spec, result),
+         {:ok, config} <- build_config(run_spec, result, merged_opts),
          {:ok, runtime_store} <- build_runtime_store(run_spec, config),
          {:ok, committer} <- build_committer(run_spec) do
-      {:ok, build_plan(run_spec, result, config, runtime_store, committer)}
+      {:ok, build_plan(run_spec, result, config, merged_opts, runtime_store, committer)}
     end
   end
 
@@ -69,9 +73,10 @@ defmodule PromptRunner.Plan do
     %{plan | config: Config.with_overrides(plan.config, opts)}
   end
 
-  defp build_plan(run_spec, result, config, runtime_store, committer) do
+  defp build_plan(run_spec, result, config, options, runtime_store, committer) do
     %__MODULE__{
       config: config,
+      options: options,
       prompts: result.prompts,
       commit_messages: result.commit_messages,
       source: run_spec.source,
@@ -86,12 +91,15 @@ defmodule PromptRunner.Plan do
     }
   end
 
-  defp build_config(%RunSpec{interface: :legacy}, %Result{legacy_config: %Config{} = config}) do
+  defp build_config(
+         %RunSpec{interface: :legacy},
+         %Result{legacy_config: %Config{} = config},
+         _merged_opts
+       ) do
     {:ok, config}
   end
 
-  defp build_config(%RunSpec{} = run_spec, %Result{} = result) do
-    opts = merged_opts(run_spec, result)
+  defp build_config(%RunSpec{} = _run_spec, %Result{} = result, opts) do
     model = value_from(opts, [:model], "claude-sonnet-4-6")
 
     with {:ok, llm_sdk} <- resolve_llm_sdk(opts, model) do
@@ -106,9 +114,11 @@ defmodule PromptRunner.Plan do
   defp merged_opts(run_spec, result) do
     defaults()
     |> deep_merge(env_overrides())
-    |> deep_merge(global_config())
+    |> deep_merge(global_config(result))
     |> deep_merge(local_config(result.source_root))
+    |> deep_merge(result.metadata[:options] || result.metadata["options"] || %{})
     |> deep_merge(Map.new(run_spec.opts))
+    |> normalize_options()
   end
 
   defp resolve_llm_sdk(opts, model) do
@@ -213,6 +223,10 @@ defmodule PromptRunner.Plan do
   end
 
   defp runtime_state_dir(%RunSpec{interface: :cli}, %Result{source_root: root})
+       when is_binary(root),
+       do: root |> Paths.resolve() |> Path.join(".prompt_runner")
+
+  defp runtime_state_dir(%RunSpec{input_type: :packet}, %Result{source_root: root})
        when is_binary(root),
        do: root |> Paths.resolve() |> Path.join(".prompt_runner")
 
@@ -321,6 +335,17 @@ defmodule PromptRunner.Plan do
   defp normalize_prompt_overrides(nil), do: %{}
   defp normalize_prompt_overrides(_), do: %{}
 
+  defp resolve_runtime_store(%RunSpec{input_type: :packet, opts: opts}) do
+    cond do
+      truthy?(opts[:no_state]) -> NoopStore
+      opts[:runtime_store] in [:file, "file"] -> FileStore
+      opts[:runtime_store] in [:memory, "memory"] -> MemoryStore
+      opts[:runtime_store] in [:noop, "noop"] -> NoopStore
+      is_atom(opts[:runtime_store]) and not is_nil(opts[:runtime_store]) -> opts[:runtime_store]
+      true -> FileStore
+    end
+  end
+
   defp resolve_runtime_store(%RunSpec{interface: interface, opts: opts}) do
     cond do
       truthy?(opts[:no_state]) -> NoopStore
@@ -333,10 +358,10 @@ defmodule PromptRunner.Plan do
     end
   end
 
-  defp resolve_committer(%RunSpec{interface: interface, opts: opts}) do
+  defp resolve_committer(%RunSpec{interface: interface, input_type: input_type, opts: opts}) do
     opts[:committer]
     |> normalize_committer()
-    |> default_committer(interface)
+    |> default_committer(interface, input_type)
   end
 
   defp normalize_committer(nil), do: nil
@@ -347,11 +372,19 @@ defmodule PromptRunner.Plan do
   defp normalize_committer(module) when is_atom(module), do: module
   defp normalize_committer(_), do: :default
 
-  defp default_committer(nil, interface) when interface in [:cli, :legacy], do: GitCommitter
-  defp default_committer(nil, _interface), do: NoopCommitter
-  defp default_committer(:default, interface) when interface in [:cli, :legacy], do: GitCommitter
-  defp default_committer(:default, _interface), do: NoopCommitter
-  defp default_committer(module, _interface), do: module
+  defp default_committer(nil, _interface, :packet), do: GitCommitter
+
+  defp default_committer(nil, interface, _input_type) when interface in [:cli, :legacy],
+    do: GitCommitter
+
+  defp default_committer(nil, _interface, _input_type), do: NoopCommitter
+  defp default_committer(:default, _interface, :packet), do: GitCommitter
+
+  defp default_committer(:default, interface, _input_type) when interface in [:cli, :legacy],
+    do: GitCommitter
+
+  defp default_committer(:default, _interface, _input_type), do: NoopCommitter
+  defp default_committer(module, _interface, _input_type), do: module
 
   defp defaults, do: %{}
 
@@ -361,9 +394,11 @@ defmodule PromptRunner.Plan do
     |> maybe_put(:provider, System.get_env("PROMPT_RUNNER_PROVIDER"))
   end
 
-  defp global_config do
-    config_path = Path.join([System.user_home!(), ".config", "prompt_runner", "config.exs"])
-    optional_config(config_path)
+  defp global_config(%Result{metadata: metadata}) do
+    case metadata[:packet] || metadata["packet"] do
+      nil -> Profile.global_defaults()
+      _packet -> %{}
+    end
   end
 
   defp local_config(nil), do: %{}
@@ -422,4 +457,82 @@ defmodule PromptRunner.Plan do
   end
 
   defp deep_merge(_left, right), do: right
+
+  @option_keys %{
+    "provider" => :provider,
+    "sdk" => :sdk,
+    "model" => :model,
+    "reasoning_effort" => :reasoning_effort,
+    "permission_mode" => :permission_mode,
+    "allowed_tools" => :allowed_tools,
+    "adapter_opts" => :adapter_opts,
+    "claude_opts" => :claude_opts,
+    "codex_opts" => :codex_opts,
+    "codex_thread_opts" => :codex_thread_opts,
+    "gemini_opts" => :gemini_opts,
+    "amp_opts" => :amp_opts,
+    "system_prompt" => :system_prompt,
+    "append_system_prompt" => :append_system_prompt,
+    "max_turns" => :max_turns,
+    "cli_confirmation" => :cli_confirmation,
+    "timeout" => :timeout,
+    "log_mode" => :log_mode,
+    "log_meta" => :log_meta,
+    "events_mode" => :events_mode,
+    "tool_output" => :tool_output,
+    "retry_attempts" => :retry_attempts,
+    "auto_repair" => :auto_repair,
+    "prompt_overrides" => :prompt_overrides,
+    "target" => :target,
+    "targets" => :targets,
+    "project_dir" => :project_dir,
+    "state_dir" => :state_dir,
+    "no_state" => :no_state,
+    "runtime_store" => :runtime_store,
+    "committer" => :committer,
+    "all" => :all,
+    "phase" => :phase,
+    "continue" => :continue,
+    "run" => :run,
+    "dry_run" => :dry_run,
+    "no_commit" => :no_commit
+  }
+
+  defp normalize_options(map) when is_map(map) do
+    Enum.reduce(map, %{}, fn {key, value}, acc ->
+      normalized_key = normalize_option_key(key)
+      Map.put(acc, normalized_key, normalize_option_value(normalized_key, value))
+    end)
+  end
+
+  defp normalize_option_key(key) when is_atom(key), do: key
+  defp normalize_option_key(key) when is_binary(key), do: Map.get(@option_keys, key, key)
+  defp normalize_option_key(key), do: key
+
+  defp normalize_option_value(:prompt_overrides, overrides) when is_map(overrides) do
+    Map.new(overrides, fn {prompt_id, override} ->
+      {to_string(prompt_id), normalize_options(override)}
+    end)
+  end
+
+  defp normalize_option_value(key, value)
+       when key in [
+              :adapter_opts,
+              :claude_opts,
+              :codex_opts,
+              :codex_thread_opts,
+              :gemini_opts,
+              :amp_opts
+            ] and
+              is_map(value) do
+    stringify_keys(value)
+  end
+
+  defp normalize_option_value(_key, value), do: value
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} ->
+      {to_string(key), if(is_map(value), do: stringify_keys(value), else: value)}
+    end)
+  end
 end

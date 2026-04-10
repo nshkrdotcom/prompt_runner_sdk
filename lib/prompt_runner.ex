@@ -7,6 +7,7 @@ defmodule PromptRunner do
   alias PromptRunner.Run
   alias PromptRunner.Runner
   alias PromptRunner.RunSpec
+  alias PromptRunner.Runtime
   alias PromptRunner.Validator
 
   @spec plan(term(), keyword()) :: {:ok, Plan.t()} | {:error, term()}
@@ -40,6 +41,21 @@ defmodule PromptRunner do
   @spec run_prompt(String.t(), keyword()) :: {:ok, Run.t()} | {:error, term()}
   def run_prompt(prompt_text, opts \\ []) when is_binary(prompt_text) do
     run(prompt_text, opts)
+  end
+
+  @spec repair(term(), keyword()) :: {:ok, Run.t()} | {:error, term()}
+  def repair(input, opts \\ []) do
+    prompt_id = Keyword.get(opts, :prompt) || Keyword.get(opts, :id)
+
+    with true <- is_binary(prompt_id) || {:error, :missing_prompt_id},
+         {:ok, %Plan{} = plan} <- plan(input, opts) do
+      Runner.repair_plan(plan, prompt_id, opts)
+    end
+  end
+
+  @spec status(term()) :: {:ok, map()} | {:error, term()}
+  def status(input) do
+    {:ok, Runtime.get_status(input) |> elem(1)}
   end
 
   @spec scaffold(term(), keyword()) :: {:ok, map()} | {:error, term()}
