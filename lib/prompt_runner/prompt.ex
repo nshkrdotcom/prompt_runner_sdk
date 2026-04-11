@@ -13,6 +13,11 @@ defmodule PromptRunner.Prompt do
           origin: map() | nil,
           target_repos: [String.t()] | nil,
           commit_message: String.t() | nil,
+          template: String.t() | nil,
+          references: [term()],
+          required_reading: [String.t()],
+          context_files: [String.t()],
+          depends_on: [String.t()],
           validation_commands: [String.t()],
           verify: map(),
           metadata: map()
@@ -28,6 +33,11 @@ defmodule PromptRunner.Prompt do
     :origin,
     :target_repos,
     :commit_message,
+    :template,
+    references: [],
+    required_reading: [],
+    context_files: [],
+    depends_on: [],
     validation_commands: [],
     verify: %{},
     metadata: %{}

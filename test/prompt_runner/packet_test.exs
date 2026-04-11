@@ -62,6 +62,25 @@ defmodule PromptRunner.PacketTest do
     assert reloaded.options["recovery"]["repair"]["max_attempts"] == 4
   end
 
+  test "new packet accepts repo declarations and default prompt template" do
+    root = FSHelpers.tmp_dir("prompt_runner_packet_root")
+    repo = FSHelpers.git_repo!("prompt_runner_packet_repo")
+    on_exit(fn -> File.rm_rf!(root) end)
+    on_exit(fn -> File.rm_rf!(repo) end)
+
+    assert {:ok, packet} =
+             Packet.new("sample-packet",
+               root: root,
+               repos: [{"app", repo}],
+               default_repo: "app",
+               prompt_template: "from-adr"
+             )
+
+    assert {:ok, reloaded} = Packet.load(packet.root)
+    assert reloaded.options["prompt_template"] == "from-adr"
+    assert reloaded.repos == [%{default: true, name: "app", path: repo}]
+  end
+
   test "add_repo updates the manifest and packet source loads prompts" do
     root = FSHelpers.tmp_dir("prompt_runner_packet_root")
     repo = FSHelpers.git_repo!("prompt_runner_packet_repo")
@@ -198,5 +217,91 @@ defmodule PromptRunner.PacketTest do
     assert llm.sdk == :codex
     assert llm.model == "gpt-5.4"
     assert llm.codex_thread_opts.additional_directories == [extra]
+  end
+
+  test "doctor reports authoring readiness warnings" do
+    root = FSHelpers.tmp_dir("prompt_runner_packet_root")
+    repo = FSHelpers.git_repo!("prompt_runner_packet_repo")
+    on_exit(fn -> File.rm_rf!(root) end)
+    on_exit(fn -> File.rm_rf!(repo) end)
+
+    assert {:ok, packet} = Packet.new("sample-packet", root: root, repos: [{"app", repo}])
+
+    assert {:ok, prompt_path} =
+             Packets.create_prompt(packet.root, %{
+               "id" => "01",
+               "phase" => 1,
+               "name" => "Draft prompt"
+             })
+
+    assert File.exists?(prompt_path)
+
+    assert {:ok, report} = Packet.doctor(packet.root)
+
+    warning_kinds = Enum.map(report.authoring_warnings, & &1.kind)
+
+    assert "prompt_empty_verify" in warning_kinds
+    assert "prompt_placeholder_body" in warning_kinds
+    refute report.authoring_ready?
+  end
+
+  test "doctor reports packet-level authoring warnings for no prompts" do
+    root = FSHelpers.tmp_dir("prompt_runner_packet_root")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, packet} = Packet.new("sample-packet", root: root)
+
+    assert {:ok, report} = Packet.doctor(packet.root)
+    warning_kinds = Enum.map(report.authoring_warnings, & &1.kind)
+
+    assert "no_prompts" in warning_kinds
+  end
+
+  test "doctor reports packet-level authoring warnings for no default repo and no targets" do
+    root = FSHelpers.tmp_dir("prompt_runner_packet_root")
+    repo = FSHelpers.git_repo!("prompt_runner_packet_repo")
+    extra = FSHelpers.git_repo!("prompt_runner_packet_extra")
+    on_exit(fn -> File.rm_rf!(root) end)
+    on_exit(fn -> File.rm_rf!(repo) end)
+    on_exit(fn -> File.rm_rf!(extra) end)
+
+    assert {:ok, packet} =
+             Packet.new("sample-packet",
+               root: root,
+               repos: [{"app", repo}, {"extra", extra}]
+             )
+
+    assert {:ok, _prompt_path} =
+             Packets.create_prompt(packet.root, %{
+               "id" => "01",
+               "phase" => 1,
+               "name" => "Needs targeting"
+             })
+
+    File.write!(
+      Path.join([packet.root, "prompts", "01_needs_targeting.prompt.md"]),
+      """
+      ---
+      id: "01"
+      phase: 1
+      name: "Needs targeting"
+      targets: []
+      commit: "chore: needs targeting"
+      verify: {}
+      ---
+      # Needs targeting
+
+      ## Mission
+
+      <!-- prompt_runner:placeholder mission -->
+      Describe the exact work to perform.
+      """
+    )
+
+    assert {:ok, report} = Packet.doctor(packet.root)
+    warning_kinds = Enum.map(report.authoring_warnings, & &1.kind)
+
+    assert "no_default_repo" in warning_kinds
+    assert "prompt_no_targets" in warning_kinds
   end
 end

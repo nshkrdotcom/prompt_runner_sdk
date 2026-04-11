@@ -107,10 +107,13 @@ defmodule PromptRunner.MixProject do
         "CHANGELOG.md",
         "LICENSE",
         {"guides/getting-started.md", filename: "getting-started", title: "Getting Started"},
+        {"guides/from-adrs-to-packets.md",
+         filename: "from-adrs-to-packets", title: "From ADRs To Packets"},
         {"guides/cli.md", filename: "cli", title: "CLI Guide"},
         {"guides/api.md", filename: "api", title: "API Guide"},
         {"guides/configuration.md",
          filename: "configuration", title: "Packet Manifest Reference"},
+        {"guides/templates.md", filename: "templates", title: "Templates"},
         {"guides/profiles.md", filename: "profiles", title: "Profiles"},
         {"guides/providers.md", filename: "providers", title: "Provider Guide"},
         {"guides/simulated-provider.md",
@@ -121,6 +124,8 @@ defmodule PromptRunner.MixProject do
         {"guides/multi-repo.md", filename: "multi-repo", title: "Multi-Repository Packets"},
         {"guides/architecture.md", filename: "architecture", title: "Architecture"},
         {"examples/README.md", filename: "examples", title: "Examples Overview"},
+        {"examples/authoring_packet/README.md",
+         filename: "example-authoring", title: "Authoring From ADRs Packet Example"},
         {"examples/single_repo_packet/README.md",
          filename: "example-single-repo", title: "Single Repo Packet Example"},
         {"examples/simulated_recovery_packet/README.md",
@@ -129,8 +134,8 @@ defmodule PromptRunner.MixProject do
          filename: "example-multi-repo", title: "Multi-Repo Packet Example"}
       ],
       groups_for_extras: [
-        Overview: ["readme", "getting-started"],
-        Authoring: ["cli", "configuration", "profiles", "multi-repo"],
+        Overview: ["readme", "getting-started", "from-adrs-to-packets"],
+        Authoring: ["cli", "configuration", "templates", "profiles", "multi-repo"],
         Configuration: [
           "configuration",
           "providers",
@@ -142,6 +147,7 @@ defmodule PromptRunner.MixProject do
         Architecture: ["architecture"],
         Examples: [
           "examples",
+          "example-authoring",
           "example-single-repo",
           "example-simulated-recovery",
           "example-multi-repo"
@@ -194,6 +200,7 @@ defmodule PromptRunner.MixProject do
           PromptRunner.Prompt,
           PromptRunner.FrontMatter,
           PromptRunner.Paths,
+          PromptRunner.Template,
           PromptRunner.PermissionMode,
           PromptRunner.ProviderOptions
         ],

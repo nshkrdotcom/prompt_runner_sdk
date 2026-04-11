@@ -3,7 +3,7 @@ defmodule PromptRunner.Packets do
   Prompt operations within a packet.
   """
 
-  alias PromptRunner.{FrontMatter, Packet, Prompt}
+  alias PromptRunner.{FrontMatter, Packet, Prompt, Template}
   alias PromptRunner.Source.PacketSource
 
   @spec create_prompt(String.t(), map(), keyword()) :: {:ok, String.t()} | {:error, term()}
@@ -11,8 +11,10 @@ defmodule PromptRunner.Packets do
       when is_binary(packet_root) and is_map(attrs) do
     with {:ok, packet} <- Packet.load(packet_root),
          prompt_attrs = build_prompt_attrs(packet, attrs),
+         {:ok, template} <- resolve_template(packet, prompt_attrs),
+         {prompt_attrs, body} <- Template.render(prompt_attrs, template),
          path <- prompt_path(packet, prompt_attrs),
-         :ok <- FrontMatter.write_file(path, prompt_attrs, prompt_body(prompt_attrs["name"])) do
+         :ok <- FrontMatter.write_file(path, prompt_attrs, body) do
       {:ok, path}
     end
   end
@@ -34,7 +36,8 @@ defmodule PromptRunner.Packets do
     end
   end
 
-  @spec sync_checklists(String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec sync_checklists(String.t()) ::
+          {:ok, %{paths: [String.t()], warnings: [map()]}} | {:error, term()}
   def sync_checklists(packet_root), do: Packet.checklist_sync(packet_root)
 
   defp default_targets(%Packet{repos: [%{name: name, default: true} | _rest]}), do: [name]
@@ -55,6 +58,10 @@ defmodule PromptRunner.Packets do
       "targets" => Map.get(attrs, "targets", default_targets(packet)),
       "commit" => Map.get(attrs, "commit", default_commit(name))
     })
+    |> Map.put_new("references", [])
+    |> Map.put_new("required_reading", [])
+    |> Map.put_new("context_files", [])
+    |> Map.put_new("depends_on", [])
     |> Map.put_new("verify", %{})
   end
 
@@ -62,14 +69,13 @@ defmodule PromptRunner.Packets do
     Path.join(packet.prompt_path, "#{id}_#{slugify(name)}.prompt.md")
   end
 
-  defp prompt_body(name) do
-    """
-    # #{name}
+  defp resolve_template(packet, prompt_attrs) do
+    template_name =
+      prompt_attrs["template"] ||
+        packet.options["prompt_template"] ||
+        Template.default_name()
 
-    ## Mission
-
-    Describe the exact work to perform.
-    """
+    Template.load(template_name, packet_root: packet.root, default: Template.default_name())
   end
 
   defp default_commit(name) do

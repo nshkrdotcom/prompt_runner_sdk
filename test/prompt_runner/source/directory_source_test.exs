@@ -23,6 +23,14 @@ defmodule PromptRunner.Source.DirectorySourceTest do
       sp: 5
       targets: [app]
       commit: "test: harden auth flows"
+      references:
+        - "docs/adr-001.md"
+      required_reading:
+        - "docs/adr-001.md"
+      context_files:
+        - "lib/core.ex"
+      depends_on:
+        - "01"
       validation:
         - mix test
         - mix compile --warnings-as-errors
@@ -64,6 +72,10 @@ defmodule PromptRunner.Source.DirectorySourceTest do
     assert second.phase == 2
     assert second.sp == 5
     assert second.target_repos == ["app"]
+    assert second.references == ["docs/adr-001.md"]
+    assert second.required_reading == ["docs/adr-001.md"]
+    assert second.context_files == ["lib/core.ex"]
+    assert second.depends_on == ["01"]
     assert second.validation_commands == ["mix test", "mix compile --warnings-as-errors"]
     assert result.commit_messages[{"02", nil}] == "test: harden auth flows"
   end

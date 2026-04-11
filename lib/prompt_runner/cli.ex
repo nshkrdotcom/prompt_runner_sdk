@@ -9,6 +9,7 @@ defmodule PromptRunner.CLI do
   alias PromptRunner.Profile
   alias PromptRunner.RecoveryConfig
   alias PromptRunner.Runner
+  alias PromptRunner.Template
   alias PromptRunner.UI
 
   @spec main(list()) :: :ok | no_return()
@@ -30,6 +31,9 @@ defmodule PromptRunner.CLI do
     IO.puts("  config: #{paths.config_file}")
     IO.puts("  profile: #{paths.profile_file}")
     IO.puts("  simulated profile: #{paths.simulated_profile_file}")
+    IO.puts("  templates: #{paths.templates_dir}")
+    IO.puts("  default template: #{paths.default_template_file}")
+    IO.puts("  from-adr template: #{paths.from_adr_template_file}")
     :ok
   end
 
@@ -42,6 +46,7 @@ defmodule PromptRunner.CLI do
           reasoning: :string,
           permission: :string,
           tools: :string,
+          prompt_template: :string,
           cli_confirmation: :string,
           resume_attempts: :integer,
           retry_attempts: :integer,
@@ -60,6 +65,7 @@ defmodule PromptRunner.CLI do
       |> maybe_put("reasoning_effort", opts[:reasoning])
       |> maybe_put("permission_mode", opts[:permission])
       |> maybe_put("cli_confirmation", opts[:cli_confirmation])
+      |> maybe_put("prompt_template", opts[:prompt_template])
       |> maybe_put("recovery", recovery_attrs(opts))
       |> maybe_put("allowed_tools", parse_csv(opts[:tools]))
 
@@ -80,16 +86,45 @@ defmodule PromptRunner.CLI do
     :ok
   end
 
+  defp run_template_list(rest) do
+    packet_dir =
+      case rest do
+        [candidate | _] ->
+          if File.dir?(candidate), do: candidate, else: nil
+
+        _ ->
+          nil
+      end
+
+    {:ok, templates} = Template.list(packet_dir)
+
+    Enum.each(templates, fn template ->
+      location =
+        case template.source do
+          :builtin -> "builtin"
+          :home -> template.path
+          :packet -> template.path
+        end
+
+      IO.puts("#{template.name}\t#{template.source}\t#{location}")
+    end)
+
+    :ok
+  end
+
   defp run_packet_new(name, rest) do
     {opts, _remaining, _invalid} =
       OptionParser.parse(rest,
         switches: [
           root: :string,
           profile: :string,
+          repo: :keep,
+          default_repo: :string,
           provider: :string,
           model: :string,
           reasoning: :string,
           permission: :string,
+          prompt_template: :string,
           resume_attempts: :integer,
           retry_attempts: :integer,
           retry_base_delay_ms: :integer,
@@ -102,29 +137,38 @@ defmodule PromptRunner.CLI do
         aliases: [p: :profile]
       )
 
-    packet_opts =
-      []
-      |> maybe_put(:root, opts[:root])
-      |> maybe_put(:profile, opts[:profile])
-      |> maybe_put(:provider, opts[:provider])
-      |> maybe_put(:model, opts[:model])
-      |> maybe_put(:reasoning_effort, opts[:reasoning])
-      |> maybe_put(:permission_mode, opts[:permission])
-      |> maybe_put(:resume_attempts, opts[:resume_attempts])
-      |> maybe_put(:retry_attempts, opts[:retry_attempts])
-      |> maybe_put(:retry_base_delay_ms, opts[:retry_base_delay_ms])
-      |> maybe_put(:retry_max_delay_ms, opts[:retry_max_delay_ms])
-      |> maybe_put(:retry_jitter, opts[:retry_jitter])
-      |> maybe_put(:auto_repair, opts[:auto_repair])
-      |> maybe_put(:repair_attempts, opts[:repair_attempts])
-      |> maybe_put(:cli_confirmation, opts[:cli_confirmation])
+    case parse_repo_specs(opts[:repo]) do
+      {:ok, repo_specs} ->
+        packet_opts =
+          []
+          |> maybe_put(:root, opts[:root])
+          |> maybe_put(:profile, opts[:profile])
+          |> maybe_put(:repos, repo_specs)
+          |> maybe_put(:default_repo, opts[:default_repo])
+          |> maybe_put(:provider, opts[:provider])
+          |> maybe_put(:model, opts[:model])
+          |> maybe_put(:reasoning_effort, opts[:reasoning])
+          |> maybe_put(:permission_mode, opts[:permission])
+          |> maybe_put(:prompt_template, opts[:prompt_template])
+          |> maybe_put(:resume_attempts, opts[:resume_attempts])
+          |> maybe_put(:retry_attempts, opts[:retry_attempts])
+          |> maybe_put(:retry_base_delay_ms, opts[:retry_base_delay_ms])
+          |> maybe_put(:retry_max_delay_ms, opts[:retry_max_delay_ms])
+          |> maybe_put(:retry_jitter, opts[:retry_jitter])
+          |> maybe_put(:auto_repair, opts[:auto_repair])
+          |> maybe_put(:repair_attempts, opts[:repair_attempts])
+          |> maybe_put(:cli_confirmation, opts[:cli_confirmation])
 
-    case Packet.new(name, packet_opts) do
-      {:ok, packet} ->
-        IO.puts(UI.green("Created packet #{packet.name}"))
-        IO.puts("  root: #{packet.root}")
-        IO.puts("  manifest: #{packet.manifest_path}")
-        :ok
+        case Packet.new(name, packet_opts) do
+          {:ok, packet} ->
+            IO.puts(UI.green("Created packet #{packet.name}"))
+            IO.puts("  root: #{packet.root}")
+            IO.puts("  manifest: #{packet.manifest_path}")
+            :ok
+
+          {:error, reason} ->
+            handle_error(reason)
+        end
 
       {:error, reason} ->
         handle_error(reason)
@@ -183,7 +227,8 @@ defmodule PromptRunner.CLI do
           phase: :integer,
           name: :string,
           targets: :string,
-          commit: :string
+          commit: :string,
+          template: :string
         ]
       )
 
@@ -196,6 +241,7 @@ defmodule PromptRunner.CLI do
       |> maybe_put("name", opts[:name])
       |> maybe_put("targets", parse_csv(opts[:targets]))
       |> maybe_put("commit", opts[:commit])
+      |> maybe_put("template", opts[:template])
 
     case Packets.create_prompt(packet_dir, attrs) do
       {:ok, path} ->
@@ -212,9 +258,18 @@ defmodule PromptRunner.CLI do
     packet_dir = packet_dir(rest)
 
     case Packets.sync_checklists(packet_dir) do
-      {:ok, paths} ->
+      {:ok, %{paths: paths, warnings: warnings}} ->
         IO.puts(UI.green("Synchronized checklists"))
         Enum.each(paths, &IO.puts("  #{&1}"))
+
+        Enum.each(warnings, fn warning ->
+          IO.puts(
+            UI.yellow(
+              "WARNING: prompt #{warning.prompt_id} (#{warning.file}) has no verification items yet"
+            )
+          )
+        end)
+
         :ok
 
       {:error, reason} ->
@@ -346,6 +401,7 @@ defmodule PromptRunner.CLI do
   defp parse_command(["init" | rest]), do: {:init, rest}
   defp parse_command(["profile", "new", name | rest]), do: {:profile_new, name, rest}
   defp parse_command(["profile", "list" | rest]), do: {:profile_list, rest}
+  defp parse_command(["template", "list" | rest]), do: {:template_list, rest}
   defp parse_command(["packet", "new", name | rest]), do: {:packet_new, name, rest}
   defp parse_command(["packet", "doctor" | rest]), do: {:packet_doctor, rest}
   defp parse_command(["packet", "explain" | rest]), do: {:packet_explain, rest}
@@ -366,6 +422,7 @@ defmodule PromptRunner.CLI do
   defp dispatch_command({:init, rest}), do: run_init(rest)
   defp dispatch_command({:profile_new, name, rest}), do: run_profile_new(name, rest)
   defp dispatch_command({:profile_list, rest}), do: run_profile_list(rest)
+  defp dispatch_command({:template_list, rest}), do: run_template_list(rest)
   defp dispatch_command({:packet_new, name, rest}), do: run_packet_new(name, rest)
   defp dispatch_command({:packet_doctor, rest}), do: run_packet_doctor(rest)
   defp dispatch_command({:packet_explain, rest}), do: run_packet_explain(rest)
@@ -401,6 +458,22 @@ defmodule PromptRunner.CLI do
     |> String.split(",", trim: true)
     |> Enum.map(&String.trim/1)
     |> Enum.reject(&(&1 == ""))
+  end
+
+  defp parse_repo_specs(nil), do: {:ok, nil}
+
+  defp parse_repo_specs(values) do
+    values
+    |> List.wrap()
+    |> Enum.reduce_while({:ok, []}, fn value, {:ok, acc} ->
+      case String.split(value, "=", parts: 2) do
+        [name, path] when name != "" and path != "" ->
+          {:cont, {:ok, acc ++ [{String.trim(name), String.trim(path)}]}}
+
+        _ ->
+          {:halt, {:error, {:invalid_repo_option, value}}}
+      end
+    end)
   end
 
   defp maybe_put(map, _key, nil), do: map
@@ -478,15 +551,17 @@ defmodule PromptRunner.CLI do
 
     Setup:
       prompt_runner init
-      prompt_runner profile new NAME [--provider codex --model gpt-5.4 --reasoning xhigh]
+      prompt_runner profile new NAME [--provider codex --model gpt-5.4 --reasoning xhigh] [--prompt-template from-adr]
       prompt_runner profile list
+      prompt_runner template list [PACKET_DIR]
 
     Packet authoring:
-      prompt_runner packet new NAME [--root DIR] [--profile NAME] [--provider PROVIDER] [--model MODEL]
+      prompt_runner packet new NAME [--root DIR] [--profile NAME] [--repo NAME=PATH] [--default-repo NAME]
+      prompt_runner packet new NAME [--prompt-template TEMPLATE] [--provider PROVIDER] [--model MODEL]
       prompt_runner packet doctor [PACKET_DIR]
       prompt_runner packet explain [PACKET_DIR]
       prompt_runner repo add NAME PATH [--packet PACKET_DIR] [--default]
-      prompt_runner prompt new ID [--packet PACKET_DIR] --phase N --name "..."
+      prompt_runner prompt new ID [--packet PACKET_DIR] --phase N --name "..." [--template TEMPLATE]
       prompt_runner checklist sync [PACKET_DIR]
 
     Execution:

@@ -8,6 +8,9 @@ Profiles are home-scoped defaults stored under:
   profiles/
     codex-default.md
     simulated-default.md
+  templates/
+    default.prompt.md
+    from-adr.prompt.md
 ```
 
 ## Initialize
@@ -21,6 +24,8 @@ That creates:
 - `config.md`
 - `profiles/codex-default.md`
 - `profiles/simulated-default.md`
+- `templates/default.prompt.md`
+- `templates/from-adr.prompt.md`
 
 ## Default Profile
 
@@ -42,9 +47,13 @@ That creates:
 mix prompt_runner profile new claude-safe \
   --provider claude \
   --model sonnet \
+  --prompt-template from-adr \
   --permission default \
   --tools Read,Bash
 ```
+
+Profiles can carry a `prompt_template` default in addition to provider/model
+defaults.
 
 ## Precedence
 

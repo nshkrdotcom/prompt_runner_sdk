@@ -2,6 +2,10 @@
 
 This example shows one packet coordinating two repos.
 
+If you want the authoring workflow from ADRs/docs to finished prompts, start
+with [`../authoring_packet/`](../authoring_packet/README.md) first and then
+come back to this cross-repo example.
+
 ## What It Covers
 
 - named repos in `prompt_runner_packet.md`

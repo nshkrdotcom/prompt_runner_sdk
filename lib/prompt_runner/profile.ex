@@ -5,6 +5,7 @@ defmodule PromptRunner.Profile do
 
   alias PromptRunner.FrontMatter
   alias PromptRunner.RecoveryConfig
+  alias PromptRunner.Template
 
   @default_profile "codex-default"
 
@@ -37,12 +38,16 @@ defmodule PromptRunner.Profile do
            %{
              config_file: String.t(),
              profile_file: String.t(),
-             simulated_profile_file: String.t()
+             simulated_profile_file: String.t(),
+             templates_dir: String.t(),
+             default_template_file: String.t(),
+             from_adr_template_file: String.t()
            }}
   def init(opts \\ []) do
     default_profile = opts[:default_profile] || @default_profile
 
     File.mkdir_p!(profiles_dir())
+    {:ok, template_paths} = Template.init()
 
     unless File.exists?(config_file()) do
       :ok =
@@ -65,7 +70,10 @@ defmodule PromptRunner.Profile do
      %{
        config_file: config_file(),
        profile_file: profile_path(default_profile),
-       simulated_profile_file: profile_path("simulated-default")
+       simulated_profile_file: profile_path("simulated-default"),
+       templates_dir: template_paths.templates_dir,
+       default_template_file: template_paths.default_template_file,
+       from_adr_template_file: template_paths.from_adr_template_file
      }}
   end
 

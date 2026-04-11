@@ -36,6 +36,7 @@ Initialize the home-scoped profile store once:
 
 ```bash
 mix prompt_runner init
+mix prompt_runner template list
 ```
 
 This creates:
@@ -46,22 +47,42 @@ This creates:
   profiles/
     codex-default.md
     simulated-default.md
+  templates/
+    default.prompt.md
+    from-adr.prompt.md
 ```
 
 ## Create A Packet
 
+Start with the simulated path first so you can prove the packet shape and
+verification contracts without any external CLI setup:
+
 ```bash
-mix prompt_runner packet new demo
-mix prompt_runner repo add app /path/to/repo --packet demo --default
+mix prompt_runner packet new demo \
+  --profile simulated-default \
+  --provider simulated \
+  --model simulated-demo \
+  --repo app=/path/to/repo \
+  --default-repo app \
+  --prompt-template from-adr
+
 mix prompt_runner prompt new 01 \
   --packet demo \
   --phase 1 \
-  --name "Create hello file" \
+  --name "Capture runtime boundaries" \
   --targets app \
-  --commit "docs: add hello file"
+  --commit "docs: add runtime boundaries summary"
 ```
 
-Or create a ready-to-demo simulated packet:
+The new prompt is created from the selected template. You should then edit it to
+add source material and a deterministic verifier contract.
+
+For a finished example of this authoring flow, see
+[`examples/authoring_packet/`](../examples/authoring_packet/README.md).
+
+## Optional: Create A Ready-To-Demo Recovery Packet
+
+If you want the recovery walkthrough specifically:
 
 ```bash
 mix prompt_runner packet new recovery-demo \
@@ -76,55 +97,56 @@ That creates:
 ```text
 demo/
   prompt_runner_packet.md
+  templates/
   prompts/
-    01_create_hello_file.prompt.md
+    01_capture_runtime_boundaries.prompt.md
 ```
 
-If you want the recovery posture to be explicit in the packet itself, add a
-`recovery:` block to `recovery-demo/prompt_runner_packet.md`:
+## Add Source Material And A Deterministic Contract
 
-```yaml
-recovery:
-  resume_attempts: 2
-  retry:
-    max_attempts: 3
-    base_delay_ms: 0
-    max_delay_ms: 0
-    jitter: false
-  repair:
-    enabled: true
-    max_attempts: 2
-    trigger_on_nominal_success_with_failed_verifier: true
-    trigger_on_provider_failure_with_workspace_changes: true
-    trigger_on_retry_exhaustion_with_workspace_changes: true
-```
-
-## Add A Deterministic Contract
-
-Edit `demo/prompts/01_create_hello_file.prompt.md`:
+Edit `demo/prompts/01_capture_runtime_boundaries.prompt.md`:
 
 ```markdown
 ---
 id: "01"
 phase: 1
-name: "Create hello file"
+name: "Capture runtime boundaries"
+template: "from-adr"
 targets:
   - "app"
-commit: "docs: add hello file"
+commit: "docs: add runtime boundaries summary"
+references:
+  - "docs/adr-001-runtime-boundaries.md"
+required_reading:
+  - "docs/adr-001-runtime-boundaries.md"
+context_files:
+  - "workspace/README.md"
+depends_on: []
 verify:
   files_exist:
-    - "hello.txt"
+    - "RUNTIME_BOUNDARIES.md"
   contains:
-    - path: "hello.txt"
-      text: "Hello from Prompt Runner"
+    - path: "RUNTIME_BOUNDARIES.md"
+      text: "Prompt Runner owns packet orchestration."
   changed_paths_only:
-    - "hello.txt"
+    - "RUNTIME_BOUNDARIES.md"
 ---
-# Create hello file
+# Capture runtime boundaries
+
+## Required Reading
+
+- `docs/adr-001-runtime-boundaries.md`
 
 ## Mission
 
-Create `hello.txt` with exactly one line: `Hello from Prompt Runner`.
+Read ADR 001 and create `RUNTIME_BOUNDARIES.md` in the target repo.
+
+## Deliverables
+
+- `RUNTIME_BOUNDARIES.md` summarizing the runtime boundary split
+
+## Non-Goals
+
 Do not modify any other files. Respond with exactly `ok`.
 ```
 
@@ -132,6 +154,7 @@ Generate the checklist view:
 
 ```bash
 mix prompt_runner checklist sync demo
+mix prompt_runner packet doctor demo
 ```
 
 ## Inspect And Run
@@ -162,9 +185,11 @@ file-backed state or git commits.
 
 ## Next Steps
 
+- [From ADRs To Packets](from-adrs-to-packets.md)
 - [CLI Guide](cli.md)
 - [API Guide](api.md)
 - [Packet Manifest Reference](configuration.md)
+- [Templates](templates.md)
 - [Profiles](profiles.md)
 - [Simulated Provider](simulated-provider.md)
 - [Verification And Repair](verification-and-repair.md)

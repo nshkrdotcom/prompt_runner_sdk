@@ -3,7 +3,7 @@ defmodule PromptRunner.Packet do
   Packet manifest loader and generator.
   """
 
-  alias PromptRunner.{FrontMatter, Paths, Profile, RecoveryConfig}
+  alias PromptRunner.{FrontMatter, Paths, Profile, RecoveryConfig, Template, Verifier}
   alias PromptRunner.Runner
   alias PromptRunner.Source.PacketSource
 
@@ -71,7 +71,7 @@ defmodule PromptRunner.Packet do
         "name" => name,
         "profile" => opts[:profile] || default_profile_name(),
         "prompt_dir" => "prompts",
-        "repos" => %{},
+        "repos" => build_repo_attrs(opts[:repos], opts[:default_repo]),
         "phases" => %{},
         "recovery" => packet_recovery_opts(opts)
       }
@@ -80,6 +80,7 @@ defmodule PromptRunner.Packet do
       |> maybe_put_attr("reasoning_effort", opts[:reasoning_effort])
       |> maybe_put_attr("permission_mode", opts[:permission_mode])
       |> maybe_put_attr("cli_confirmation", opts[:cli_confirmation])
+      |> maybe_put_attr("prompt_template", opts[:prompt_template])
 
     body = """
     # #{name}
@@ -100,7 +101,8 @@ defmodule PromptRunner.Packet do
         attrs
         |> Map.get("repos", %{})
         |> stringify_keys()
-        |> Map.put(name, %{"path" => path, "default" => opts[:default] || false})
+        |> normalize_existing_repo_defaults(opts[:default], name)
+        |> Map.put(name, %{"path" => path, "default" => default_repo_value(opts[:default], attrs)})
 
       attrs = Map.put(attrs, "repos", repos)
 
@@ -129,6 +131,9 @@ defmodule PromptRunner.Packet do
         |> Path.wildcard()
         |> Enum.sort()
 
+      {:ok, packet_source} = PacketSource.load(packet.root, [])
+      authoring_warnings = authoring_warnings(packet, packet_source.prompts, prompt_files)
+
       {:ok,
        %{
          packet: packet.name,
@@ -140,7 +145,9 @@ defmodule PromptRunner.Packet do
          model: packet.options["model"],
          provider_info: provider_info,
          repos: repo_checks,
-         prompt_files: prompt_files
+         prompt_files: prompt_files,
+         authoring_warnings: authoring_warnings,
+         authoring_ready?: authoring_warnings == []
        }}
     end
   end
@@ -164,19 +171,18 @@ defmodule PromptRunner.Packet do
     end
   end
 
-  @spec checklist_sync(String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec checklist_sync(String.t()) ::
+          {:ok, %{paths: [String.t()], warnings: [map()]}} | {:error, term()}
   def checklist_sync(root) when is_binary(root) do
     with {:ok, packet} <- load(root),
          {:ok, result} <- PacketSource.load(packet.root, []) do
-      paths =
-        Enum.map(result.prompts, fn prompt ->
-          checklist_path = checklist_path(packet.prompt_path, prompt.file)
-          body = checklist_body(prompt)
-          :ok = File.write!(checklist_path, body)
-          checklist_path
+      {paths, warnings} =
+        Enum.map_reduce(result.prompts, [], fn prompt, acc ->
+          {checklist_path, warning} = sync_prompt_checklist(packet.prompt_path, prompt)
+          {checklist_path, acc ++ warning}
         end)
 
-      {:ok, paths}
+      {:ok, %{paths: paths, warnings: warnings}}
     end
   end
 
@@ -194,6 +200,20 @@ defmodule PromptRunner.Packet do
       items
       |> Enum.map_join("\n", fn item -> "- [ ] #{item.label}" end)
 
+    verification_lines =
+      case items do
+        [] ->
+          """
+          No verification items yet.
+
+          Add `verify:` entries to the prompt front matter, then run
+          `mix prompt_runner checklist sync` again.
+          """
+
+        _ ->
+          lines
+      end
+
     """
     # Checklist #{prompt.num}: #{prompt.name}
 
@@ -201,10 +221,32 @@ defmodule PromptRunner.Packet do
 
     ## Verification Items
 
-    #{lines}
+    #{verification_lines}
     """
     |> String.trim()
     |> Kernel.<>("\n")
+  end
+
+  defp sync_prompt_checklist(prompt_path, prompt) do
+    checklist_path = checklist_path(prompt_path, prompt.file)
+    body = checklist_body(prompt)
+    :ok = File.write!(checklist_path, body)
+    {checklist_path, checklist_warning(prompt)}
+  end
+
+  defp checklist_warning(prompt) do
+    if Verifier.contract_items(prompt.verify || %{}) == [] do
+      [
+        %{
+          kind: "empty_verify",
+          prompt_id: prompt.num,
+          prompt_name: prompt.name,
+          file: prompt.file
+        }
+      ]
+    else
+      []
+    end
   end
 
   defp load_profile(attrs) do
@@ -300,6 +342,7 @@ defmodule PromptRunner.Packet do
       attrs
       |> stringify_keys()
       |> Map.take([
+        "prompt_template",
         "provider",
         "model",
         "reasoning_effort",
@@ -365,6 +408,136 @@ defmodule PromptRunner.Packet do
 
   defp default_profile_name do
     Profile.default_profile_name() |> elem(1)
+  end
+
+  defp build_repo_attrs(nil, _default_repo), do: %{}
+
+  defp build_repo_attrs(repos, default_repo) when is_list(repos) do
+    repos
+    |> Enum.reduce(%{}, fn
+      %{name: name, path: path}, acc ->
+        Map.put(acc, name, %{
+          "path" => path,
+          "default" => default_repo?(name, repos, default_repo)
+        })
+
+      {name, path}, acc when is_binary(name) and is_binary(path) ->
+        Map.put(acc, name, %{
+          "path" => path,
+          "default" => default_repo?(name, repos, default_repo)
+        })
+    end)
+  end
+
+  defp default_repo?(_name, repos, nil) when is_list(repos), do: length(repos) == 1
+  defp default_repo?(name, _repos, default_repo), do: name == default_repo
+
+  defp normalize_existing_repo_defaults(repos, true, _name) when is_map(repos) do
+    Map.new(repos, fn {repo_name, attrs} ->
+      {repo_name, Map.put(stringify_keys(attrs), "default", false)}
+    end)
+  end
+
+  defp normalize_existing_repo_defaults(repos, _default, _name), do: repos
+
+  defp default_repo_value(true, _attrs), do: true
+
+  defp default_repo_value(nil, attrs) when is_map(attrs) do
+    existing =
+      attrs
+      |> Map.get("repos", %{})
+      |> stringify_keys()
+
+    map_size(existing) == 0
+  end
+
+  defp default_repo_value(_default, _attrs), do: false
+
+  defp authoring_warnings(packet, prompts, prompt_files) do
+    []
+    |> maybe_warn_no_prompts(prompt_files)
+    |> maybe_warn_no_default_repo(packet.repos)
+    |> maybe_warn_multiple_default_repos(packet.repos)
+    |> Kernel.++(prompt_authoring_warnings(prompts))
+  end
+
+  defp maybe_warn_no_prompts(warnings, []),
+    do: warnings ++ [%{kind: "no_prompts", message: "packet has no prompts"}]
+
+  defp maybe_warn_no_prompts(warnings, _prompt_files), do: warnings
+
+  defp maybe_warn_no_default_repo(warnings, repos) when is_list(repos) do
+    if repos != [] and not Enum.any?(repos, &(&1.default == true)) do
+      warnings ++ [%{kind: "no_default_repo", message: "packet has no default repo"}]
+    else
+      warnings
+    end
+  end
+
+  defp maybe_warn_multiple_default_repos(warnings, repos) when is_list(repos) do
+    if Enum.count(repos, &(&1.default == true)) > 1 do
+      warnings ++
+        [%{kind: "multiple_default_repos", message: "packet has multiple default repos"}]
+    else
+      warnings
+    end
+  end
+
+  defp prompt_authoring_warnings(prompts) do
+    Enum.flat_map(prompts, fn prompt ->
+      []
+      |> maybe_warn_no_targets(prompt)
+      |> maybe_warn_empty_verify(prompt)
+      |> maybe_warn_placeholder_body(prompt)
+    end)
+  end
+
+  defp maybe_warn_no_targets(warnings, prompt) do
+    if prompt.target_repos in [nil, []] do
+      warnings ++
+        [
+          %{
+            kind: "prompt_no_targets",
+            prompt_id: prompt.num,
+            file: prompt.file,
+            message: "prompt has no targets"
+          }
+        ]
+    else
+      warnings
+    end
+  end
+
+  defp maybe_warn_empty_verify(warnings, prompt) do
+    if Verifier.contract_items(prompt.verify || %{}) == [] do
+      warnings ++
+        [
+          %{
+            kind: "prompt_empty_verify",
+            prompt_id: prompt.num,
+            file: prompt.file,
+            message: "prompt has no verification items"
+          }
+        ]
+    else
+      warnings
+    end
+  end
+
+  defp maybe_warn_placeholder_body(warnings, prompt) do
+    if Template.contains_placeholder_markers?(prompt.body) do
+      warnings ++
+        [
+          %{
+            kind: "prompt_placeholder_body",
+            prompt_id: prompt.num,
+            file: prompt.file,
+            message: "prompt still contains scaffold placeholder markers"
+          }
+        ]
+    else
+      warnings
+    end
   end
 
   defp packet_recovery_opts(opts) do

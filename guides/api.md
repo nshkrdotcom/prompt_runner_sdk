@@ -9,6 +9,7 @@ Initialize the profile store:
 
 ```elixir
 {:ok, _paths} = PromptRunner.Profile.init()
+{:ok, templates} = PromptRunner.Template.list()
 ```
 
 Create and inspect profiles:
@@ -32,6 +33,7 @@ Create a packet and add a repo:
   PromptRunner.Packet.new("demo",
     root: "/tmp",
     profile: "simulated-default",
+    prompt_template: "from-adr",
     provider: "simulated",
     model: "simulated-demo",
     recovery: %{
@@ -51,9 +53,24 @@ Create a prompt file:
   PromptRunner.Packets.create_prompt(packet.root, %{
     "id" => "01",
     "phase" => 1,
-    "name" => "Create hello file",
+    "name" => "Capture runtime boundaries",
     "targets" => ["app"],
-    "commit" => "docs: add hello file"
+    "commit" => "docs: add runtime boundaries summary"
+  })
+```
+
+The packet's `prompt_template` is applied automatically. You can also override
+it per prompt with:
+
+```elixir
+{:ok, _path} =
+  PromptRunner.Packets.create_prompt(packet.root, %{
+    "id" => "02",
+    "phase" => 1,
+    "name" => "Create execution checklist",
+    "targets" => ["app"],
+    "commit" => "docs: add execution checklist",
+    "template" => "from-adr"
   })
 ```
 

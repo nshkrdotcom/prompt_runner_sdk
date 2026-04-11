@@ -25,6 +25,9 @@ defmodule PromptRunner.ProfileTest do
     assert File.exists?(paths.config_file)
     assert File.exists?(paths.profile_file)
     assert File.exists?(paths.simulated_profile_file)
+    assert File.dir?(paths.templates_dir)
+    assert File.exists?(paths.default_template_file)
+    assert File.exists?(paths.from_adr_template_file)
 
     assert {:ok, profile} = Profile.load()
     assert profile.name == "codex-default"

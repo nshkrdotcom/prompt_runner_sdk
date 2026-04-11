@@ -83,6 +83,11 @@ defmodule PromptRunner.Source.DirectorySource do
       origin: %{type: :file, path: path},
       target_repos: targets,
       commit_message: commit_message,
+      template: metadata["template"],
+      references: normalize_list(metadata["references"]),
+      required_reading: normalize_list(metadata["required_reading"]),
+      context_files: normalize_list(metadata["context_files"]),
+      depends_on: normalize_list(metadata["depends_on"]),
       validation_commands: validation,
       verify: verify,
       metadata: metadata
@@ -343,4 +348,7 @@ defmodule PromptRunner.Source.DirectorySource do
   defp normalize_value(value) when is_map(value), do: stringify_keys(value)
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value), do: value
+
+  defp normalize_list(value) when is_list(value), do: value
+  defp normalize_list(_value), do: []
 end

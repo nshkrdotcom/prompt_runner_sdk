@@ -2,6 +2,9 @@
 
 This is the quickest end-to-end packet example in the repo.
 
+If you want the authoring workflow from ADRs/docs to finished prompts, start
+with [`../authoring_packet/`](../authoring_packet/README.md) instead.
+
 ## What It Covers
 
 - `prompt_runner_packet.md`

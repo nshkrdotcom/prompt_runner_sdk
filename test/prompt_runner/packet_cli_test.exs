@@ -73,6 +73,94 @@ defmodule PromptRunner.PacketCLITest do
            )
   end
 
+  test "packet new accepts repeated repo declarations and prompt new accepts templates" do
+    root = FSHelpers.tmp_dir("prompt_runner_cli_packet_root")
+    repo = FSHelpers.git_repo!("prompt_runner_cli_repo")
+    on_exit(fn -> File.rm_rf!(root) end)
+    on_exit(fn -> File.rm_rf!(repo) end)
+
+    output =
+      capture_io(fn ->
+        assert :ok =
+                 CLI.main([
+                   "packet",
+                   "new",
+                   "demo",
+                   "--root",
+                   root,
+                   "--repo",
+                   "app=#{repo}",
+                   "--default-repo",
+                   "app",
+                   "--prompt-template",
+                   "from-adr"
+                 ])
+
+        assert :ok =
+                 CLI.main([
+                   "prompt",
+                   "new",
+                   "01",
+                   "--packet",
+                   Path.join(root, "demo"),
+                   "--phase",
+                   "1",
+                   "--name",
+                   "Map contracts",
+                   "--targets",
+                   "app",
+                   "--commit",
+                   "docs: map contracts"
+                 ])
+
+        assert :ok = CLI.main(["template", "list", Path.join(root, "demo")])
+      end)
+
+    packet_root = Path.join(root, "demo")
+    prompt_path = Path.join([packet_root, "prompts", "01_map_contracts.prompt.md"])
+
+    assert {:ok, packet} = PromptRunner.Packet.load(packet_root)
+    assert packet.options["prompt_template"] == "from-adr"
+    assert [%{name: "app", default: true, path: ^repo}] = packet.repos
+    assert File.read!(prompt_path) =~ "## Required Reading"
+    assert File.read!(prompt_path) =~ "template: \"from-adr\""
+    assert output =~ "from-adr"
+  end
+
+  test "checklist sync warns for prompts without verifier items" do
+    root = FSHelpers.tmp_dir("prompt_runner_cli_packet_root")
+    repo = FSHelpers.git_repo!("prompt_runner_cli_repo")
+    on_exit(fn -> File.rm_rf!(root) end)
+    on_exit(fn -> File.rm_rf!(repo) end)
+
+    capture_io(fn ->
+      assert :ok = CLI.main(["packet", "new", "demo", "--root", root, "--repo", "app=#{repo}"])
+
+      assert :ok =
+               CLI.main([
+                 "prompt",
+                 "new",
+                 "01",
+                 "--packet",
+                 Path.join(root, "demo"),
+                 "--phase",
+                 "1",
+                 "--name",
+                 "Draft prompt",
+                 "--targets",
+                 "app"
+               ])
+    end)
+
+    output =
+      capture_io(fn ->
+        assert :ok = CLI.main(["checklist", "sync", Path.join(root, "demo")])
+      end)
+
+    assert output =~ "WARNING: prompt 01"
+    assert output =~ "has no verification items yet"
+  end
+
   test "packet new accepts runtime defaults from CLI flags" do
     root = FSHelpers.tmp_dir("prompt_runner_cli_packet_root")
     on_exit(fn -> File.rm_rf!(root) end)

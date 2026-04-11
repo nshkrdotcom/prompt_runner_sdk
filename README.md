@@ -32,6 +32,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 
 - one packet manifest: `prompt_runner_packet.md`
 - one prompt format: `*.prompt.md` with YAML front matter
+- template-based prompt scaffolding with home-scoped and packet-local templates
 - home-scoped profiles under `~/.config/prompt_runner/`
 - deterministic completion contracts plus generated checklist views
 - policy-driven retry, repair, and resume based on verifier state plus
@@ -68,82 +69,104 @@ Initialize Prompt Runner once per machine:
 
 ```bash
 mix prompt_runner init
+mix prompt_runner template list
 ```
 
-That creates both `codex-default` and `simulated-default` profiles under
-`~/.config/prompt_runner/profiles/`.
+That creates:
 
-Create a packet:
+- `codex-default` and `simulated-default` profiles under
+  `~/.config/prompt_runner/profiles/`
+- editable prompt templates under `~/.config/prompt_runner/templates/`
 
-```bash
-mix prompt_runner packet new demo
-mix prompt_runner repo add app /path/to/repo --packet demo --default
-mix prompt_runner prompt new 01 \
-  --packet demo \
-  --phase 1 \
-  --name "Create hello file" \
-  --targets app \
-  --commit "docs: add hello file"
-```
+Start with the simulated path first. It is the shortest way to learn the packet
+model and authoring workflow.
 
-Or create a simulated recovery packet without any provider setup:
+Create a simulated packet with repos and a default prompt template in one
+command:
 
 ```bash
-mix prompt_runner packet new recovery-demo \
+mix prompt_runner packet new demo \
   --profile simulated-default \
   --provider simulated \
   --model simulated-demo \
-  --permission bypass
+  --repo app=/path/to/repo \
+  --default-repo app \
+  --prompt-template from-adr
 ```
 
-Then edit `recovery-demo/prompt_runner_packet.md` to make the packet-level
-recovery policy explicit:
+Create a prompt from that template:
 
-```yaml
-recovery:
-  resume_attempts: 2
-  retry:
-    max_attempts: 3
-    base_delay_ms: 0
-    max_delay_ms: 0
-    jitter: false
-  repair:
-    enabled: true
-    max_attempts: 2
-    trigger_on_nominal_success_with_failed_verifier: true
-    trigger_on_provider_failure_with_workspace_changes: true
-    trigger_on_retry_exhaustion_with_workspace_changes: true
+```bash
+mix prompt_runner prompt new 01 \
+  --packet demo \
+  --phase 1 \
+  --name "Capture runtime boundaries" \
+  --targets app \
+  --commit "docs: add runtime boundaries summary"
 ```
 
-If one prompt needs different recovery behavior, add a prompt-local
-`recovery:` block in that prompt's front matter. Prompt-local recovery is
-deep-merged onto the packet default.
+If you want a real provider packet after that, switch the packet to a real
+profile/provider/model or start with `codex-default`.
 
-Edit `demo/prompts/01_create_hello_file.prompt.md`:
+The generated prompt is template-based. It should then be finished by adding:
+
+- `references`
+- `required_reading`
+- `context_files`
+- `depends_on`
+- a deterministic `verify:` contract
+
+Example:
 
 ```markdown
 ---
 id: "01"
 phase: 1
-name: "Create hello file"
+name: "Capture runtime boundaries"
+template: "from-adr"
 targets:
   - "app"
-commit: "docs: add hello file"
+commit: "docs: add runtime boundaries summary"
+references:
+  - "docs/adr-001-runtime-boundaries.md"
+required_reading:
+  - "docs/adr-001-runtime-boundaries.md"
+context_files:
+  - "workspace/README.md"
+depends_on: []
 verify:
   files_exist:
-    - "hello.txt"
+    - "RUNTIME_BOUNDARIES.md"
   contains:
-    - path: "hello.txt"
-      text: "Hello from Prompt Runner"
+    - path: "RUNTIME_BOUNDARIES.md"
+      text: "Prompt Runner owns packet orchestration."
   changed_paths_only:
-    - "hello.txt"
+    - "RUNTIME_BOUNDARIES.md"
 ---
-# Create hello file
+# Capture runtime boundaries
+
+## Required Reading
+
+- `docs/adr-001-runtime-boundaries.md`
 
 ## Mission
 
-Create `hello.txt` with exactly one line: `Hello from Prompt Runner`.
+Read ADR 001 and create `RUNTIME_BOUNDARIES.md` in the target repo.
+
+## Deliverables
+
+- `RUNTIME_BOUNDARIES.md` summarizing the runtime boundary split
+
+## Non-Goals
+
 Do not modify any other files. Respond with exactly `ok`.
+```
+
+Turn the verification contract into a human checklist:
+
+```bash
+mix prompt_runner checklist sync demo
+mix prompt_runner packet doctor demo
 ```
 
 Inspect, run, and check status:
@@ -157,9 +180,8 @@ mix prompt_runner status demo
 
 Packet-local runtime state is written to `demo/.prompt_runner/`.
 
-For a ready-made recovery walkthrough covering retry, repair, verifier
-override, rate limits, and resume after transport failures, see
-[`examples/simulated_recovery_packet/`](examples/simulated_recovery_packet/README.md).
+For a ready-made authoring walkthrough from ADRs/docs to finished prompts, see
+[`examples/authoring_packet/`](examples/authoring_packet/README.md).
 
 ## Packet Model
 
@@ -168,9 +190,13 @@ A packet directory is the primary unit of work:
 ```text
 demo/
   prompt_runner_packet.md
+  templates/
+    from-adr.prompt.md
+  docs/
+    adr-001-runtime-boundaries.md
   prompts/
-    01_create_hello_file.prompt.md
-    01_create_hello_file.prompt.checklist.md
+    01_capture_runtime_boundaries.prompt.md
+    01_capture_runtime_boundaries.prompt.checklist.md
   .prompt_runner/
     state.json
     progress.log
@@ -181,6 +207,10 @@ Core files:
 
 - `prompt_runner_packet.md`
   packet-level repos, defaults, and phase names
+- `templates/*.prompt.md`
+  reusable prompt scaffold templates
+- `docs/`
+  packet-local source material such as ADRs and design docs
 - `*.prompt.md`
   one prompt per file
 - `*.prompt.checklist.md`
@@ -257,6 +287,15 @@ mix prompt_runner checklist sync demo
 The checklist is derived output for humans. The verifier report in
 `.prompt_runner/state.json` remains the actual completion source of truth.
 
+`mix prompt_runner packet doctor` also flags common authoring gaps before a
+packet run:
+
+- no prompts
+- no default repo
+- prompt has no targets
+- prompt has no verification items
+- prompt still contains scaffold placeholder markers
+
 ## CLI Entry Points
 
 Use any of these:
@@ -268,6 +307,7 @@ Use any of these:
 ## Examples
 
 - [examples/README.md](examples/README.md)
+- [examples/authoring_packet/README.md](examples/authoring_packet/README.md)
 - [examples/simulated_recovery_packet/README.md](examples/simulated_recovery_packet/README.md)
 - [examples/single_repo_packet/README.md](examples/single_repo_packet/README.md)
 - [examples/multi_repo_packet/README.md](examples/multi_repo_packet/README.md)
@@ -275,9 +315,11 @@ Use any of these:
 ## Documentation
 
 - [Getting Started](guides/getting-started.md)
+- [From ADRs To Packets](guides/from-adrs-to-packets.md)
 - [CLI Guide](guides/cli.md)
 - [API Guide](guides/api.md)
 - [Packet Manifest Reference](guides/configuration.md)
+- [Templates](guides/templates.md)
 - [Profiles](guides/profiles.md)
 - [Provider Guide](guides/providers.md)
 - [Simulated Provider](guides/simulated-provider.md)

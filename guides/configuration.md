@@ -1,11 +1,16 @@
 # Packet Manifest Reference
 
-Prompt Runner 0.7.0 uses two authoring files:
+Prompt Runner 0.7.0 uses two primary authoring files:
 
 - `prompt_runner_packet.md`
 - `*.prompt.md`
 
 Both are markdown documents with YAML front matter.
+
+Optional supporting authoring files include:
+
+- `templates/*.prompt.md`
+- packet-local docs such as `docs/*.md`
 
 ## Packet Manifest
 
@@ -19,6 +24,7 @@ Example:
 ---
 name: "demo"
 profile: "codex-default"
+prompt_template: "from-adr"
 provider: "codex"
 model: "gpt-5.4"
 reasoning_effort: "xhigh"
@@ -59,6 +65,7 @@ Core keys:
 
 - `name`
 - `profile`
+- `prompt_template`
 - `repos`
 - `phases`
 - `recovery`
@@ -101,9 +108,17 @@ Example:
 id: "01"
 phase: 1
 name: "Create hello file"
+template: "from-adr"
 targets:
   - "app"
 commit: "docs: add hello file"
+references:
+  - "docs/adr-001-runtime-boundaries.md"
+required_reading:
+  - "docs/adr-001-runtime-boundaries.md"
+context_files:
+  - "workspace/README.md"
+depends_on: []
 provider: "codex"
 model: "gpt-5.4"
 verify:
@@ -129,8 +144,13 @@ Scheduling and identity:
 - `id`
 - `phase`
 - `name`
+- `template`
 - `targets`
 - `commit`
+- `references`
+- `required_reading`
+- `context_files`
+- `depends_on`
 
 Prompt-local execution overrides:
 
@@ -196,6 +216,18 @@ verify:
 human-readable checklist file next to each prompt.
 
 The checklist is derived output, not the source of truth.
+
+If a prompt still has no verifier items, `checklist sync` prints a warning and
+the generated checklist explicitly says that verification items are still
+missing.
+
+`mix prompt_runner packet doctor` also reports common authoring gaps:
+
+- packet has no prompts
+- packet has no default repo
+- prompt has no targets
+- prompt has no verification items
+- prompt still contains scaffold placeholder markers
 
 ## Simulated Provider Scripts
 

@@ -15,6 +15,7 @@ Initialize the global profile store:
 
 ```bash
 mix prompt_runner init
+mix prompt_runner template list
 ```
 
 Create and inspect profiles:
@@ -29,20 +30,29 @@ mix prompt_runner profile list
 Create a packet:
 
 ```bash
-mix prompt_runner packet new demo
-mix prompt_runner repo add app /path/to/repo --packet demo --default
-mix prompt_runner prompt new 01 --packet demo --phase 1 --name "Create hello" --targets app --commit "docs: add hello"
-mix prompt_runner checklist sync demo
-```
-
-Create a packet with runtime defaults already filled in:
-
-```bash
-mix prompt_runner packet new recovery-demo \
+mix prompt_runner packet new demo \
   --profile simulated-default \
   --provider simulated \
   --model simulated-demo \
-  --permission bypass
+  --repo app=/path/to/repo \
+  --default-repo app \
+  --prompt-template from-adr
+
+mix prompt_runner prompt new 01 \
+  --packet demo \
+  --phase 1 \
+  --name "Capture runtime boundaries" \
+  --targets app \
+  --commit "docs: add runtime boundaries summary"
+
+mix prompt_runner checklist sync demo
+```
+
+Packet-local templates can override the home-scoped templates created by
+`init`. List visible templates for a packet with:
+
+```bash
+mix prompt_runner template list demo
 ```
 
 Use the packet manifest's `recovery:` block for the full policy surface. The
@@ -106,6 +116,9 @@ mix prompt_runner status demo
 
 `packet new` accepts:
 
+- `--repo NAME=PATH` (repeatable)
+- `--default-repo`
+- `--prompt-template`
 - `--profile`
 - `--provider`
 - `--model`
@@ -119,6 +132,15 @@ mix prompt_runner status demo
 - `--auto-repair`
 - `--repair-attempts`
 - `--cli-confirmation`
+
+`prompt new` accepts:
+
+- `--packet`
+- `--phase`
+- `--name`
+- `--targets`
+- `--commit`
+- `--template`
 
 Example:
 
