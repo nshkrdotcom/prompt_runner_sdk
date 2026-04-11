@@ -4,7 +4,7 @@ Generated from the prompt verification contract.
 
 ## Verification Items
 
-- [ ] file exists: SUMMARY.md
-- [ ] contains: SUMMARY.md
-- [ ] contains: SUMMARY.md
 - [ ] changed path allowed: SUMMARY.md
+- [ ] contains: SUMMARY.md
+- [ ] contains: SUMMARY.md
+- [ ] file exists: SUMMARY.md

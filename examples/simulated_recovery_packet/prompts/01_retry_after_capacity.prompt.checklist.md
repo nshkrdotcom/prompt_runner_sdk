@@ -4,6 +4,6 @@ Generated from the prompt verification contract.
 
 ## Verification Items
 
-- [ ] file exists: retry.txt
-- [ ] contains: retry.txt
 - [ ] changed path allowed: retry.txt
+- [ ] contains: retry.txt
+- [ ] file exists: retry.txt

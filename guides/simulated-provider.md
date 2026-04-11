@@ -27,9 +27,25 @@ mix prompt_runner packet new recovery-demo \
   --profile simulated-default \
   --provider simulated \
   --model simulated-demo \
-  --permission bypass \
-  --retry-attempts 2 \
-  --auto-repair
+  --permission bypass
+```
+
+Then make the packet-level recovery posture explicit:
+
+```yaml
+recovery:
+  resume_attempts: 2
+  retry:
+    max_attempts: 3
+    base_delay_ms: 0
+    max_delay_ms: 0
+    jitter: false
+  repair:
+    enabled: true
+    max_attempts: 2
+    trigger_on_nominal_success_with_failed_verifier: true
+    trigger_on_provider_failure_with_workspace_changes: true
+    trigger_on_retry_exhaustion_with_workspace_changes: true
 ```
 
 ## Prompt Script Format

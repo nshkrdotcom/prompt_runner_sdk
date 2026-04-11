@@ -3,9 +3,11 @@ defmodule PromptRunner.Runner do
 
   alias PromptRunner.CommitMessages
   alias PromptRunner.Config
+  alias PromptRunner.FailureEnvelope
   alias PromptRunner.Plan
   alias PromptRunner.Progress
   alias PromptRunner.Prompts
+  alias PromptRunner.RecoveryPolicy
   alias PromptRunner.Rendering
   alias PromptRunner.Rendering.Renderers.{CompactRenderer, StudioRenderer, VerboseRenderer}
   alias PromptRunner.Rendering.Sinks.{CallbackSink, FileSink, JSONLSink, TTYSink}
@@ -502,7 +504,7 @@ defmodule PromptRunner.Runner do
 
     Runtime.record_attempt_result(ctx.plan, ctx.prompt.num, ctx.attempt, %{
       "status" => "failed",
-      "failure_class" => to_string(classify_failure(reason)),
+      "failure_class" => failure_class(reason),
       "reason" => summarize_reason({:start_failed, reason})
     })
 
@@ -551,7 +553,10 @@ defmodule PromptRunner.Runner do
   end
 
   defp stream_failure_class(:ok), do: nil
-  defp stream_failure_class({:error, reason}), do: to_string(classify_failure(reason))
+  defp stream_failure_class({:error, reason}), do: failure_class(reason)
+
+  defp failure_for_stream_result(:ok), do: FailureEnvelope.success()
+  defp failure_for_stream_result({:error, reason}), do: FailureEnvelope.from_reason(reason)
 
   defp stream_reason(:ok), do: nil
   defp stream_reason({:error, reason}), do: summarize_reason(reason)
@@ -573,10 +578,6 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  defp retryable_failure?(reason) do
-    classify_failure(reason) in [:recoverable_transport, :provider_capacity]
-  end
-
   defp verification_override_allowed?({:error, {:cli_confirmation_missing, _details}}, _report),
     do: false
 
@@ -584,41 +585,20 @@ defmodule PromptRunner.Runner do
     do: false
 
   defp verification_override_allowed?({:error, reason}, report) do
-    report.items != [] and
-      classify_failure(reason) in [:recoverable_transport, :provider_capacity]
+    failure = FailureEnvelope.from_reason(reason)
+
+    verifier_items_present?(report) and
+      failure.class not in [
+        :cli_confirmation_missing,
+        :cli_confirmation_mismatch,
+        :approval_denied
+      ]
   end
 
-  defp classify_failure(reason) do
-    message = failure_message(reason)
-    classify_failure_message(reason, message)
+  defp verifier_items_present?(report) when is_map(report) do
+    items = Map.get(report, :items, Map.get(report, "items", []))
+    is_list(items) and items != []
   end
-
-  defp retry_allowed?(plan, attempt) do
-    attempt < retry_attempts(plan) + 1
-  end
-
-  defp retry_attempts(%Plan{options: options}) do
-    case options[:retry_attempts] || options["retry_attempts"] do
-      value when is_integer(value) and value >= 0 ->
-        value
-
-      value when is_binary(value) ->
-        case Integer.parse(value) do
-          {parsed, ""} when parsed >= 0 -> parsed
-          _ -> 2
-        end
-
-      _ ->
-        2
-    end
-  end
-
-  defp auto_repair?(%Plan{options: options}) do
-    value = options[:auto_repair] || options["auto_repair"]
-    value in [true, "true", "TRUE", "1", 1]
-  end
-
-  defp retry_backoff_ms(attempt), do: min(1_000 * attempt, 5_000)
 
   defp build_repair_prompt(prompt, prompt_state) do
     verifier = prompt_state["last_verifier"] || prompt_state["verifier"] || %{}
@@ -656,44 +636,45 @@ defmodule PromptRunner.Runner do
     }
   end
 
-  defp handle_attempt_outcome({:retry, reason}, ctx), do: maybe_schedule_retry(ctx, reason)
+  defp handle_attempt_outcome({:retry, reason, failure, delay_ms}, ctx),
+    do: maybe_schedule_retry(ctx, reason, failure, delay_ms)
 
-  defp handle_attempt_outcome({:repair, report, reason}, ctx),
-    do: maybe_run_repair(ctx, report, reason)
+  defp handle_attempt_outcome({:repair, report, reason, failure}, ctx),
+    do: maybe_run_repair(ctx, report, reason, failure)
 
   defp handle_attempt_outcome(other, _ctx), do: other
 
-  defp maybe_schedule_retry(ctx, reason) do
-    if retry_allowed?(ctx.plan, ctx.attempt) do
-      Runtime.mark_status(ctx.plan, ctx.prompt.num, "retry_scheduled", %{
-        "failure_class" => to_string(classify_failure(reason)),
-        "reason" => summarize_reason(reason)
-      })
+  defp maybe_schedule_retry(ctx, reason, failure, delay_ms) do
+    Runtime.mark_status(ctx.plan, ctx.prompt.num, "retry_scheduled", %{
+      "failure_class" => FailureEnvelope.class_name(failure),
+      "failure" => failure,
+      "reason" => summarize_reason(reason),
+      "retry_delay_ms" => delay_ms
+    })
 
-      Process.sleep(retry_backoff_ms(ctx.attempt))
-      run_prompt_attempts(ctx.plan, ctx.prompt, ctx.skip_commit, :retry, ctx.attempt + 1)
-    else
-      {:error, reason}
-    end
+    if delay_ms > 0, do: Process.sleep(delay_ms)
+    run_prompt_attempts(ctx.plan, ctx.prompt, ctx.skip_commit, :retry, ctx.attempt + 1)
   end
 
-  defp maybe_run_repair(ctx, report, reason) do
-    if auto_repair?(ctx.plan) and ctx.mode != :repair do
-      Runtime.mark_status(ctx.plan, ctx.prompt.num, "repairing", %{"last_verifier" => report})
+  defp maybe_run_repair(ctx, report, reason, failure) do
+    Runtime.mark_status(ctx.plan, ctx.prompt.num, "repairing", %{
+      "last_verifier" => report,
+      "failure_class" => FailureEnvelope.class_name(failure),
+      "failure" => failure,
+      "last_error" => summarize_reason(reason)
+    })
 
-      run_prompt_attempts(
-        ctx.plan,
-        build_repair_prompt(ctx.prompt, %{
-          "last_verifier" => report,
-          "last_error" => summarize_reason(reason)
-        }),
-        ctx.skip_commit,
-        :repair,
-        ctx.attempt + 1
-      )
-    else
-      {:error, {:verification_failed, report}}
-    end
+    run_prompt_attempts(
+      ctx.plan,
+      build_repair_prompt(ctx.prompt, %{
+        "last_verifier" => report,
+        "last_error" => summarize_reason(reason),
+        "last_failure_class" => FailureEnvelope.class_name(failure)
+      }),
+      ctx.skip_commit,
+      :repair,
+      ctx.attempt + 1
+    )
   end
 
   defp prompt_attempt_context(plan, prompt, skip_commit, mode, attempt) do
@@ -739,46 +720,16 @@ defmodule PromptRunner.Runner do
   defp record_attempt_failure(ctx, reason) do
     Runtime.record_attempt_result(ctx.plan, ctx.prompt.num, ctx.attempt, %{
       "status" => "failed",
-      "failure_class" => to_string(classify_failure(reason)),
+      "failure_class" => failure_class(reason),
+      "failure" => FailureEnvelope.from_reason(reason),
       "reason" => summarize_reason(reason)
     })
   end
 
-  defp failure_message(reason) do
-    provider_error = extract_provider_error(reason)
-
-    [
-      map_get(provider_error, :message),
-      map_get(reason, :message),
-      if(is_binary(reason), do: reason, else: nil)
-    ]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.join(" ")
-    |> String.downcase()
-  end
-
-  defp classify_failure_message(reason, message) do
-    cond do
-      recoverable_stream_error?({:error, reason}) -> :recoverable_transport
-      provider_capacity_message?(message) -> :provider_capacity
-      auth_error_message?(message) -> :auth_error
-      config_error_message?(message) -> :config_error
-      true -> :runtime_error
-    end
-  end
-
-  defp provider_capacity_message?(message) do
-    String.contains?(message, "capacity") or String.contains?(message, "rate limit") or
-      String.contains?(message, "temporarily unavailable")
-  end
-
-  defp auth_error_message?(message) do
-    String.contains?(message, "api key") or String.contains?(message, "auth") or
-      String.contains?(message, "permission")
-  end
-
-  defp config_error_message?(message) do
-    String.contains?(message, "unsupported") or String.contains?(message, "invalid")
+  defp failure_class(reason) do
+    reason
+    |> FailureEnvelope.from_reason()
+    |> FailureEnvelope.class_name()
   end
 
   defp normalize_prompt_id(value) when is_binary(value) do
@@ -943,10 +894,7 @@ defmodule PromptRunner.Runner do
       result == :ok ->
         :no_resume
 
-      attempt > 0 ->
-        :no_resume
-
-      not recoverable_stream_error?(result) ->
+      not RecoveryPolicy.resume_allowed?(recovery.plan, recovery.prompt, result, attempt) ->
         :no_resume
 
       true ->
@@ -1021,20 +969,6 @@ defmodule PromptRunner.Runner do
         :ok
     end
   end
-
-  defp recoverable_stream_error?({:error, reason}) do
-    provider_error = extract_provider_error(reason)
-    kind = map_get(provider_error, :kind)
-
-    message =
-      String.downcase(map_get(provider_error, :message) || map_get(reason, :message) || "")
-
-    kind in [:protocol_error, :transport_error, :transport_exit] or
-      String.contains?(message, "websocket protocol error") or
-      String.contains?(message, "connection reset without closing handshake")
-  end
-
-  defp recoverable_stream_error?(_result), do: false
 
   defp merge_root_and_resume_error({:error, root_reason}, {:error, resume_reason}) do
     root_message =
@@ -1525,42 +1459,29 @@ defmodule PromptRunner.Runner do
       "status" => attempt_status(stream_result, report),
       "verifier" => report,
       "failure_class" => stream_failure_class(stream_result),
+      "failure" => failure_for_stream_result(stream_result),
       "reason" => stream_reason(stream_result)
     })
 
-    case final_stream_action(stream_result, report) do
-      {:complete, override?} -> complete_prompt_attempt(ctx, report, override?)
-      {:provider_failed, reason} -> fail_prompt_attempt(ctx, report, reason)
-      {:verification_failed, reason} -> request_prompt_repair(ctx, report, reason)
-      {:retry, reason} -> retry_prompt_attempt(ctx, report, reason)
+    case RecoveryPolicy.final_action(ctx.plan, ctx.prompt, ctx.mode, stream_result, report) do
+      {:complete, override?, failure} ->
+        complete_prompt_attempt(ctx, report, override?, failure)
+
+      {:provider_failed, reason, failure} ->
+        fail_prompt_attempt(ctx, report, reason, failure)
+
+      {:verification_failed, reason, failure} ->
+        request_prompt_repair(ctx, report, reason, failure)
+
+      {:retry, reason, failure, delay_ms} ->
+        retry_prompt_attempt(ctx, report, reason, failure, delay_ms)
+
+      {:repair, report, reason, failure} ->
+        request_prompt_repair(ctx, report, reason, failure)
     end
   end
 
-  defp final_stream_action(:ok, report) do
-    if report.pass? do
-      {:complete, false}
-    else
-      {:verification_failed, {:verification_failed, report}}
-    end
-  end
-
-  defp final_stream_action({:error, reason} = stream_result, report) do
-    cond do
-      report.pass? and verification_override_allowed?(stream_result, report) ->
-        {:complete, true}
-
-      report.pass? ->
-        {:provider_failed, reason}
-
-      retryable_failure?(reason) ->
-        {:retry, reason}
-
-      true ->
-        {:provider_failed, reason}
-    end
-  end
-
-  defp complete_prompt_attempt(ctx, report, override?) do
+  defp complete_prompt_attempt(ctx, report, override?, failure) do
     commit_info =
       if ctx.skip_commit do
         {:skip, :no_commit}
@@ -1572,7 +1493,8 @@ defmodule PromptRunner.Runner do
 
     Runtime.mark_status(ctx.plan, ctx.prompt.num, "completed", %{
       "commit_info" => commit_info,
-      "last_verifier" => report
+      "last_verifier" => report,
+      "failure" => failure
     })
 
     emit_observer(ctx.plan, %{
@@ -1589,12 +1511,13 @@ defmodule PromptRunner.Runner do
     :ok
   end
 
-  defp fail_prompt_attempt(ctx, report, reason) do
+  defp fail_prompt_attempt(ctx, report, reason, failure) do
     Progress.mark_failed(ctx.plan, ctx.prompt.num)
 
     Runtime.mark_status(ctx.plan, ctx.prompt.num, "failed", %{
       "last_verifier" => report,
-      "failure_class" => to_string(classify_failure(reason)),
+      "failure_class" => FailureEnvelope.class_name(failure),
+      "failure" => failure,
       "reason" => summarize_reason(reason)
     })
 
@@ -1602,30 +1525,39 @@ defmodule PromptRunner.Runner do
     return_error(ctx.plan, ctx.prompt.num, reason, false)
   end
 
-  defp request_prompt_repair(ctx, report, reason) do
+  defp request_prompt_repair(ctx, report, reason, failure) do
     Progress.mark_failed(ctx.plan, ctx.prompt.num)
 
     Runtime.mark_status(ctx.plan, ctx.prompt.num, "verification_failed", %{
-      "last_verifier" => report
+      "last_verifier" => report,
+      "failure_class" => FailureEnvelope.class_name(failure),
+      "failure" => failure,
+      "reason" => summarize_reason(reason)
     })
 
     emit_observer(ctx.plan, %{type: :prompt_failed, prompt: ctx.prompt, reason: reason})
 
     IO.puts(UI.red("Verification failed for prompt #{ctx.prompt.num}"))
-    {:repair, report, reason}
+    {:repair, report, reason, failure}
   end
 
-  defp retry_prompt_attempt(ctx, report, reason) do
+  defp retry_prompt_attempt(ctx, report, reason, failure, delay_ms) do
     Progress.mark_failed(ctx.plan, ctx.prompt.num)
 
     Runtime.mark_status(ctx.plan, ctx.prompt.num, "failed", %{
       "last_verifier" => report,
-      "failure_class" => to_string(classify_failure(reason)),
+      "failure_class" => FailureEnvelope.class_name(failure),
+      "failure" => failure,
       "reason" => summarize_reason(reason)
     })
 
-    IO.puts(UI.yellow("Retrying prompt #{ctx.prompt.num} after transient failure..."))
-    {:retry, reason}
+    IO.puts(
+      UI.yellow(
+        "Retrying prompt #{ctx.prompt.num} after #{FailureEnvelope.class_name(failure)}..."
+      )
+    )
+
+    {:retry, reason, failure, delay_ms}
   end
 
   defp commit_prompt(plan, prompt, _llm) do

@@ -7,6 +7,7 @@ defmodule PromptRunner.CLI do
   alias PromptRunner.Packet
   alias PromptRunner.Packets
   alias PromptRunner.Profile
+  alias PromptRunner.RecoveryConfig
   alias PromptRunner.Runner
   alias PromptRunner.UI
 
@@ -42,8 +43,13 @@ defmodule PromptRunner.CLI do
           permission: :string,
           tools: :string,
           cli_confirmation: :string,
+          resume_attempts: :integer,
           retry_attempts: :integer,
-          auto_repair: :boolean
+          retry_base_delay_ms: :integer,
+          retry_max_delay_ms: :integer,
+          retry_jitter: :boolean,
+          auto_repair: :boolean,
+          repair_attempts: :integer
         ]
       )
 
@@ -54,8 +60,7 @@ defmodule PromptRunner.CLI do
       |> maybe_put("reasoning_effort", opts[:reasoning])
       |> maybe_put("permission_mode", opts[:permission])
       |> maybe_put("cli_confirmation", opts[:cli_confirmation])
-      |> maybe_put("retry_attempts", opts[:retry_attempts])
-      |> maybe_put("auto_repair", opts[:auto_repair])
+      |> maybe_put("recovery", recovery_attrs(opts))
       |> maybe_put("allowed_tools", parse_csv(opts[:tools]))
 
     case Profile.create(name, attrs) do
@@ -85,8 +90,13 @@ defmodule PromptRunner.CLI do
           model: :string,
           reasoning: :string,
           permission: :string,
+          resume_attempts: :integer,
           retry_attempts: :integer,
+          retry_base_delay_ms: :integer,
+          retry_max_delay_ms: :integer,
+          retry_jitter: :boolean,
           auto_repair: :boolean,
+          repair_attempts: :integer,
           cli_confirmation: :string
         ],
         aliases: [p: :profile]
@@ -100,8 +110,13 @@ defmodule PromptRunner.CLI do
       |> maybe_put(:model, opts[:model])
       |> maybe_put(:reasoning_effort, opts[:reasoning])
       |> maybe_put(:permission_mode, opts[:permission])
+      |> maybe_put(:resume_attempts, opts[:resume_attempts])
       |> maybe_put(:retry_attempts, opts[:retry_attempts])
+      |> maybe_put(:retry_base_delay_ms, opts[:retry_base_delay_ms])
+      |> maybe_put(:retry_max_delay_ms, opts[:retry_max_delay_ms])
+      |> maybe_put(:retry_jitter, opts[:retry_jitter])
       |> maybe_put(:auto_repair, opts[:auto_repair])
+      |> maybe_put(:repair_attempts, opts[:repair_attempts])
       |> maybe_put(:cli_confirmation, opts[:cli_confirmation])
 
     case Packet.new(name, packet_opts) do
@@ -391,6 +406,30 @@ defmodule PromptRunner.CLI do
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value) when is_map(map), do: Map.put(map, key, value)
   defp maybe_put(opts, key, value) when is_list(opts), do: Keyword.put(opts, key, value)
+
+  defp recovery_attrs(opts) do
+    RecoveryConfig.default()
+    |> put_path(["resume_attempts"], opts[:resume_attempts])
+    |> put_path(["retry", "max_attempts"], opts[:retry_attempts])
+    |> put_path(["retry", "base_delay_ms"], opts[:retry_base_delay_ms])
+    |> put_path(["retry", "max_delay_ms"], opts[:retry_max_delay_ms])
+    |> put_path(["retry", "jitter"], opts[:retry_jitter])
+    |> put_path(["repair", "enabled"], opts[:auto_repair])
+    |> put_path(["repair", "max_attempts"], opts[:repair_attempts])
+    |> then(&RecoveryConfig.normalize(%{"recovery" => &1}))
+  end
+
+  defp put_path(map, _path, nil), do: map
+  defp put_path(map, [key], value), do: Map.put(map, key, value)
+
+  defp put_path(map, [key | rest], value) do
+    nested =
+      map
+      |> Map.get(key, %{})
+      |> put_path(rest, value)
+
+    Map.put(map, key, nested)
+  end
 
   defp normalize_prompt_ids(ids) do
     Enum.map(ids, fn id ->

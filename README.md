@@ -22,7 +22,7 @@ repositories. This README targets `prompt_runner_sdk ~> 0.7.0`.
 - packets replace duplicated control files
 - profiles replace ad hoc global defaults
 - completion is verifier-owned, not provider-owned
-- retry and repair are built into the runtime
+- policy-driven retry, repair, and resume are built into the runtime
 - a built-in simulated provider can prove recovery behavior without any
   external provider CLI
 
@@ -34,7 +34,8 @@ The same runtime is exposed through public Elixir modules and the CLI.
 - one prompt format: `*.prompt.md` with YAML front matter
 - home-scoped profiles under `~/.config/prompt_runner/`
 - deterministic completion contracts plus generated checklist views
-- retry and repair based on verifier state
+- policy-driven retry, repair, and resume based on verifier state plus
+  structured recovery envelopes
 - zero-dependency simulation for retry, repair, and resume demos
 - public packet/profile/runtime APIs plus matching CLI commands
 - Claude, Codex, Gemini, and Amp support through `agent_session_manager`
@@ -92,10 +93,31 @@ mix prompt_runner packet new recovery-demo \
   --profile simulated-default \
   --provider simulated \
   --model simulated-demo \
-  --permission bypass \
-  --retry-attempts 2 \
-  --auto-repair
+  --permission bypass
 ```
+
+Then edit `recovery-demo/prompt_runner_packet.md` to make the packet-level
+recovery policy explicit:
+
+```yaml
+recovery:
+  resume_attempts: 2
+  retry:
+    max_attempts: 3
+    base_delay_ms: 0
+    max_delay_ms: 0
+    jitter: false
+  repair:
+    enabled: true
+    max_attempts: 2
+    trigger_on_nominal_success_with_failed_verifier: true
+    trigger_on_provider_failure_with_workspace_changes: true
+    trigger_on_retry_exhaustion_with_workspace_changes: true
+```
+
+If one prompt needs different recovery behavior, add a prompt-local
+`recovery:` block in that prompt's front matter. Prompt-local recovery is
+deep-merged onto the packet default.
 
 Edit `demo/prompts/01_create_hello_file.prompt.md`:
 
@@ -218,7 +240,11 @@ After every attempt, the runner verifies the contract:
 
 - verifier pass: prompt completes
 - verifier fail after provider success: synthesize a repair prompt
-- transient provider failure plus verifier pass: accept completion
+- provider failure plus verifier pass: complete unless the failure is a local
+  deterministic contradiction
+- remote/provider-claimed auth, config, model-unavailable, capacity, and
+  generic runtime failures get bounded retries by policy
+- provider failure plus partial workspace progress pivots into repair
 - terminal policy/config failure: fail honestly even if files happen to exist
 
 Generate checklist views from the contract:

@@ -42,10 +42,11 @@ mix prompt_runner packet new recovery-demo \
   --profile simulated-default \
   --provider simulated \
   --model simulated-demo \
-  --permission bypass \
-  --retry-attempts 2 \
-  --auto-repair
+  --permission bypass
 ```
+
+Use the packet manifest's `recovery:` block for the full policy surface. The
+CLI flags are convenience shorthands for common resume/retry/repair defaults.
 
 Inspect packet metadata and runtime readiness:
 
@@ -110,8 +111,13 @@ mix prompt_runner status demo
 - `--model`
 - `--reasoning`
 - `--permission`
+- `--resume-attempts`
 - `--retry-attempts`
+- `--retry-base-delay-ms`
+- `--retry-max-delay-ms`
+- `--retry-jitter`
 - `--auto-repair`
+- `--repair-attempts`
 - `--cli-confirmation`
 
 Example:

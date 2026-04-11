@@ -34,8 +34,11 @@ Create a packet and add a repo:
     profile: "simulated-default",
     provider: "simulated",
     model: "simulated-demo",
-    retry_attempts: 2,
-    auto_repair: true
+    recovery: %{
+      "resume_attempts" => 2,
+      "retry" => %{"max_attempts" => 3, "base_delay_ms" => 0, "max_delay_ms" => 0},
+      "repair" => %{"enabled" => true, "max_attempts" => 2}
+    }
   )
 
 {:ok, packet} = PromptRunner.Packet.add_repo(packet.root, "app", "/path/to/repo", default: true)

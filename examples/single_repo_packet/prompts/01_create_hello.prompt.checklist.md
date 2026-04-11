@@ -4,6 +4,6 @@ Generated from the prompt verification contract.
 
 ## Verification Items
 
-- [ ] file exists: hello.txt
-- [ ] contains: hello.txt
 - [ ] changed path allowed: hello.txt
+- [ ] contains: hello.txt
+- [ ] file exists: hello.txt

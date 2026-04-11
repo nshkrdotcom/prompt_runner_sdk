@@ -35,8 +35,10 @@ recovery demos:
 - `model: simulated-demo`
 - `permission_mode: bypass`
 - `cli_confirmation: off`
-- `retry_attempts: 2`
-- `auto_repair: true`
+- `recovery.resume_attempts: 2`
+- `recovery.retry.base_delay_ms: 0`
+- `recovery.retry.max_delay_ms: 0`
+- `recovery.repair.enabled: true`
 
 ## Shared Provider Knobs
 

@@ -3,12 +3,19 @@
 This example demonstrates Prompt Runner's recovery behavior without requiring
 Codex, Claude, Gemini, or Amp.
 
-It uses the built-in `simulated` provider to prove three cases:
+It uses the built-in `simulated` provider to prove the full recovery matrix:
 
 - prompt `01`: automatic retry after transient provider capacity
 - prompt `02`: automatic repair after verifier-detected incompletion
 - prompt `03`: automatic provider-session resume after recoverable transport
   failure
+- prompt `04`: automatic retry after a remote auth claim
+- prompt `05`: automatic retry after a remote config/model-unavailable claim
+- prompt `06`: verifier-owned completion even when the provider reports a late
+  runtime error
+- prompt `07`: repair after retry exhaustion once the workspace has partially
+  changed, using a prompt-local `recovery:` override to tighten the runtime
+  failure retry budget
 
 ## Run It
 
@@ -28,6 +35,11 @@ bash examples/simulated_recovery_packet/cleanup.sh
 - `workspace/hello.txt`
 - `workspace/hello.meta.txt`
 - `workspace/resumed.txt`
+- `workspace/auth.txt`
+- `workspace/config.txt`
+- `workspace/override.txt`
+- `workspace/draft.txt`
+- `workspace/draft.meta.txt`
 - `.prompt_runner/state.json`
 
 The runtime state shows attempt history, repair/retry progression, and final

@@ -3,7 +3,7 @@ defmodule PromptRunner.Packet do
   Packet manifest loader and generator.
   """
 
-  alias PromptRunner.{FrontMatter, Paths, Profile}
+  alias PromptRunner.{FrontMatter, Paths, Profile, RecoveryConfig}
   alias PromptRunner.Runner
   alias PromptRunner.Source.PacketSource
 
@@ -73,15 +73,12 @@ defmodule PromptRunner.Packet do
         "prompt_dir" => "prompts",
         "repos" => %{},
         "phases" => %{},
-        "retry_attempts" => 2,
-        "auto_repair" => true
+        "recovery" => packet_recovery_opts(opts)
       }
       |> maybe_put_attr("provider", opts[:provider])
       |> maybe_put_attr("model", opts[:model])
       |> maybe_put_attr("reasoning_effort", opts[:reasoning_effort])
       |> maybe_put_attr("permission_mode", opts[:permission_mode])
-      |> maybe_put_attr("retry_attempts", opts[:retry_attempts])
-      |> maybe_put_attr("auto_repair", opts[:auto_repair])
       |> maybe_put_attr("cli_confirmation", opts[:cli_confirmation])
 
     body = """
@@ -323,16 +320,14 @@ defmodule PromptRunner.Packet do
         "log_meta",
         "events_mode",
         "tool_output",
-        "retry_attempts",
-        "auto_repair"
+        "recovery"
       ])
 
     profile_options
     |> stringify_keys()
     |> Map.merge(packet_options)
     |> maybe_put_codex_reasoning()
-    |> Map.put_new("retry_attempts", 2)
-    |> Map.put_new("auto_repair", true)
+    |> then(fn opts -> Map.put(opts, "recovery", RecoveryConfig.normalize(opts)) end)
   end
 
   defp maybe_put_codex_reasoning(%{"reasoning_effort" => value} = opts)
@@ -370,6 +365,36 @@ defmodule PromptRunner.Packet do
 
   defp default_profile_name do
     Profile.default_profile_name() |> elem(1)
+  end
+
+  defp packet_recovery_opts(opts) do
+    base =
+      case opts[:recovery] do
+        recovery when is_map(recovery) -> recovery
+        _ -> RecoveryConfig.default()
+      end
+
+    base
+    |> put_path(["resume_attempts"], opts[:resume_attempts])
+    |> put_path(["retry", "max_attempts"], opts[:retry_attempts])
+    |> put_path(["retry", "base_delay_ms"], opts[:retry_base_delay_ms])
+    |> put_path(["retry", "max_delay_ms"], opts[:retry_max_delay_ms])
+    |> put_path(["retry", "jitter"], opts[:retry_jitter])
+    |> put_path(["repair", "enabled"], opts[:auto_repair])
+    |> put_path(["repair", "max_attempts"], opts[:repair_attempts])
+    |> then(&RecoveryConfig.normalize(%{"recovery" => &1}))
+  end
+
+  defp put_path(map, _path, nil), do: map
+  defp put_path(map, [key], value), do: Map.put(map, key, value)
+
+  defp put_path(map, [key | rest], value) do
+    nested =
+      map
+      |> Map.get(key, %{})
+      |> put_path(rest, value)
+
+    Map.put(map, key, nested)
   end
 
   defp maybe_put_attr(attrs, _key, nil), do: attrs

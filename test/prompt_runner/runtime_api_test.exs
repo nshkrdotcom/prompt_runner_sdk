@@ -47,8 +47,19 @@ defmodule PromptRunner.RuntimeAPITest do
       name: "runtime-packet"
       profile: "codex-default"
       cli_confirmation: "off"
-      auto_repair: true
-      retry_attempts: 0
+      recovery:
+        resume_attempts: 2
+        retry:
+          max_attempts: 0
+          base_delay_ms: 0
+          max_delay_ms: 0
+          jitter: false
+        repair:
+          enabled: true
+          max_attempts: 2
+          trigger_on_nominal_success_with_failed_verifier: true
+          trigger_on_provider_failure_with_workspace_changes: true
+          trigger_on_retry_exhaustion_with_workspace_changes: true
       repos:
         app:
           path: "#{repo}"

@@ -34,18 +34,30 @@ verifier report:
 
 - provider success + verifier pass => complete
 - provider success + verifier fail => repair
-- transient provider failure + verifier pass => complete
-- transient provider failure + verifier fail => retry
-- terminal policy/config/auth failure => fail
+- provider failure + verifier pass => complete unless the failure is a local
+  deterministic contradiction such as CLI confirmation mismatch
+- remote/provider-claimed auth, config, model-unavailable, capacity, and
+  generic runtime failures => bounded retries by policy
+- provider failure + verifier fail + partial workspace progress => repair
+- retry exhaustion + partial workspace progress => repair
+- local deterministic failure => fail
 
-## Retry And Repair
+## Retry, Resume, And Repair
 
-Retry is for transient runtime failures such as provider capacity or
-recoverable transport interruptions.
+Retry is for remote/provider-claimed failures that may be flaky or mislabeled,
+including auth, config, model-unavailable, capacity, and generic runtime
+claims.
 
-Repair is for semantic incompletion. Prompt Runner synthesizes a repair prompt
-from the unmet verifier items rather than blindly replaying the original
-instruction.
+Resume is the first recovery step for recoverable transport/protocol failures.
+
+Repair is for semantic incompletion or partial workspace progress. Prompt
+Runner synthesizes a repair prompt from the unmet verifier items rather than
+blindly replaying the original instruction.
+
+Packet-level recovery defaults live in `prompt_runner_packet.md`, and a prompt
+can tighten or relax them with its own front-matter `recovery:` block. This is
+useful when one prompt should exhaust retries faster and pivot into repair
+sooner than the rest of the packet.
 
 ## Checklist Views
 

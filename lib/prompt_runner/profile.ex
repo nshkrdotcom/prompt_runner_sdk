@@ -4,6 +4,7 @@ defmodule PromptRunner.Profile do
   """
 
   alias PromptRunner.FrontMatter
+  alias PromptRunner.RecoveryConfig
 
   @default_profile "codex-default"
 
@@ -145,8 +146,7 @@ defmodule PromptRunner.Profile do
       "log_meta" => "none",
       "events_mode" => "compact",
       "tool_output" => "summary",
-      "retry_attempts" => 2,
-      "auto_repair" => true
+      "recovery" => RecoveryConfig.default()
     }
   end
 
@@ -162,8 +162,11 @@ defmodule PromptRunner.Profile do
       "log_meta" => "none",
       "events_mode" => "compact",
       "tool_output" => "summary",
-      "retry_attempts" => 2,
-      "auto_repair" => true
+      "recovery" =>
+        RecoveryConfig.default()
+        |> put_in(["retry", "base_delay_ms"], 0)
+        |> put_in(["retry", "max_delay_ms"], 0)
+        |> put_in(["retry", "jitter"], false)
     }
   end
 
@@ -171,7 +174,7 @@ defmodule PromptRunner.Profile do
     attrs
     |> stringify_keys()
     |> maybe_put_codex_reasoning()
-    |> maybe_put_runtime_defaults()
+    |> then(fn opts -> Map.put(opts, "recovery", RecoveryConfig.normalize(opts)) end)
   end
 
   defp maybe_put_codex_reasoning(%{"reasoning_effort" => value} = opts)
@@ -186,12 +189,6 @@ defmodule PromptRunner.Profile do
   end
 
   defp maybe_put_codex_reasoning(opts), do: opts
-
-  defp maybe_put_runtime_defaults(opts) do
-    opts
-    |> Map.put_new("retry_attempts", 2)
-    |> Map.put_new("auto_repair", true)
-  end
 
   defp stringify_keys(map) when is_map(map) do
     Map.new(map, fn {key, value} ->

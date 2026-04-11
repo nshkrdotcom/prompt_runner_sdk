@@ -32,8 +32,9 @@ That creates:
 - `permission_mode: bypass`
 - `allowed_tools: Read, Edit, Write, Bash`
 - `cli_confirmation: require`
-- `retry_attempts: 2`
-- `auto_repair: true`
+- `recovery.resume_attempts: 2`
+- `recovery.retry.max_attempts: 3`
+- `recovery.repair.enabled: true`
 
 ## Create Another Profile
 
@@ -66,5 +67,7 @@ prompt front matter only when a prompt genuinely needs a local override.
 - `reasoning_effort: low`
 - `permission_mode: bypass`
 - `cli_confirmation: off`
-- `retry_attempts: 2`
-- `auto_repair: true`
+- `recovery.resume_attempts: 2`
+- `recovery.retry.base_delay_ms: 0`
+- `recovery.retry.max_delay_ms: 0`
+- `recovery.repair.enabled: true`

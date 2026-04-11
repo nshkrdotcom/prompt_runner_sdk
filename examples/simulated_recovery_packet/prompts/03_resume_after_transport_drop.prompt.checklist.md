@@ -4,6 +4,6 @@ Generated from the prompt verification contract.
 
 ## Verification Items
 
-- [ ] file exists: resumed.txt
-- [ ] contains: resumed.txt
 - [ ] changed path allowed: resumed.txt
+- [ ] contains: resumed.txt
+- [ ] file exists: resumed.txt

@@ -11,6 +11,7 @@ defmodule PromptRunner.Plan do
   alias PromptRunner.PermissionMode
   alias PromptRunner.Profile
   alias PromptRunner.Prompt
+  alias PromptRunner.RecoveryConfig
   alias PromptRunner.RunSpec
   alias PromptRunner.RuntimeStore.FileStore
   alias PromptRunner.RuntimeStore.MemoryStore
@@ -489,8 +490,7 @@ defmodule PromptRunner.Plan do
     "log_meta" => :log_meta,
     "events_mode" => :events_mode,
     "tool_output" => :tool_output,
-    "retry_attempts" => :retry_attempts,
-    "auto_repair" => :auto_repair,
+    "recovery" => :recovery,
     "prompt_overrides" => :prompt_overrides,
     "target" => :target,
     "targets" => :targets,
@@ -535,6 +535,10 @@ defmodule PromptRunner.Plan do
             ] and
               is_map(value) do
     stringify_keys(value)
+  end
+
+  defp normalize_option_value(:recovery, value) when is_map(value) do
+    RecoveryConfig.normalize(%{"recovery" => value})
   end
 
   defp normalize_option_value(_key, value), do: value

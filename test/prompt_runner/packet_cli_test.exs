@@ -93,8 +93,12 @@ defmodule PromptRunner.PacketCLITest do
                  "simulated-demo",
                  "--permission",
                  "bypass",
+                 "--resume-attempts",
+                 "3",
                  "--retry-attempts",
                  "3",
+                 "--repair-attempts",
+                 "4",
                  "--auto-repair"
                ])
     end)
@@ -103,7 +107,9 @@ defmodule PromptRunner.PacketCLITest do
     assert packet.profile_name == "simulated-default"
     assert packet.options["provider"] == "simulated"
     assert packet.options["model"] == "simulated-demo"
-    assert packet.options["retry_attempts"] == 3
-    assert packet.options["auto_repair"] == true
+    assert packet.options["recovery"]["resume_attempts"] == 3
+    assert packet.options["recovery"]["retry"]["max_attempts"] == 3
+    assert packet.options["recovery"]["repair"]["enabled"] == true
+    assert packet.options["recovery"]["repair"]["max_attempts"] == 4
   end
 end

@@ -46,7 +46,9 @@ defmodule PromptRunner.PacketTest do
                provider: "simulated",
                model: "simulated-demo",
                permission_mode: "bypass",
+               resume_attempts: 3,
                retry_attempts: 3,
+               repair_attempts: 4,
                auto_repair: true
              )
 
@@ -54,8 +56,10 @@ defmodule PromptRunner.PacketTest do
     assert reloaded.profile_name == "simulated-default"
     assert reloaded.options["provider"] == "simulated"
     assert reloaded.options["model"] == "simulated-demo"
-    assert reloaded.options["retry_attempts"] == 3
-    assert reloaded.options["auto_repair"] == true
+    assert reloaded.options["recovery"]["resume_attempts"] == 3
+    assert reloaded.options["recovery"]["retry"]["max_attempts"] == 3
+    assert reloaded.options["recovery"]["repair"]["enabled"] == true
+    assert reloaded.options["recovery"]["repair"]["max_attempts"] == 4
   end
 
   test "add_repo updates the manifest and packet source loads prompts" do

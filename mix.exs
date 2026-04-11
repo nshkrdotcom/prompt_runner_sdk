@@ -42,7 +42,7 @@ defmodule PromptRunner.MixProject do
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: :dev, runtime: false}
-    ]
+    ] ++ local_stack_dev_deps()
   end
 
   defp local_dev_or_hex_dep(app, version, relative_path, opts \\ []) do
@@ -57,6 +57,17 @@ defmodule PromptRunner.MixProject do
 
   defp use_local_dev_deps? do
     truthy_env?("PROMPT_RUNNER_USE_LOCAL_DEPS") and not hex_packaging_task?()
+  end
+
+  defp local_stack_dev_deps do
+    if use_local_dev_deps?() do
+      [
+        {:cli_subprocess_core, path: "../cli_subprocess_core", override: true},
+        {:execution_plane, path: "../execution_plane", override: true}
+      ]
+    else
+      []
+    end
   end
 
   defp truthy_env?(name) do
@@ -147,6 +158,9 @@ defmodule PromptRunner.MixProject do
           PromptRunner.Packets,
           PromptRunner.Profile,
           PromptRunner.Verifier,
+          PromptRunner.RecoveryConfig,
+          PromptRunner.FailureEnvelope,
+          PromptRunner.RecoveryPolicy,
           PromptRunner.Runtime,
           PromptRunner.Run,
           PromptRunner.RunSpec,

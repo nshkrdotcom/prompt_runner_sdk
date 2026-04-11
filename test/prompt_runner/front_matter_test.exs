@@ -10,7 +10,7 @@ defmodule PromptRunner.FrontMatterTest do
         "app" => %{"path" => "/tmp/app", "default" => true}
       },
       "targets" => ["app"],
-      "retry_attempts" => 2
+      "recovery" => %{"retry" => %{"max_attempts" => 3}}
     }
 
     dumped = FrontMatter.dump(attrs, "# Body\n")
@@ -19,7 +19,7 @@ defmodule PromptRunner.FrontMatterTest do
     assert parsed["name"] == "packet"
     assert parsed["repos"]["app"]["path"] == "/tmp/app"
     assert parsed["targets"] == ["app"]
-    assert parsed["retry_attempts"] == 2
+    assert parsed["recovery"]["retry"]["max_attempts"] == 3
     assert body =~ "# Body"
   end
 end

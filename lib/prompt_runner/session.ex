@@ -641,12 +641,14 @@ defmodule PromptRunner.Session do
          %{payload: %Payload.Error{} = payload, provider: provider} = event
        ) do
     runtime_failure = runtime_failure_metadata(payload.metadata)
+    recovery = recovery_metadata(payload.metadata, runtime_failure)
     context = normalize_map(runtime_failure[:context] || runtime_failure["context"])
     message = payload.message
+    kind = normalize_error_kind(payload.code, message, runtime_failure)
 
     %{
       provider: provider,
-      kind: normalize_error_kind(payload.code, message, runtime_failure),
+      kind: kind,
       message: message,
       exit_code: runtime_failure[:exit_code] || runtime_failure["exit_code"],
       stderr: runtime_failure[:stderr] || runtime_failure["stderr"],
@@ -657,10 +659,10 @@ defmodule PromptRunner.Session do
             runtime_failure[:stderr_truncated] ||
             runtime_failure["stderr_truncated"]
         ),
-      retryable?:
-        recoverable_error_kind?(normalize_error_kind(payload.code, message, runtime_failure)),
+      retryable?: recovery_retryable?(recovery, kind),
       provider_session_id: event.provider_session_id || raw_thread_id(event),
-      context: context
+      context: context,
+      recovery: recovery
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
@@ -673,6 +675,16 @@ defmodule PromptRunner.Session do
   end
 
   defp runtime_failure_metadata(_metadata), do: %{}
+
+  defp recovery_metadata(metadata, runtime_failure) do
+    normalize_map(
+      metadata[:recovery] ||
+        metadata["recovery"] ||
+        runtime_failure[:recovery] ||
+        runtime_failure["recovery"] ||
+        %{}
+    )
+  end
 
   defp normalize_error_kind(code, message, runtime_failure) do
     candidate = error_kind_candidate(code, runtime_failure)
@@ -735,6 +747,14 @@ defmodule PromptRunner.Session do
        do: true
 
   defp recoverable_error_kind?(_kind), do: false
+
+  defp recovery_retryable?(recovery, kind) do
+    recovery[:retryable?] ||
+      recovery["retryable?"] ||
+      recovery[:retryable] ||
+      recovery["retryable"] ||
+      recoverable_error_kind?(kind)
+  end
 
   defp usage_map(output) when is_map(output) do
     usage =

@@ -5,6 +5,8 @@ defmodule PromptRunner.SimulatedLLM do
 
   @behaviour PromptRunner.LLM
 
+  alias PromptRunner.FailureEnvelope
+
   @impl true
   def normalize_provider(_value), do: :simulated
 
@@ -85,17 +87,13 @@ defmodule PromptRunner.SimulatedLLM do
   end
 
   defp finish_event(%{"error" => error}) when is_map(error) do
+    provider_error = simulated_provider_error(error)
+
     %{
       type: :error_occurred,
       data: %{
-        error_message: error["message"] || "simulated failure",
-        provider_error: %{
-          provider: :simulated,
-          kind: normalize_error_kind(error["kind"]),
-          message: error["message"] || "simulated failure",
-          stderr: error["stderr"],
-          truncated?: false
-        }
+        error_message: provider_error.message,
+        provider_error: provider_error
       }
     }
   end
@@ -175,6 +173,91 @@ defmodule PromptRunner.SimulatedLLM do
   end
 
   defp normalize_error_kind(_kind), do: :runtime_error
+
+  defp simulated_provider_error(error) do
+    recovery =
+      error
+      |> Map.get("recovery", %{})
+      |> case do
+        recovery when is_map(recovery) and map_size(recovery) > 0 ->
+          normalize_map(recovery)
+
+        _ ->
+          %{
+            "class" => simulated_class(error["kind"]),
+            "retryable?" => simulated_retryable?(error["kind"]),
+            "repairable?" => true,
+            "resumeable?" => simulated_resumeable?(error["kind"]),
+            "remote_claim?" => true,
+            "local_deterministic?" => false,
+            "severity" => "error"
+          }
+      end
+
+    failure =
+      FailureEnvelope.from_reason(%{
+        provider_error: %{
+          provider: :simulated,
+          kind: normalize_error_kind(error["kind"]),
+          message: error["message"] || "simulated failure",
+          recovery: recovery
+        }
+      })
+
+    %{
+      provider: :simulated,
+      kind: normalize_error_kind(error["kind"]),
+      message: error["message"] || "simulated failure",
+      stderr: error["stderr"],
+      truncated?: false,
+      retryable?: failure.retryable?,
+      recovery: recovery
+    }
+  end
+
+  defp simulated_class(kind) when kind in ["provider_capacity", :provider_capacity],
+    do: "provider_capacity"
+
+  defp simulated_class(kind)
+       when kind in ["provider_auth_claim", :provider_auth_claim, "auth_error", :auth_error],
+       do: "provider_auth_claim"
+
+  defp simulated_class(kind)
+       when kind in [
+              "provider_config_claim",
+              :provider_config_claim,
+              "config_invalid",
+              :config_invalid
+            ],
+       do: "provider_config_claim"
+
+  defp simulated_class(kind)
+       when kind in [
+              "provider_runtime_claim",
+              :provider_runtime_claim,
+              "runtime_error",
+              :runtime_error
+            ],
+       do: "provider_runtime_claim"
+
+  defp simulated_class(kind) when kind in ["protocol_error", :protocol_error],
+    do: "protocol_error"
+
+  defp simulated_class(kind) when kind in ["transport_error", :transport_error],
+    do: "transport_disconnect"
+
+  defp simulated_class(kind) when kind in ["transport_exit", :transport_exit],
+    do: "transport_disconnect"
+
+  defp simulated_class(_kind), do: "provider_runtime_claim"
+
+  defp simulated_retryable?(kind) do
+    simulated_class(kind) not in ["user_cancelled", "approval_denied", "guardrail_blocked"]
+  end
+
+  defp simulated_resumeable?(kind) do
+    simulated_class(kind) in ["protocol_error", "transport_disconnect", "transport_timeout"]
+  end
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

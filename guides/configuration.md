@@ -29,8 +29,19 @@ allowed_tools:
   - "Write"
   - "Bash"
 cli_confirmation: "require"
-retry_attempts: 2
-auto_repair: true
+recovery:
+  resume_attempts: 2
+  retry:
+    max_attempts: 3
+    base_delay_ms: 1000
+    max_delay_ms: 30000
+    jitter: true
+  repair:
+    enabled: true
+    max_attempts: 2
+    trigger_on_nominal_success_with_failed_verifier: true
+    trigger_on_provider_failure_with_workspace_changes: true
+    trigger_on_retry_exhaustion_with_workspace_changes: true
 repos:
   app:
     path: "./workspace"
@@ -50,8 +61,7 @@ Core keys:
 - `profile`
 - `repos`
 - `phases`
-- `retry_attempts`
-- `auto_repair`
+- `recovery`
 
 Shared execution keys:
 
@@ -128,6 +138,7 @@ Prompt-local execution overrides:
 - `model`
 - `reasoning_effort`
 - `permission_mode`
+- `recovery`
 - `allowed_tools`
 - `adapter_opts`
 - `claude_opts`
@@ -145,6 +156,19 @@ Completion contract:
 
 - `verify`
 - `simulate`
+
+Prompt-local `recovery` is deep-merged onto the packet default. Use it when a
+single prompt needs a tighter or more generous retry/repair budget than the
+rest of the packet.
+
+Example:
+
+```yaml
+recovery:
+  retry:
+    class_attempts:
+      provider_runtime_claim: 1
+```
 
 ## Completion Contract Keys
 
@@ -203,3 +227,4 @@ Each step can include:
 - `messages`
 - `writes`
 - `error`
+- `error.recovery`
