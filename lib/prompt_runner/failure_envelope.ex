@@ -148,6 +148,13 @@ defmodule PromptRunner.FailureEnvelope do
     normalized = String.downcase(message || "")
 
     cond do
+      rate_limit_message?(normalized) ->
+        remote_envelope(:provider_rate_limit, message, %{},
+          retryable?: true,
+          repairable?: true,
+          suggested_delay_ms: 2_000
+        )
+
       capacity_message?(normalized) ->
         remote_envelope(:provider_capacity, message, %{},
           retryable?: true,
@@ -190,7 +197,8 @@ defmodule PromptRunner.FailureEnvelope do
 
   defp fallback_provider_class(kind, normalized_message) do
     provider_transport_class(kind, normalized_message) ||
-      terminal_or_runtime_class(normalized_message)
+      provider_claim_class(kind, normalized_message) ||
+      terminal_or_runtime_class(kind, normalized_message)
   end
 
   defp protocol_error?(kind, normalized_message) do
@@ -207,7 +215,16 @@ defmodule PromptRunner.FailureEnvelope do
     cond do
       protocol_error?(kind, normalized_message) -> :protocol_error
       transport_disconnect?(kind, normalized_message) -> :transport_disconnect
+      kind in [:transport_timeout, "transport_timeout"] -> :transport_timeout
       String.contains?(normalized_message, "timeout") -> :transport_timeout
+      true -> nil
+    end
+  end
+
+  defp provider_claim_class(kind, normalized_message) do
+    cond do
+      provider_claim_kind_class(kind) != nil -> provider_claim_kind_class(kind)
+      rate_limit_message?(normalized_message) -> :provider_rate_limit
       capacity_message?(normalized_message) -> :provider_capacity
       auth_message?(normalized_message) -> :provider_auth_claim
       config_message?(normalized_message) -> :provider_config_claim
@@ -215,8 +232,11 @@ defmodule PromptRunner.FailureEnvelope do
     end
   end
 
-  defp terminal_or_runtime_class(normalized_message) do
+  defp terminal_or_runtime_class(kind, normalized_message) do
     cond do
+      kind in [:user_cancelled, "user_cancelled"] -> :user_cancelled
+      kind in [:approval_denied, "approval_denied"] -> :approval_denied
+      kind in [:guardrail_blocked, "guardrail_blocked"] -> :guardrail_blocked
       user_cancel_message?(normalized_message) -> :user_cancelled
       approval_denied_message?(normalized_message) -> :approval_denied
       guardrail_message?(normalized_message) -> :guardrail_blocked
@@ -234,6 +254,9 @@ defmodule PromptRunner.FailureEnvelope do
     do: [retryable?: true, repairable?: true, resumeable?: true]
 
   defp fallback_provider_overrides(:provider_capacity),
+    do: [retryable?: true, repairable?: true, resumeable?: false, suggested_delay_ms: 2_000]
+
+  defp fallback_provider_overrides(:provider_rate_limit),
     do: [retryable?: true, repairable?: true, resumeable?: false, suggested_delay_ms: 2_000]
 
   defp fallback_provider_overrides(:provider_auth_claim),
@@ -275,11 +298,36 @@ defmodule PromptRunner.FailureEnvelope do
   end
 
   defp capacity_message?(message) do
-    String.contains?(message, "capacity") or String.contains?(message, "rate limit") or
-      String.contains?(message, "temporarily unavailable") or
+    String.contains?(message, "capacity") or String.contains?(message, "temporarily unavailable") or
       String.contains?(message, "try again later") or String.contains?(message, "overloaded") or
       String.contains?(message, "busy")
   end
+
+  defp rate_limit_message?(message) do
+    String.contains?(message, "rate limit") or String.contains?(message, "too many requests")
+  end
+
+  defp provider_claim_kind_class(kind)
+       when kind in [:provider_rate_limit, :rate_limit, "provider_rate_limit", "rate_limit"],
+       do: :provider_rate_limit
+
+  defp provider_claim_kind_class(kind) when kind in [:provider_capacity, "provider_capacity"],
+    do: :provider_capacity
+
+  defp provider_claim_kind_class(kind)
+       when kind in [:provider_auth_claim, :auth_error, "provider_auth_claim", "auth_error"],
+       do: :provider_auth_claim
+
+  defp provider_claim_kind_class(kind)
+       when kind in [
+              :provider_config_claim,
+              :config_invalid,
+              "provider_config_claim",
+              "config_invalid"
+            ],
+       do: :provider_config_claim
+
+  defp provider_claim_kind_class(_kind), do: nil
 
   defp auth_message?(message) do
     String.contains?(message, "api key") or String.contains?(message, "auth") or
@@ -303,7 +351,8 @@ defmodule PromptRunner.FailureEnvelope do
   end
 
   defp guardrail_message?(message) do
-    String.contains?(message, "guardrail") or String.contains?(message, "policy blocked")
+    String.contains?(message, "guardrail") or String.contains?(message, "policy blocked") or
+      String.contains?(message, "blocked by policy")
   end
 
   defp normalize_class(value) when is_atom(value), do: value

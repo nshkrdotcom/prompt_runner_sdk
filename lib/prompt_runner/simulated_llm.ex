@@ -160,19 +160,33 @@ defmodule PromptRunner.SimulatedLLM do
   defp normalize_value(value), do: value
 
   defp normalize_error_kind(kind)
-       when kind in [:protocol_error, :transport_error, :transport_exit],
+       when kind in [
+              :protocol_error,
+              :transport_error,
+              :transport_exit,
+              :transport_timeout,
+              :provider_rate_limit,
+              :user_cancelled,
+              :approval_denied,
+              :guardrail_blocked
+            ],
        do: kind
 
-  defp normalize_error_kind(kind) when is_binary(kind) do
-    case String.downcase(kind) do
-      "protocol_error" -> :protocol_error
-      "transport_error" -> :transport_error
-      "transport_exit" -> :transport_exit
-      _ -> :runtime_error
-    end
-  end
+  defp normalize_error_kind(kind) when is_binary(kind),
+    do: kind |> String.downcase() |> normalized_binary_error_kind()
 
   defp normalize_error_kind(_kind), do: :runtime_error
+
+  defp normalized_binary_error_kind("protocol_error"), do: :protocol_error
+  defp normalized_binary_error_kind("transport_error"), do: :transport_error
+  defp normalized_binary_error_kind("transport_exit"), do: :transport_exit
+  defp normalized_binary_error_kind("transport_timeout"), do: :transport_timeout
+  defp normalized_binary_error_kind("provider_rate_limit"), do: :provider_rate_limit
+  defp normalized_binary_error_kind("rate_limit"), do: :provider_rate_limit
+  defp normalized_binary_error_kind("user_cancelled"), do: :user_cancelled
+  defp normalized_binary_error_kind("approval_denied"), do: :approval_denied
+  defp normalized_binary_error_kind("guardrail_blocked"), do: :guardrail_blocked
+  defp normalized_binary_error_kind(_kind), do: :runtime_error
 
   defp simulated_provider_error(error) do
     recovery =
@@ -219,6 +233,10 @@ defmodule PromptRunner.SimulatedLLM do
     do: "provider_capacity"
 
   defp simulated_class(kind)
+       when kind in ["provider_rate_limit", :provider_rate_limit, "rate_limit", :rate_limit],
+       do: "provider_rate_limit"
+
+  defp simulated_class(kind)
        when kind in ["provider_auth_claim", :provider_auth_claim, "auth_error", :auth_error],
        do: "provider_auth_claim"
 
@@ -248,6 +266,18 @@ defmodule PromptRunner.SimulatedLLM do
 
   defp simulated_class(kind) when kind in ["transport_exit", :transport_exit],
     do: "transport_disconnect"
+
+  defp simulated_class(kind) when kind in ["transport_timeout", :transport_timeout],
+    do: "transport_timeout"
+
+  defp simulated_class(kind) when kind in ["user_cancelled", :user_cancelled],
+    do: "user_cancelled"
+
+  defp simulated_class(kind) when kind in ["approval_denied", :approval_denied],
+    do: "approval_denied"
+
+  defp simulated_class(kind) when kind in ["guardrail_blocked", :guardrail_blocked],
+    do: "guardrail_blocked"
 
   defp simulated_class(_kind), do: "provider_runtime_claim"
 

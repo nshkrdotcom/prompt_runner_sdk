@@ -16,6 +16,12 @@ It uses the built-in `simulated` provider to prove the full recovery matrix:
 - prompt `07`: repair after retry exhaustion once the workspace has partially
   changed, using a prompt-local `recovery:` override to tighten the runtime
   failure retry budget
+- prompt `08`: automatic retry after a remote rate-limit claim
+- prompt `09`: automatic provider-session resume after a transport timeout
+
+Terminal remote claims such as `approval_denied`, `guardrail_blocked`, and
+`user_cancelled` are intentionally kept in the test suite instead of this
+example pack so the walkthrough remains a fully successful end-to-end run.
 
 ## Run It
 
@@ -40,6 +46,8 @@ bash examples/simulated_recovery_packet/cleanup.sh
 - `workspace/override.txt`
 - `workspace/draft.txt`
 - `workspace/draft.meta.txt`
+- `workspace/rate-limit.txt`
+- `workspace/timeout-resumed.txt`
 - `.prompt_runner/state.json`
 
 The runtime state shows attempt history, repair/retry progression, and final

@@ -56,4 +56,46 @@ defmodule PromptRunner.FailureEnvelopeTest do
     assert envelope.retryable? == false
     assert envelope.local_deterministic? == true
   end
+
+  test "classifies rate limit messages as retryable provider rate limits" do
+    envelope =
+      FailureEnvelope.from_reason(%{
+        provider_error: %{
+          kind: :provider_rate_limit,
+          message: "Rate limit exceeded. Please slow down."
+        }
+      })
+
+    assert envelope.class == :provider_rate_limit
+    assert envelope.retryable? == true
+    assert envelope.remote_claim? == true
+  end
+
+  test "classifies approval denied as terminal" do
+    envelope =
+      FailureEnvelope.from_reason(%{
+        provider_error: %{
+          kind: :approval_denied,
+          message: "Tool approval denied by operator."
+        }
+      })
+
+    assert envelope.class == :approval_denied
+    assert envelope.retryable? == false
+    assert envelope.repairable? == false
+  end
+
+  test "classifies guardrail blocks as terminal" do
+    envelope =
+      FailureEnvelope.from_reason(%{
+        provider_error: %{
+          kind: :guardrail_blocked,
+          message: "Tool blocked by policy."
+        }
+      })
+
+    assert envelope.class == :guardrail_blocked
+    assert envelope.retryable? == false
+    assert envelope.repairable? == false
+  end
 end

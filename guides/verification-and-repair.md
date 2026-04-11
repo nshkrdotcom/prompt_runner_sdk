@@ -75,6 +75,21 @@ actual completion source of truth.
 Use the built-in `simulated` provider when you want to prove retry, repair, or
 resume behavior without relying on a real provider outage.
 
+The shipped simulated packet covers successful recovery for:
+
+- provider capacity
+- provider rate limits
+- remote auth claims
+- remote config/model-unavailable claims
+- late remote runtime errors after correct output
+- retry exhaustion followed by repair
+- protocol disconnect resume
+- transport-timeout resume
+
+Terminal remote claims such as approval denial, guardrail blocks, and explicit
+user cancellation are covered in the automated test suite so the example pack
+remains a clean, fully successful walkthrough.
+
 See:
 
 - `examples/simulated_recovery_packet/`

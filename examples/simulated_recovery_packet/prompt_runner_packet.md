@@ -36,6 +36,7 @@ phases:
   "1": "Automatic Recovery"
   "2": "Verifier Override"
   "3": "Session Recovery"
+  "4": "Additional Recovery Modes"
 ---
 # Simulated Recovery Packet
 

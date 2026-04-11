@@ -333,6 +333,110 @@ defmodule PromptRunner.SimulatedRecoveryTest do
            ]
   end
 
+  test "simulated provider retries remote rate limits before succeeding" do
+    %{packet_root: packet_root, repo: repo} = simulated_packet_fixture("rate-limit-retry-packet")
+
+    write_prompt(
+      packet_root,
+      "01_rate_limit_retry.prompt.md",
+      """
+      ---
+      id: "01"
+      phase: 1
+      name: "Retry rate limit"
+      targets:
+        - "app"
+      commit: "docs: rate limit retry"
+      simulate:
+        attempts:
+          - error:
+              kind: "provider_rate_limit"
+              message: "Rate limit exceeded. Please retry later."
+          - writes:
+              - path: "rate-limit.txt"
+                text: "rate limit ok"
+      verify:
+        files_exist:
+          - "rate-limit.txt"
+        contains:
+          - path: "rate-limit.txt"
+            text: "rate limit ok"
+        changed_paths_only:
+          - "rate-limit.txt"
+      ---
+      # Retry rate limit
+      """
+    )
+
+    assert {:ok, %Run{status: :ok}} =
+             capture_io(fn ->
+               send(self(), {:result, PromptRunner.run(packet_root, committer: :noop)})
+             end)
+             |> then(fn _ ->
+               assert_receive {:result, result}
+               result
+             end)
+
+    assert File.read!(Path.join(repo, "rate-limit.txt")) == "rate limit ok"
+    assert {:ok, status} = PromptRunner.status(packet_root)
+    prompt_status = status["prompts"]["01"]
+    assert Enum.map(prompt_status["attempts"], & &1["mode"]) == ["run", "retry"]
+    assert Enum.map(prompt_status["attempts"], & &1["status"]) == ["failed", "completed"]
+  end
+
+  test "simulated provider resumes after transport timeout" do
+    %{packet_root: packet_root, repo: repo} = simulated_packet_fixture("timeout-resume-packet")
+
+    write_prompt(
+      packet_root,
+      "01_timeout_resume.prompt.md",
+      """
+      ---
+      id: "01"
+      phase: 1
+      name: "Resume after transport timeout"
+      targets:
+        - "app"
+      commit: "docs: timeout resume"
+      simulate:
+        attempts:
+          - error:
+              kind: "transport_timeout"
+              message: "Transport timed out waiting for stream events."
+        resume:
+          writes:
+            - path: "timeout-resumed.txt"
+              text: "timeout resumed ok"
+      verify:
+        files_exist:
+          - "timeout-resumed.txt"
+        contains:
+          - path: "timeout-resumed.txt"
+            text: "timeout resumed ok"
+        changed_paths_only:
+          - "timeout-resumed.txt"
+      ---
+      # Resume after transport timeout
+      """
+    )
+
+    assert {:ok, %Run{status: :ok}} =
+             capture_io(fn ->
+               send(self(), {:result, PromptRunner.run(packet_root, committer: :noop)})
+             end)
+             |> then(fn _ ->
+               assert_receive {:result, result}
+               result
+             end)
+
+    assert File.read!(Path.join(repo, "timeout-resumed.txt")) == "timeout resumed ok"
+    assert {:ok, status} = PromptRunner.status(packet_root)
+    prompt_status = status["prompts"]["01"]
+    assert prompt_status["status"] == "completed"
+    assert length(prompt_status["attempts"]) == 1
+    assert hd(prompt_status["attempts"])["mode"] == "run"
+  end
+
   test "simulated provider completes when verification passes despite provider runtime error" do
     %{packet_root: packet_root, repo: repo} = simulated_packet_fixture("override-packet")
 
@@ -507,6 +611,57 @@ defmodule PromptRunner.SimulatedRecoveryTest do
     assert prompt_status["status"] == "failed"
     assert Enum.map(prompt_status["attempts"], & &1["mode"]) == ["run"]
     assert Enum.map(prompt_status["attempts"], & &1["status"]) == ["failed"]
+  end
+
+  test "simulated provider fails fast on terminal remote claims" do
+    scenarios = [
+      {"approval_denied", "Approval denied by operator.", "approval-denied-packet"},
+      {"guardrail_blocked", "Tool blocked by policy.", "guardrail-blocked-packet"},
+      {"user_cancelled", "Run interrupted by operator.", "user-cancelled-packet"}
+    ]
+
+    Enum.each(scenarios, fn {kind, message, prefix} ->
+      %{packet_root: packet_root} = simulated_packet_fixture(prefix)
+
+      write_prompt(
+        packet_root,
+        "01_terminal.prompt.md",
+        """
+        ---
+        id: "01"
+        phase: 1
+        name: "Terminal remote claim"
+        targets:
+          - "app"
+        commit: "docs: terminal claim"
+        simulate:
+          attempts:
+            - error:
+                kind: "#{kind}"
+                message: "#{message}"
+        verify:
+          files_exist:
+            - "never-created.txt"
+        ---
+        # Terminal remote claim
+        """
+      )
+
+      assert {:error, _reason} =
+               capture_io(fn ->
+                 send(self(), {:result, PromptRunner.run(packet_root, committer: :noop)})
+               end)
+               |> then(fn _ ->
+                 assert_receive {:result, result}
+                 result
+               end)
+
+      assert {:ok, status} = PromptRunner.status(packet_root)
+      prompt_status = status["prompts"]["01"]
+      assert prompt_status["status"] == "failed"
+      assert Enum.map(prompt_status["attempts"], & &1["mode"]) == ["run"]
+      assert Enum.map(prompt_status["attempts"], & &1["status"]) == ["failed"]
+    end)
   end
 
   defp simulated_packet_fixture(prefix, opts \\ []) do

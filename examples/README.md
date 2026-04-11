@@ -6,7 +6,7 @@ These examples all use the 0.7.0 packet/profile workflow.
 
 | Example | Focus | What It Demonstrates |
 |---------|-------|----------------------|
-| `simulated_recovery_packet/` | Recovery UX | Built-in retry, repair, verifier override, retry exhaustion handling, and session resume without any external provider CLI |
+| `simulated_recovery_packet/` | Recovery UX | Built-in retry, repair, verifier override, retry exhaustion handling, rate-limit handling, and session resume without any external provider CLI |
 | `single_repo_packet/` | Quickstart | One packet, one repo, deterministic verification, packet-local runtime state |
 | `multi_repo_packet/` | Cross-repo work | Named repos, repo-scoped verification, Codex additional directories, per-repo commits |
 
@@ -46,7 +46,8 @@ bash examples/multi_repo_packet/cleanup.sh
 
 - `simulated_recovery_packet/` is the best place to learn retry, repair, and
   resume behavior because it requires no external provider CLI at all and now
-  proves the full recovery matrix, not just one happy transient failure
+  proves capacity, rate-limit, protocol-drop, transport-timeout, repair, and
+  verifier-override behavior in one successful walkthrough
 - all three examples create their repos or workspaces locally under the
   example directory
 - all three examples clear `.prompt_runner/` on setup so runs start clean

@@ -10,6 +10,8 @@ It requires no external provider CLI and no API credentials.
 - prove retry behavior
 - prove repair behavior
 - prove provider-session resume behavior
+- prove retry behavior across multiple remote-claimed classes such as capacity,
+  rate limits, auth/config/runtime claims, and transport timeout
 - teach packet/runtime concepts on any machine
 
 ## Quick Start
@@ -87,6 +89,20 @@ Each simulated step can include:
 - `attempts[0]` drives the first run attempt
 - later `attempts[...]` entries drive retry or repair attempts
 - `resume` drives `resume_stream/3` after a recoverable transport failure
+
+Supported built-in error kinds include:
+
+- `provider_capacity`
+- `provider_rate_limit`
+- `provider_auth_claim`
+- `provider_config_claim`
+- `provider_runtime_claim`
+- `protocol_error`
+- `transport_disconnect`
+- `transport_timeout`
+- `approval_denied`
+- `guardrail_blocked`
+- `user_cancelled`
 
 The verifier still decides completion. The simulated provider only drives the
 runtime events and filesystem side effects.

@@ -157,7 +157,8 @@ mix prompt_runner status demo
 
 Packet-local runtime state is written to `demo/.prompt_runner/`.
 
-For a ready-made recovery walkthrough, see
+For a ready-made recovery walkthrough covering retry, repair, verifier
+override, rate limits, and resume after transport failures, see
 [`examples/simulated_recovery_packet/`](examples/simulated_recovery_packet/README.md).
 
 ## Packet Model
