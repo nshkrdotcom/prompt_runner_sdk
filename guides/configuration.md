@@ -144,6 +144,7 @@ Prompt-local execution overrides:
 Completion contract:
 
 - `verify`
+- `simulate`
 
 ## Completion Contract Keys
 
@@ -171,3 +172,34 @@ verify:
 human-readable checklist file next to each prompt.
 
 The checklist is derived output, not the source of truth.
+
+## Simulated Provider Scripts
+
+When `provider: "simulated"` is active, prompts can define deterministic
+recovery scripts:
+
+```yaml
+simulate:
+  attempts:
+    - error:
+        kind: "provider_capacity"
+        message: "Selected model is at capacity. Please try again."
+    - writes:
+        - path: "retry.txt"
+          text: "retry ok"
+  resume:
+    writes:
+      - path: "resumed.txt"
+        text: "resumed ok"
+```
+
+Supported simulation keys:
+
+- `attempts`
+- `resume`
+
+Each step can include:
+
+- `messages`
+- `writes`
+- `error`

@@ -20,14 +20,18 @@ defmodule PromptRunner.ProfileTest do
     :ok
   end
 
-  test "init creates config and default profile" do
+  test "init creates config plus codex and simulated default profiles" do
     assert {:ok, paths} = Profile.init()
     assert File.exists?(paths.config_file)
     assert File.exists?(paths.profile_file)
+    assert File.exists?(paths.simulated_profile_file)
 
     assert {:ok, profile} = Profile.load()
     assert profile.name == "codex-default"
     assert profile.options["model"] == "gpt-5.4"
+
+    assert {:ok, simulated} = Profile.load("simulated-default")
+    assert simulated.options["provider"] == "simulated"
   end
 
   test "create and list profiles" do
@@ -41,5 +45,6 @@ defmodule PromptRunner.ProfileTest do
     assert {:ok, profiles} = Profile.list()
     assert "claude-safe" in profiles
     assert "codex-default" in profiles
+    assert "simulated-default" in profiles
   end
 end

@@ -27,6 +27,9 @@ Set the CLI credentials your chosen provider expects:
 | Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | Amp | `AMP_API_KEY` |
 
+For local recovery demos, you can skip provider credentials entirely and use
+the built-in `simulated` provider.
+
 ## Initialize Prompt Runner
 
 Initialize the home-scoped profile store once:
@@ -42,6 +45,7 @@ This creates:
   config.md
   profiles/
     codex-default.md
+    simulated-default.md
 ```
 
 ## Create A Packet
@@ -55,6 +59,18 @@ mix prompt_runner prompt new 01 \
   --name "Create hello file" \
   --targets app \
   --commit "docs: add hello file"
+```
+
+Or create a ready-to-demo simulated packet:
+
+```bash
+mix prompt_runner packet new recovery-demo \
+  --profile simulated-default \
+  --provider simulated \
+  --model simulated-demo \
+  --permission bypass \
+  --retry-attempts 2 \
+  --auto-repair
 ```
 
 That creates:
@@ -133,5 +149,6 @@ file-backed state or git commits.
 - [API Guide](api.md)
 - [Packet Manifest Reference](configuration.md)
 - [Profiles](profiles.md)
+- [Simulated Provider](simulated-provider.md)
 - [Verification And Repair](verification-and-repair.md)
 - [Examples](../examples/README.md)

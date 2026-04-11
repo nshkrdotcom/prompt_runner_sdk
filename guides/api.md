@@ -28,7 +28,16 @@ Create and inspect profiles:
 Create a packet and add a repo:
 
 ```elixir
-{:ok, packet} = PromptRunner.Packet.new("demo", root: "/tmp")
+{:ok, packet} =
+  PromptRunner.Packet.new("demo",
+    root: "/tmp",
+    profile: "simulated-default",
+    provider: "simulated",
+    model: "simulated-demo",
+    retry_attempts: 2,
+    auto_repair: true
+  )
+
 {:ok, packet} = PromptRunner.Packet.add_repo(packet.root, "app", "/path/to/repo", default: true)
 ```
 
@@ -84,6 +93,17 @@ API calls default to an in-memory runtime store plus a no-op committer:
 
 That keeps embedded use free of surprise filesystem writes and git commits
 unless you opt in.
+
+For deterministic recovery demos:
+
+```elixir
+{:ok, run} =
+  PromptRunner.run(packet.root,
+    provider: :simulated,
+    runtime_store: :memory,
+    committer: :noop
+  )
+```
 
 ## Repair And Status
 

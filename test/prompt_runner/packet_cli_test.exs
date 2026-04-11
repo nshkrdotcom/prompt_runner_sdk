@@ -72,4 +72,38 @@ defmodule PromptRunner.PacketCLITest do
              Path.join([root, "demo", "prompts", "01_create_hello.prompt.checklist.md"])
            )
   end
+
+  test "packet new accepts runtime defaults from CLI flags" do
+    root = FSHelpers.tmp_dir("prompt_runner_cli_packet_root")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    capture_io(fn ->
+      assert :ok =
+               CLI.main([
+                 "packet",
+                 "new",
+                 "demo",
+                 "--root",
+                 root,
+                 "--profile",
+                 "simulated-default",
+                 "--provider",
+                 "simulated",
+                 "--model",
+                 "simulated-demo",
+                 "--permission",
+                 "bypass",
+                 "--retry-attempts",
+                 "3",
+                 "--auto-repair"
+               ])
+    end)
+
+    assert {:ok, packet} = PromptRunner.Packet.load(Path.join(root, "demo"))
+    assert packet.profile_name == "simulated-default"
+    assert packet.options["provider"] == "simulated"
+    assert packet.options["model"] == "simulated-demo"
+    assert packet.options["retry_attempts"] == 3
+    assert packet.options["auto_repair"] == true
+  end
 end

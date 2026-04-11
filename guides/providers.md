@@ -11,6 +11,7 @@ Supported providers:
 | Codex | `:codex` | `codex` |
 | Gemini | `:gemini` | `gemini` |
 | Amp | `:amp` | `amp` |
+| Simulated | `:simulated` | built in |
 
 Prompt Runner always starts ASM sessions with `lane: :core`, so host
 applications do not need the provider SDK packages just to run Prompt Runner.
@@ -26,6 +27,16 @@ applications do not need the provider SDK packages just to run Prompt Runner.
 - `cli_confirmation: require`
 
 Packets can use that profile directly or override any of those values locally.
+
+`mix prompt_runner init` also creates `simulated-default` for zero-dependency
+recovery demos:
+
+- `provider: simulated`
+- `model: simulated-demo`
+- `permission_mode: bypass`
+- `cli_confirmation: off`
+- `retry_attempts: 2`
+- `auto_repair: true`
 
 ## Shared Provider Knobs
 
@@ -72,6 +83,12 @@ codex_thread_opts:
 
 Do not put raw unsupported CLI flags such as `sandbox` or `ask_for_approval`
 under `codex_thread_opts`.
+
+## Simulated Provider
+
+The built-in simulated provider is for deterministic retry, repair, and resume
+demos. It does not use `agent_session_manager` or any external provider
+process.
 
 ## Codex CLI Confirmation
 

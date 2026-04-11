@@ -28,6 +28,7 @@ defmodule PromptRunner.CLI do
     IO.puts(UI.green("Prompt Runner initialized"))
     IO.puts("  config: #{paths.config_file}")
     IO.puts("  profile: #{paths.profile_file}")
+    IO.puts("  simulated profile: #{paths.simulated_profile_file}")
     :ok
   end
 
@@ -77,11 +78,33 @@ defmodule PromptRunner.CLI do
   defp run_packet_new(name, rest) do
     {opts, _remaining, _invalid} =
       OptionParser.parse(rest,
-        switches: [root: :string, profile: :string],
+        switches: [
+          root: :string,
+          profile: :string,
+          provider: :string,
+          model: :string,
+          reasoning: :string,
+          permission: :string,
+          retry_attempts: :integer,
+          auto_repair: :boolean,
+          cli_confirmation: :string
+        ],
         aliases: [p: :profile]
       )
 
-    case Packet.new(name, root: opts[:root], profile: opts[:profile]) do
+    packet_opts =
+      []
+      |> maybe_put(:root, opts[:root])
+      |> maybe_put(:profile, opts[:profile])
+      |> maybe_put(:provider, opts[:provider])
+      |> maybe_put(:model, opts[:model])
+      |> maybe_put(:reasoning_effort, opts[:reasoning])
+      |> maybe_put(:permission_mode, opts[:permission])
+      |> maybe_put(:retry_attempts, opts[:retry_attempts])
+      |> maybe_put(:auto_repair, opts[:auto_repair])
+      |> maybe_put(:cli_confirmation, opts[:cli_confirmation])
+
+    case Packet.new(name, packet_opts) do
       {:ok, packet} ->
         IO.puts(UI.green("Created packet #{packet.name}"))
         IO.puts("  root: #{packet.root}")
@@ -420,7 +443,7 @@ defmodule PromptRunner.CLI do
       prompt_runner profile list
 
     Packet authoring:
-      prompt_runner packet new NAME [--root DIR] [--profile NAME]
+      prompt_runner packet new NAME [--root DIR] [--profile NAME] [--provider PROVIDER] [--model MODEL]
       prompt_runner packet doctor [PACKET_DIR]
       prompt_runner packet explain [PACKET_DIR]
       prompt_runner repo add NAME PATH [--packet PACKET_DIR] [--default]

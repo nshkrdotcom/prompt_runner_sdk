@@ -3,7 +3,7 @@ name: "single-repo-packet"
 profile: "codex-default"
 provider: "codex"
 model: "gpt-5.4"
-reasoning_effort: "xhigh"
+reasoning_effort: "low"
 permission_mode: "bypass"
 allowed_tools:
   - "Read"

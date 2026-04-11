@@ -23,6 +23,8 @@ repositories. This README targets `prompt_runner_sdk ~> 0.7.0`.
 - profiles replace ad hoc global defaults
 - completion is verifier-owned, not provider-owned
 - retry and repair are built into the runtime
+- a built-in simulated provider can prove recovery behavior without any
+  external provider CLI
 
 The same runtime is exposed through public Elixir modules and the CLI.
 
@@ -33,6 +35,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 - home-scoped profiles under `~/.config/prompt_runner/`
 - deterministic completion contracts plus generated checklist views
 - retry and repair based on verifier state
+- zero-dependency simulation for retry, repair, and resume demos
 - public packet/profile/runtime APIs plus matching CLI commands
 - Claude, Codex, Gemini, and Amp support through `agent_session_manager`
 - no direct provider SDK dependencies required in host applications
@@ -55,6 +58,9 @@ Prompt Runner is an explicit `agent_session_manager` core-lane client. Host
 projects do not need `codex_sdk`, `claude_agent_sdk`, `gemini_cli_sdk`, or
 `amp_sdk` just to use Prompt Runner.
 
+For recovery demos and onboarding, Prompt Runner also ships a built-in
+`simulated` provider that requires no external CLI or API credentials.
+
 ## Quick Start
 
 Initialize Prompt Runner once per machine:
@@ -62,6 +68,9 @@ Initialize Prompt Runner once per machine:
 ```bash
 mix prompt_runner init
 ```
+
+That creates both `codex-default` and `simulated-default` profiles under
+`~/.config/prompt_runner/profiles/`.
 
 Create a packet:
 
@@ -74,6 +83,18 @@ mix prompt_runner prompt new 01 \
   --name "Create hello file" \
   --targets app \
   --commit "docs: add hello file"
+```
+
+Or create a simulated recovery packet without any provider setup:
+
+```bash
+mix prompt_runner packet new recovery-demo \
+  --profile simulated-default \
+  --provider simulated \
+  --model simulated-demo \
+  --permission bypass \
+  --retry-attempts 2 \
+  --auto-repair
 ```
 
 Edit `demo/prompts/01_create_hello_file.prompt.md`:
@@ -113,6 +134,9 @@ mix prompt_runner status demo
 ```
 
 Packet-local runtime state is written to `demo/.prompt_runner/`.
+
+For a ready-made recovery walkthrough, see
+[`examples/simulated_recovery_packet/`](examples/simulated_recovery_packet/README.md).
 
 ## Packet Model
 
@@ -203,6 +227,9 @@ Generate checklist views from the contract:
 mix prompt_runner checklist sync demo
 ```
 
+The checklist is derived output for humans. The verifier report in
+`.prompt_runner/state.json` remains the actual completion source of truth.
+
 ## CLI Entry Points
 
 Use any of these:
@@ -214,6 +241,7 @@ Use any of these:
 ## Examples
 
 - [examples/README.md](examples/README.md)
+- [examples/simulated_recovery_packet/README.md](examples/simulated_recovery_packet/README.md)
 - [examples/single_repo_packet/README.md](examples/single_repo_packet/README.md)
 - [examples/multi_repo_packet/README.md](examples/multi_repo_packet/README.md)
 
@@ -225,6 +253,7 @@ Use any of these:
 - [Packet Manifest Reference](guides/configuration.md)
 - [Profiles](guides/profiles.md)
 - [Provider Guide](guides/providers.md)
+- [Simulated Provider](guides/simulated-provider.md)
 - [Verification And Repair](guides/verification-and-repair.md)
 - [Multi-Repository Packets](guides/multi-repo.md)
 - [Rendering Modes](guides/rendering.md)

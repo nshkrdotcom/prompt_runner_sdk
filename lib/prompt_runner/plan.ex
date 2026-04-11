@@ -165,6 +165,7 @@ defmodule PromptRunner.Plan do
   end
 
   defp validate_permission_mode(nil, _provider), do: :ok
+  defp validate_permission_mode(mode, :simulated), do: validate_simulated_permission_mode(mode)
 
   defp validate_permission_mode(mode, provider) do
     case ASM.Permission.normalize(provider, mode) do
@@ -173,6 +174,14 @@ defmodule PromptRunner.Plan do
 
       {:error, _reason} ->
         {:error, {:permission_mode, {:invalid_permission_mode, provider, mode}}}
+    end
+  end
+
+  defp validate_simulated_permission_mode(mode) do
+    if PermissionMode.normalize(mode, :simulated) in PermissionMode.normalized_modes() do
+      :ok
+    else
+      {:error, {:permission_mode, {:invalid_permission_mode, :simulated, mode}}}
     end
   end
 

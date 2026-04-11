@@ -70,7 +70,7 @@ defmodule PromptRunner.Source.PacketSource do
   defp prompt_overrides(prompts) do
     prompts
     |> Enum.reduce(%{}, fn prompt, acc ->
-      case Map.get(prompt.metadata || %{}, "llm_override", %{}) do
+      case Map.get(prompt.metadata, "llm_override", %{}) do
         override when is_map(override) and map_size(override) > 0 ->
           Map.put(acc, prompt.num, override)
 

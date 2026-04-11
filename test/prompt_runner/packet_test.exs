@@ -35,6 +35,29 @@ defmodule PromptRunner.PacketTest do
     assert packet.profile_name == "codex-default"
   end
 
+  test "new packet accepts provider and retry defaults at creation time" do
+    root = FSHelpers.tmp_dir("prompt_runner_packet_root")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, packet} =
+             Packet.new("sample-packet",
+               root: root,
+               profile: "simulated-default",
+               provider: "simulated",
+               model: "simulated-demo",
+               permission_mode: "bypass",
+               retry_attempts: 3,
+               auto_repair: true
+             )
+
+    assert {:ok, reloaded} = Packet.load(packet.root)
+    assert reloaded.profile_name == "simulated-default"
+    assert reloaded.options["provider"] == "simulated"
+    assert reloaded.options["model"] == "simulated-demo"
+    assert reloaded.options["retry_attempts"] == 3
+    assert reloaded.options["auto_repair"] == true
+  end
+
   test "add_repo updates the manifest and packet source loads prompts" do
     root = FSHelpers.tmp_dir("prompt_runner_packet_root")
     repo = FSHelpers.git_repo!("prompt_runner_packet_repo")

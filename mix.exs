@@ -102,6 +102,8 @@ defmodule PromptRunner.MixProject do
          filename: "configuration", title: "Packet Manifest Reference"},
         {"guides/profiles.md", filename: "profiles", title: "Profiles"},
         {"guides/providers.md", filename: "providers", title: "Provider Guide"},
+        {"guides/simulated-provider.md",
+         filename: "simulated-provider", title: "Simulated Provider"},
         {"guides/verification-and-repair.md",
          filename: "verification-and-repair", title: "Verification And Repair"},
         {"guides/rendering.md", filename: "rendering", title: "Rendering Modes"},
@@ -110,6 +112,8 @@ defmodule PromptRunner.MixProject do
         {"examples/README.md", filename: "examples", title: "Examples Overview"},
         {"examples/single_repo_packet/README.md",
          filename: "example-single-repo", title: "Single Repo Packet Example"},
+        {"examples/simulated_recovery_packet/README.md",
+         filename: "example-simulated-recovery", title: "Simulated Recovery Packet Example"},
         {"examples/multi_repo_packet/README.md",
          filename: "example-multi-repo", title: "Multi-Repo Packet Example"}
       ],
@@ -119,6 +123,7 @@ defmodule PromptRunner.MixProject do
         Configuration: [
           "configuration",
           "providers",
+          "simulated-provider",
           "verification-and-repair",
           "rendering"
         ],
@@ -127,6 +132,7 @@ defmodule PromptRunner.MixProject do
         Examples: [
           "examples",
           "example-single-repo",
+          "example-simulated-recovery",
           "example-multi-repo"
         ],
         Reference: [
@@ -159,6 +165,7 @@ defmodule PromptRunner.MixProject do
         ],
         Runtime: [
           PromptRunner.Runner,
+          PromptRunner.SimulatedLLM,
           PromptRunner.RuntimeStore,
           PromptRunner.RuntimeStore.FileStore,
           PromptRunner.RuntimeStore.MemoryStore,

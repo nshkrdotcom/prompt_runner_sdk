@@ -31,7 +31,13 @@ defmodule PromptRunner.Profile do
     Path.join(profiles_dir(), "#{name}.md")
   end
 
-  @spec init(keyword()) :: {:ok, %{config_file: String.t(), profile_file: String.t()}}
+  @spec init(keyword()) ::
+          {:ok,
+           %{
+             config_file: String.t(),
+             profile_file: String.t(),
+             simulated_profile_file: String.t()
+           }}
   def init(opts \\ []) do
     default_profile = opts[:default_profile] || @default_profile
 
@@ -50,7 +56,16 @@ defmodule PromptRunner.Profile do
       {:ok, _profile} = create(default_profile, default_profile_options())
     end
 
-    {:ok, %{config_file: config_file(), profile_file: profile_path(default_profile)}}
+    unless File.exists?(profile_path("simulated-default")) do
+      {:ok, _profile} = create("simulated-default", simulated_profile_options())
+    end
+
+    {:ok,
+     %{
+       config_file: config_file(),
+       profile_file: profile_path(default_profile),
+       simulated_profile_file: profile_path("simulated-default")
+     }}
   end
 
   @spec create(String.t(), map()) :: {:ok, t()} | {:error, term()}
@@ -126,6 +141,23 @@ defmodule PromptRunner.Profile do
       "permission_mode" => "bypass",
       "allowed_tools" => ["Read", "Edit", "Write", "Bash"],
       "cli_confirmation" => "require",
+      "log_mode" => "compact",
+      "log_meta" => "none",
+      "events_mode" => "compact",
+      "tool_output" => "summary",
+      "retry_attempts" => 2,
+      "auto_repair" => true
+    }
+  end
+
+  defp simulated_profile_options do
+    %{
+      "provider" => "simulated",
+      "model" => "simulated-demo",
+      "reasoning_effort" => "low",
+      "permission_mode" => "bypass",
+      "allowed_tools" => ["Read", "Edit", "Write", "Bash"],
+      "cli_confirmation" => "off",
       "log_mode" => "compact",
       "log_meta" => "none",
       "events_mode" => "compact",

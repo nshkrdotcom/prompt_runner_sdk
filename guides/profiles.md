@@ -7,6 +7,7 @@ Profiles are home-scoped defaults stored under:
   config.md
   profiles/
     codex-default.md
+    simulated-default.md
 ```
 
 ## Initialize
@@ -19,6 +20,7 @@ That creates:
 
 - `config.md`
 - `profiles/codex-default.md`
+- `profiles/simulated-default.md`
 
 ## Default Profile
 
@@ -54,3 +56,15 @@ The intended authoring precedence is:
 
 Use profiles for standing preferences, packets for team-shared defaults, and
 prompt front matter only when a prompt genuinely needs a local override.
+
+## Simulated Demo Profile
+
+`simulated-default` is optimized for recovery demos and tests:
+
+- `provider: simulated`
+- `model: simulated-demo`
+- `reasoning_effort: low`
+- `permission_mode: bypass`
+- `cli_confirmation: off`
+- `retry_attempts: 2`
+- `auto_repair: true`

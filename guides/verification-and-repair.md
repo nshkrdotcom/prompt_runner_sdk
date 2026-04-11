@@ -58,6 +58,16 @@ mix prompt_runner checklist sync /path/to/packet
 Those checklist files are for human navigation. The verifier report remains the
 actual completion source of truth.
 
+## Deterministic Recovery Demos
+
+Use the built-in `simulated` provider when you want to prove retry, repair, or
+resume behavior without relying on a real provider outage.
+
+See:
+
+- `examples/simulated_recovery_packet/`
+- [Simulated Provider](simulated-provider.md)
+
 ## Runtime State
 
 Packet-local state is stored in:

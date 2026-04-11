@@ -697,11 +697,20 @@ defmodule PromptRunner.Runner do
   end
 
   defp prompt_attempt_context(plan, prompt, skip_commit, mode, attempt) do
+    prompt_metadata = prompt.metadata
+
     %{
       plan: plan,
       prompt: prompt,
       prompt_path: prompt_path(plan, prompt),
-      llm: Config.llm_for_prompt(plan.config, prompt),
+      llm:
+        Config.llm_for_prompt(plan.config, prompt)
+        |> Map.put(:attempt, attempt)
+        |> Map.put(:mode, mode)
+        |> Map.put(:prompt_id, prompt.num)
+        |> Map.put(:prompt_metadata, prompt_metadata)
+        |> Map.put(:simulation, Map.get(prompt_metadata, "simulate", %{}))
+        |> Map.put(:repo_paths, repo_paths(plan)),
       skip_commit: skip_commit,
       mode: mode,
       attempt: attempt
@@ -1313,26 +1322,42 @@ defmodule PromptRunner.Runner do
   defp preflight_llm_provider(_), do: {:ok, nil}
 
   defp provider_runtime_info(provider) when is_atom(provider) do
-    with {:ok, provider_def} <- ASM.Provider.resolve(provider),
-         {:ok, provider_info} <- ASM.ProviderRegistry.provider_info(provider) do
-      example_support = provider_def.example_support
-
+    if provider == :simulated do
       {:ok,
        %{
-         provider: provider,
-         lane: :core,
-         cli_command: example_support.cli_command,
-         cli_path_env: example_support.cli_path_env,
-         install_hint: example_support.install_hint,
-         core_profile_id: provider_info.core_profile_id,
-         available_lanes: provider_info.available_lanes,
-         sdk_available?: provider_info.sdk_available?
+         provider: :simulated,
+         lane: :builtin,
+         cli_command: "builtin",
+         cli_path_env: "n/a",
+         install_hint: "No external provider CLI is required.",
+         core_profile_id: "simulated",
+         available_lanes: [:builtin],
+         sdk_available?: true
        }}
+    else
+      with {:ok, provider_def} <- ASM.Provider.resolve(provider),
+           {:ok, provider_info} <- ASM.ProviderRegistry.provider_info(provider) do
+        example_support = provider_def.example_support
+
+        {:ok,
+         %{
+           provider: provider,
+           lane: :core,
+           cli_command: example_support.cli_command,
+           cli_path_env: example_support.cli_path_env,
+           install_hint: example_support.install_hint,
+           core_profile_id: provider_info.core_profile_id,
+           available_lanes: provider_info.available_lanes,
+           sdk_available?: provider_info.sdk_available?
+         }}
+      end
     end
   end
 
   @doc false
   @spec check_provider_runtime(atom()) :: {:ok, map() | nil} | {:error, term()}
+  def check_provider_runtime(:simulated), do: provider_runtime_info(:simulated)
+
   def check_provider_runtime(provider) when is_atom(provider) do
     case ASM.Provider.resolve(provider) do
       {:ok, _provider} -> provider_runtime_info(provider)
@@ -1674,6 +1699,12 @@ defmodule PromptRunner.Runner do
     {:ok, log_io} = StringIO.open("")
     {"(memory)", log_io, fn -> StringIO.close(log_io) end, nil}
   end
+
+  defp repo_paths(%Plan{config: %{target_repos: repos}}) when is_list(repos) do
+    Enum.into(repos, %{}, fn repo -> {repo.name, repo.path} end)
+  end
+
+  defp repo_paths(_plan), do: %{}
 
   defp emit_observer(%PromptRunner.Plan{callbacks: callbacks}, event) when is_map(callbacks) do
     maybe_invoke_callback(callbacks[:on_event], event)

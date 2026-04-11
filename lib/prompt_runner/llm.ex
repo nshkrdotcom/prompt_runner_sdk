@@ -3,7 +3,7 @@ defmodule PromptRunner.LLM do
   Behaviour and types for LLM integrations.
   """
 
-  @type sdk :: :claude | :codex | :gemini | :amp
+  @type sdk :: :claude | :codex | :gemini | :amp | :simulated
   @type provider :: sdk()
   @type stream_event :: map()
   @type stream :: Enumerable.t()

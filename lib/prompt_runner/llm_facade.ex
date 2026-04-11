@@ -17,7 +17,9 @@ defmodule PromptRunner.LLMFacade do
     "gemini" => :gemini,
     "gemini_cli_sdk" => :gemini,
     "amp" => :amp,
-    "amp_sdk" => :amp
+    "amp_sdk" => :amp,
+    "simulated" => :simulated,
+    "simulation" => :simulated
   }
 
   @impl true
@@ -42,14 +44,18 @@ defmodule PromptRunner.LLMFacade do
 
   @impl true
   def start_stream(llm, prompt) when is_map(llm) and is_binary(prompt) do
-    session_module().start_stream(llm, prompt)
+    delegate_module(llm).start_stream(llm, prompt)
   end
 
   @impl true
   def resume_stream(llm, meta, prompt)
       when is_map(llm) and is_map(meta) and is_binary(prompt) do
-    session_module().resume_stream(llm, meta, prompt)
+    delegate_module(llm).resume_stream(llm, meta, prompt)
   end
+
+  defp delegate_module(%{sdk: :simulated}), do: PromptRunner.SimulatedLLM
+  defp delegate_module(%{provider: :simulated}), do: PromptRunner.SimulatedLLM
+  defp delegate_module(_llm), do: session_module()
 
   defp session_module do
     Application.get_env(:prompt_runner, :session_module, PromptRunner.Session)

@@ -782,6 +782,15 @@ defmodule PromptRunner.Config do
 
   defp validate_permission_mode(errors, _provider, nil, _key_builder), do: errors
 
+  defp validate_permission_mode(errors, :simulated, mode, key_builder)
+       when is_function(key_builder, 1) do
+    if PermissionMode.normalize(mode, :simulated) in PermissionMode.normalized_modes() do
+      errors
+    else
+      [{key_builder.(:permission_mode), {:invalid_permission_mode, :simulated, mode}} | errors]
+    end
+  end
+
   defp validate_permission_mode(errors, provider, mode, key_builder)
        when is_atom(provider) and is_function(key_builder, 1) do
     case Permission.normalize(provider, mode) do

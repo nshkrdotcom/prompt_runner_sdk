@@ -35,6 +35,18 @@ mix prompt_runner prompt new 01 --packet demo --phase 1 --name "Create hello" --
 mix prompt_runner checklist sync demo
 ```
 
+Create a packet with runtime defaults already filled in:
+
+```bash
+mix prompt_runner packet new recovery-demo \
+  --profile simulated-default \
+  --provider simulated \
+  --model simulated-demo \
+  --permission bypass \
+  --retry-attempts 2 \
+  --auto-repair
+```
+
 Inspect packet metadata and runtime readiness:
 
 ```bash
@@ -90,6 +102,17 @@ mix prompt_runner status demo
 - `--runtime-store`
 - `--committer`
 - `--no-commit`
+
+`packet new` accepts:
+
+- `--profile`
+- `--provider`
+- `--model`
+- `--reasoning`
+- `--permission`
+- `--retry-attempts`
+- `--auto-repair`
+- `--cli-confirmation`
 
 Example:
 

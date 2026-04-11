@@ -66,15 +66,23 @@ defmodule PromptRunner.Packet do
 
     File.mkdir_p!(Path.join(root, "prompts"))
 
-    attrs = %{
-      "name" => name,
-      "profile" => opts[:profile] || default_profile_name(),
-      "prompt_dir" => "prompts",
-      "repos" => %{},
-      "phases" => %{},
-      "retry_attempts" => 2,
-      "auto_repair" => true
-    }
+    attrs =
+      %{
+        "name" => name,
+        "profile" => opts[:profile] || default_profile_name(),
+        "prompt_dir" => "prompts",
+        "repos" => %{},
+        "phases" => %{},
+        "retry_attempts" => 2,
+        "auto_repair" => true
+      }
+      |> maybe_put_attr("provider", opts[:provider])
+      |> maybe_put_attr("model", opts[:model])
+      |> maybe_put_attr("reasoning_effort", opts[:reasoning_effort])
+      |> maybe_put_attr("permission_mode", opts[:permission_mode])
+      |> maybe_put_attr("retry_attempts", opts[:retry_attempts])
+      |> maybe_put_attr("auto_repair", opts[:auto_repair])
+      |> maybe_put_attr("cli_confirmation", opts[:cli_confirmation])
 
     body = """
     # #{name}
@@ -363,4 +371,7 @@ defmodule PromptRunner.Packet do
   defp default_profile_name do
     Profile.default_profile_name() |> elem(1)
   end
+
+  defp maybe_put_attr(attrs, _key, nil), do: attrs
+  defp maybe_put_attr(attrs, key, value), do: Map.put(attrs, key, value)
 end
