@@ -62,6 +62,10 @@ projects do not need `codex_sdk`, `claude_agent_sdk`, `gemini_cli_sdk`, or
 
 For recovery demos and onboarding, Prompt Runner also ships a built-in
 `simulated` provider that requires no external CLI or API credentials.
+That provider is package-local support for retry, repair, and resume behavior;
+cross-stack service-mode proofs should use configured ASM and
+`cli_subprocess_core` runtime profiles instead of treating `:simulated` as an
+end-to-end provider substitute.
 
 ## Quick Start
 

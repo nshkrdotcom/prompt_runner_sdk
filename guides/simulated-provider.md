@@ -5,6 +5,11 @@ demos, tests, and onboarding.
 
 It requires no external provider CLI and no API credentials.
 
+This provider is intentionally scoped to Prompt Runner package tests, recovery
+demos, and onboarding. It is not the cross-stack service-mode simulation path;
+for service-mode proofs, configure ASM and `cli_subprocess_core` runtime
+profiles so provider execution still goes through the normal ASM core lane.
+
 ## When To Use It
 
 - prove retry behavior

@@ -92,6 +92,10 @@ The built-in simulated provider is for deterministic retry, repair, and resume
 demos. It does not use `agent_session_manager` or any external provider
 process.
 
+It is package-local runtime support, not a service-mode simulation selector.
+Stack-level service-mode proofs should configure ASM and `cli_subprocess_core`
+runtime profiles so Prompt Runner still exercises the normal ASM core lane.
+
 ## Codex CLI Confirmation
 
 Codex packets can require runtime confirmation that the configured model and
