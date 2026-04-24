@@ -62,8 +62,7 @@ defmodule PromptRunner.MixProject do
   defp local_stack_dev_deps do
     if use_local_dev_deps?() do
       [
-        {:cli_subprocess_core, path: "../cli_subprocess_core", override: true},
-        {:execution_plane, path: "../execution_plane", override: true}
+        {:cli_subprocess_core, path: "../cli_subprocess_core", override: true}
       ]
     else
       []
