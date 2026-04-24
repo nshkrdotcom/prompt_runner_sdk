@@ -48,19 +48,15 @@ defmodule PromptRunner.MixProject do
   defp local_dev_or_hex_dep(app, version, relative_path, opts \\ []) do
     path = Path.expand(relative_path, __DIR__)
 
-    if use_local_dev_deps?() and File.dir?(path) do
+    if local_workspace_deps?() and File.dir?(path) do
       {app, version, Keyword.put(opts, :path, relative_path)}
     else
       {app, version, opts}
     end
   end
 
-  defp use_local_dev_deps? do
-    truthy_env?("PROMPT_RUNNER_USE_LOCAL_DEPS") and not hex_packaging_task?()
-  end
-
   defp local_stack_dev_deps do
-    if use_local_dev_deps?() do
+    if local_workspace_deps?() and File.dir?(Path.expand("../cli_subprocess_core", __DIR__)) do
       [
         {:cli_subprocess_core, path: "../cli_subprocess_core", override: true}
       ]
@@ -69,8 +65,8 @@ defmodule PromptRunner.MixProject do
     end
   end
 
-  defp truthy_env?(name) do
-    System.get_env(name) in ~w(1 true TRUE yes YES on ON)
+  defp local_workspace_deps? do
+    not hex_packaging_task?() and not Enum.member?(Path.split(__DIR__), "deps")
   end
 
   defp hex_packaging_task? do
