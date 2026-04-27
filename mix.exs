@@ -166,6 +166,7 @@ defmodule PromptRunner.MixProject do
           PromptRunner.Run,
           PromptRunner.RunSpec,
           PromptRunner.Plan,
+          PromptRunner.Preflight,
           PromptRunner.Application,
           PromptRunner.CLI,
           Mix.Tasks.PromptRunner

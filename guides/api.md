@@ -77,9 +77,14 @@ it per prompt with:
 Inspect packet health:
 
 ```elixir
+{:ok, preflight_report} = PromptRunner.preflight(packet.root)
 {:ok, doctor_report} = PromptRunner.Packet.doctor(packet.root)
+{:ok, preflight_report} = PromptRunner.Packet.preflight(packet.root)
 {:ok, explain_report} = PromptRunner.Packet.explain(packet.root)
 ```
+
+`preflight` is the runtime readiness gate that checks packet-local repo paths
+and git readiness before provider execution.
 
 ## Planning And Running
 

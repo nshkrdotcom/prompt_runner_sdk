@@ -3,7 +3,7 @@ defmodule PromptRunner.Packet do
   Packet manifest loader and generator.
   """
 
-  alias PromptRunner.{FrontMatter, Paths, Profile, RecoveryConfig, Template, Verifier}
+  alias PromptRunner.{FrontMatter, Paths, Preflight, Profile, RecoveryConfig, Template, Verifier}
   alias PromptRunner.Runner
   alias PromptRunner.Source.PacketSource
 
@@ -116,14 +116,8 @@ defmodule PromptRunner.Packet do
   def doctor(root) when is_binary(root) do
     with {:ok, packet} <- load(root),
          {:ok, provider_info} <- provider_info(packet.options) do
-      repo_checks =
-        Enum.map(packet.repos, fn repo ->
-          %{
-            name: repo.name,
-            path: repo.path,
-            exists?: File.dir?(repo.path)
-          }
-        end)
+      repo_checks = Preflight.repo_checks(packet.repos, packet.root)
+      readiness_errors = Preflight.readiness_errors(repo_checks)
 
       prompt_files =
         packet.prompt_path
@@ -145,10 +139,22 @@ defmodule PromptRunner.Packet do
          model: packet.options["model"],
          provider_info: provider_info,
          repos: repo_checks,
+         readiness_errors: readiness_errors,
+         runtime_ready?: readiness_errors == [],
          prompt_files: prompt_files,
          authoring_warnings: authoring_warnings,
          authoring_ready?: authoring_warnings == []
        }}
+    end
+  end
+
+  @spec preflight(String.t()) ::
+          {:ok, map()} | {:error, {:preflight_failed, map()}} | {:error, term()}
+  def preflight(root) when is_binary(root) do
+    case doctor(root) do
+      {:ok, %{runtime_ready?: true} = report} -> {:ok, report}
+      {:ok, report} -> {:error, {:preflight_failed, report}}
+      {:error, reason} -> {:error, reason}
     end
   end
 

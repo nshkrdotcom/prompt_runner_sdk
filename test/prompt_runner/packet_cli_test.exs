@@ -127,6 +127,39 @@ defmodule PromptRunner.PacketCLITest do
     assert output =~ "from-adr"
   end
 
+  test "packet preflight prints readiness JSON for runnable packets" do
+    root = FSHelpers.tmp_dir("prompt_runner_cli_packet_root")
+    repo = FSHelpers.git_repo!("prompt_runner_cli_repo")
+    on_exit(fn -> File.rm_rf!(root) end)
+    on_exit(fn -> File.rm_rf!(repo) end)
+
+    packet_root = Path.join(root, "demo")
+
+    capture_io(fn ->
+      assert :ok =
+               CLI.main([
+                 "packet",
+                 "new",
+                 "demo",
+                 "--root",
+                 root,
+                 "--repo",
+                 "app=#{repo}",
+                 "--default-repo",
+                 "app"
+               ])
+    end)
+
+    output =
+      capture_io(fn ->
+        assert :ok = CLI.main(["packet", "preflight", packet_root])
+      end)
+
+    report = Jason.decode!(output)
+    assert report["runtime_ready?"] == true
+    assert [%{"name" => "app", "ready?" => true}] = report["repos"]
+  end
+
   test "checklist sync warns for prompts without verifier items" do
     root = FSHelpers.tmp_dir("prompt_runner_cli_packet_root")
     repo = FSHelpers.git_repo!("prompt_runner_cli_repo")

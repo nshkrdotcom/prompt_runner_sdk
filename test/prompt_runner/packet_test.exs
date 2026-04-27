@@ -304,4 +304,47 @@ defmodule PromptRunner.PacketTest do
     assert "no_default_repo" in warning_kinds
     assert "prompt_no_targets" in warning_kinds
   end
+
+  test "doctor reports runtime readiness errors for missing packet repos" do
+    root = FSHelpers.tmp_dir("prompt_runner_packet_root")
+    missing_repo = Path.join(root, "repos/missing")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, packet} = Packet.new("sample-packet", root: root, repos: [{"app", missing_repo}])
+    assert {:ok, report} = Packet.doctor(packet.root)
+
+    assert report.runtime_ready? == false
+
+    assert [%{name: "app", ready?: false, errors: [%{kind: "path_not_found"}]}] =
+             report.repos
+
+    assert [%{scope: "repo", name: "app", kind: "path_not_found", path: ^missing_repo}] =
+             report.readiness_errors
+  end
+
+  test "doctor reports runtime readiness errors for non-git packet repos" do
+    root = FSHelpers.tmp_dir("prompt_runner_packet_root")
+    repo = Path.join(root, "repos/not_git")
+    File.mkdir_p!(repo)
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, packet} = Packet.new("sample-packet", root: root, repos: [{"app", repo}])
+    assert {:ok, report} = Packet.doctor(packet.root)
+
+    assert report.runtime_ready? == false
+    assert [%{name: "app", exists?: true, git?: false, ready?: false}] = report.repos
+    assert [%{kind: "not_git_repo", path: ^repo}] = report.readiness_errors
+  end
+
+  test "preflight fails with the doctor report when runtime is not ready" do
+    root = FSHelpers.tmp_dir("prompt_runner_packet_root")
+    missing_repo = Path.join(root, "repos/missing")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, packet} = Packet.new("sample-packet", root: root, repos: [{"app", missing_repo}])
+
+    assert {:error, {:preflight_failed, report}} = Packet.preflight(packet.root)
+    assert report.runtime_ready? == false
+    assert [%{kind: "path_not_found"}] = report.readiness_errors
+  end
 end

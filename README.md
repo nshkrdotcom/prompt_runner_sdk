@@ -170,6 +170,7 @@ Turn the verification contract into a human checklist:
 
 ```bash
 mix prompt_runner checklist sync demo
+mix prompt_runner packet preflight demo
 mix prompt_runner packet doctor demo
 ```
 
@@ -299,6 +300,14 @@ packet run:
 - prompt has no targets
 - prompt has no verification items
 - prompt still contains scaffold placeholder markers
+
+`mix prompt_runner packet preflight` is the machine-readable runtime readiness
+gate. It checks packet-local repo paths and git readiness, prints JSON, exits
+`0` when runtime-ready, and exits non-zero when the provider run should not
+start yet. CLI `run` calls packet preflight before invoking a provider; pass
+`--skip-preflight` only when you intentionally want the run path to handle
+packet readiness failures itself. Setup remains explicit: if a packet documents
+a setup command such as `bash examples/.../setup.sh`, run it before preflight.
 
 ## CLI Entry Points
 

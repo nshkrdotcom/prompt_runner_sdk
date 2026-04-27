@@ -5,6 +5,7 @@ defmodule PromptRunner.Runner do
   alias PromptRunner.Config
   alias PromptRunner.FailureEnvelope
   alias PromptRunner.Plan
+  alias PromptRunner.Preflight
   alias PromptRunner.Progress
   alias PromptRunner.Prompts
   alias PromptRunner.RecoveryPolicy
@@ -48,6 +49,13 @@ defmodule PromptRunner.Runner do
     do_run(plan, opts, remaining)
   end
 
+  @spec preflight_plan(Plan.t(), keyword()) :: {:ok, map()} | {:error, {:preflight_failed, map()}}
+  def preflight_plan(%Plan{} = plan, opts \\ []) do
+    plan
+    |> Plan.with_overrides(opts)
+    |> Preflight.check_plan()
+  end
+
   @spec list_plan(Plan.t()) :: :ok
   def list_plan(%Plan{} = plan), do: list_prompts(plan)
 
@@ -89,12 +97,21 @@ defmodule PromptRunner.Runner do
         end
 
       opts[:run] ->
-        with {:ok, targets} <- build_targets(plan, opts, remaining) do
+        with {:ok, _report} <- maybe_preflight_plan(plan, opts),
+             {:ok, targets} <- build_targets(plan, opts, remaining) do
           run_targets(plan, targets, opts[:no_commit] || false)
         end
 
       true ->
         {:error, :no_command}
+    end
+  end
+
+  defp maybe_preflight_plan(plan, opts) do
+    if opts[:skip_preflight] do
+      {:ok, %{skipped?: true}}
+    else
+      preflight_plan(plan, opts)
     end
   end
 

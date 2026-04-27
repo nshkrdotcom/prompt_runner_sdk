@@ -221,6 +221,10 @@ If a prompt still has no verifier items, `checklist sync` prints a warning and
 the generated checklist explicitly says that verification items are still
 missing.
 
+`mix prompt_runner packet preflight` reports runtime readiness as JSON and
+exits non-zero when packet-local repos or git state are not ready. `run` calls
+this gate before invoking a provider unless `--skip-preflight` is explicit.
+
 `mix prompt_runner packet doctor` also reports common authoring gaps:
 
 - packet has no prompts

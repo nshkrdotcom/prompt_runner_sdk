@@ -188,6 +188,23 @@ defmodule PromptRunner.CLI do
     end
   end
 
+  defp run_packet_preflight(rest) do
+    packet_dir = packet_dir(rest)
+
+    case Packet.preflight(packet_dir) do
+      {:ok, report} ->
+        IO.puts(Jason.encode!(report, pretty: true))
+        :ok
+
+      {:error, {:preflight_failed, report}} ->
+        IO.puts(Jason.encode!(report, pretty: true))
+        System.halt(1)
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
+  end
+
   defp run_packet_explain(rest) do
     packet_dir = packet_dir(rest)
 
@@ -318,7 +335,8 @@ defmodule PromptRunner.CLI do
           tool_output: :string,
           cli_confirmation: :string,
           runtime_store: :string,
-          committer: :string
+          committer: :string,
+          skip_preflight: :boolean
         ]
       )
 
@@ -404,6 +422,7 @@ defmodule PromptRunner.CLI do
   defp parse_command(["template", "list" | rest]), do: {:template_list, rest}
   defp parse_command(["packet", "new", name | rest]), do: {:packet_new, name, rest}
   defp parse_command(["packet", "doctor" | rest]), do: {:packet_doctor, rest}
+  defp parse_command(["packet", "preflight" | rest]), do: {:packet_preflight, rest}
   defp parse_command(["packet", "explain" | rest]), do: {:packet_explain, rest}
   defp parse_command(["repo", "add", name, path | rest]), do: {:repo_add, name, path, rest}
   defp parse_command(["prompt", "new", id | rest]), do: {:prompt_new, id, rest}
@@ -425,6 +444,7 @@ defmodule PromptRunner.CLI do
   defp dispatch_command({:template_list, rest}), do: run_template_list(rest)
   defp dispatch_command({:packet_new, name, rest}), do: run_packet_new(name, rest)
   defp dispatch_command({:packet_doctor, rest}), do: run_packet_doctor(rest)
+  defp dispatch_command({:packet_preflight, rest}), do: run_packet_preflight(rest)
   defp dispatch_command({:packet_explain, rest}), do: run_packet_explain(rest)
   defp dispatch_command({:repo_add, name, path, rest}), do: run_repo_add(name, path, rest)
   defp dispatch_command({:prompt_new, id, rest}), do: run_prompt_new(id, rest)
@@ -449,6 +469,7 @@ defmodule PromptRunner.CLI do
     |> maybe_put(:cli_confirmation, opts[:cli_confirmation])
     |> maybe_put(:runtime_store, opts[:runtime_store])
     |> maybe_put(:committer, opts[:committer])
+    |> maybe_put(:skip_preflight, opts[:skip_preflight])
   end
 
   defp parse_csv(nil), do: nil
@@ -559,6 +580,7 @@ defmodule PromptRunner.CLI do
       prompt_runner packet new NAME [--root DIR] [--profile NAME] [--repo NAME=PATH] [--default-repo NAME]
       prompt_runner packet new NAME [--prompt-template TEMPLATE] [--provider PROVIDER] [--model MODEL]
       prompt_runner packet doctor [PACKET_DIR]
+      prompt_runner packet preflight [PACKET_DIR]
       prompt_runner packet explain [PACKET_DIR]
       prompt_runner repo add NAME PATH [--packet PACKET_DIR] [--default]
       prompt_runner prompt new ID [--packet PACKET_DIR] --phase N --name "..." [--template TEMPLATE]
@@ -567,7 +589,7 @@ defmodule PromptRunner.CLI do
     Execution:
       prompt_runner list [PACKET_DIR]
       prompt_runner plan [PACKET_DIR]
-      prompt_runner run [PACKET_DIR] [PROMPT_ID...]
+      prompt_runner run [PACKET_DIR] [PROMPT_ID...] [--skip-preflight]
       prompt_runner repair [--packet PACKET_DIR] PROMPT_ID
       prompt_runner status [PACKET_DIR]
 

@@ -154,6 +154,7 @@ Generate the checklist view:
 
 ```bash
 mix prompt_runner checklist sync demo
+mix prompt_runner packet preflight demo
 mix prompt_runner packet doctor demo
 ```
 
@@ -167,6 +168,11 @@ mix prompt_runner status demo
 ```
 
 `status` prints `.prompt_runner/state.json` as formatted JSON.
+
+`packet preflight` is the runtime readiness gate that `run` calls before a
+provider starts. If a packet uses generated or packet-local repos, run the
+packet's documented setup command before preflight. Use `--skip-preflight` only
+when you intentionally want provider execution to handle readiness failures.
 
 ## What Gets Created At Runtime
 

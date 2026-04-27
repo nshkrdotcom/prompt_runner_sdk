@@ -31,6 +31,13 @@ defmodule PromptRunner do
     end
   end
 
+  @spec preflight(term(), keyword()) :: {:ok, map()} | {:error, term()}
+  def preflight(input, opts \\ []) do
+    with {:ok, %Plan{} = plan} <- plan(input, opts) do
+      Runner.preflight_plan(plan, opts)
+    end
+  end
+
   @spec run(term(), keyword()) :: {:ok, Run.t()} | {:error, term()}
   def run(input, opts \\ []) do
     with {:ok, %Plan{} = plan} <- plan(input, opts) do

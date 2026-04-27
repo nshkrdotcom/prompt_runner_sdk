@@ -32,6 +32,7 @@ examples/multi_repo_packet/repos/beta
 
 ```bash
 mix prompt_runner list examples/multi_repo_packet
+mix prompt_runner packet preflight examples/multi_repo_packet
 mix prompt_runner plan examples/multi_repo_packet
 mix prompt_runner run examples/multi_repo_packet
 mix prompt_runner status examples/multi_repo_packet

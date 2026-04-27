@@ -62,8 +62,13 @@ Inspect packet metadata and runtime readiness:
 
 ```bash
 mix prompt_runner packet explain demo
+mix prompt_runner packet preflight demo
 mix prompt_runner packet doctor demo
 ```
+
+`packet preflight` is the runtime gate used before provider execution. It
+prints JSON, exits non-zero when packet repos or git state are not ready, and
+is called automatically by `run` unless `--skip-preflight` is explicit.
 
 ## Execution Commands
 
@@ -78,6 +83,7 @@ Run everything:
 
 ```bash
 mix prompt_runner run demo
+mix prompt_runner run demo --skip-preflight
 ```
 
 Run specific prompts:
