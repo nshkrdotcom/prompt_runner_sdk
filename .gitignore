@@ -48,3 +48,5 @@ prompt_runner_sdk-*.tar
 .DS_Store
 Thumbs.db
 *.bak
+
+.prompt_runner/
