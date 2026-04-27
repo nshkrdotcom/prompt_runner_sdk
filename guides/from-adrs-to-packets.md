@@ -138,13 +138,16 @@ contract plus `.prompt_runner/state.json`.
 
 If a prompt has no verifier items yet, `checklist sync` warns loudly.
 
-## 8. Use Doctor Before Run
+## 8. Preflight And Doctor Before Run
 
 ```bash
+mix prompt_runner packet preflight runtime-review
 mix prompt_runner packet doctor runtime-review
 ```
 
-Doctor now flags common authoring gaps:
+Preflight is the runtime gate that checks packet-local repo paths and git
+readiness. Doctor includes the same runtime readiness fields plus authoring
+guidance. Doctor flags common authoring gaps:
 
 - no prompts
 - no default repo
@@ -170,7 +173,7 @@ Once the packet structure is stable:
 
 - switch profile/provider/model in `prompt_runner_packet.md`
 - keep the same prompts, references, and `verify:` contracts
-- rerun `packet doctor`, `plan`, and `run`
+- rerun `packet preflight`, `packet doctor`, `plan`, and `run`
 
 ## Best Practices
 

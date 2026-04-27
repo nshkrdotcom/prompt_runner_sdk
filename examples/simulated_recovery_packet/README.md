@@ -30,6 +30,7 @@ From the project root:
 ```bash
 bash examples/simulated_recovery_packet/setup.sh
 mix prompt_runner list examples/simulated_recovery_packet
+mix prompt_runner packet preflight examples/simulated_recovery_packet
 mix prompt_runner run examples/simulated_recovery_packet
 mix prompt_runner status examples/simulated_recovery_packet
 bash examples/simulated_recovery_packet/cleanup.sh

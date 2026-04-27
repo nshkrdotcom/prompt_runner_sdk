@@ -20,13 +20,13 @@ packet dir
 - `PromptRunner.Profile`
   home-scoped defaults
 - `PromptRunner.Packet`
-  packet manifest loader and doctor surface
+  packet manifest loader, runtime preflight, and doctor surface
 - `PromptRunner.Packets`
   prompt creation and checklist sync
 - `PromptRunner.Plan`
   fully resolved execution plan
 - internal runner pipeline
-  execution, retry, repair, and completion logic
+  preflight, execution, retry, repair, and completion logic
 - `PromptRunner.Verifier`
   deterministic completion contracts
 - `PromptRunner.Runtime`

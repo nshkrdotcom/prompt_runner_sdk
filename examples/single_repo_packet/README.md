@@ -31,6 +31,7 @@ examples/single_repo_packet/workspace
 
 ```bash
 mix prompt_runner list examples/single_repo_packet
+mix prompt_runner packet preflight examples/single_repo_packet
 mix prompt_runner plan examples/single_repo_packet
 mix prompt_runner run examples/single_repo_packet
 mix prompt_runner status examples/single_repo_packet

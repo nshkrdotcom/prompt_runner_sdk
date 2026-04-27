@@ -18,6 +18,7 @@ From the project root:
 ```bash
 bash examples/authoring_packet/setup.sh
 mix prompt_runner list examples/authoring_packet
+mix prompt_runner packet preflight examples/authoring_packet
 mix prompt_runner packet doctor examples/authoring_packet
 mix prompt_runner checklist sync examples/authoring_packet
 mix prompt_runner run examples/authoring_packet
@@ -30,6 +31,7 @@ Or:
 ```bash
 bash examples/simulated_recovery_packet/setup.sh
 mix prompt_runner list examples/simulated_recovery_packet
+mix prompt_runner packet preflight examples/simulated_recovery_packet
 mix prompt_runner run examples/simulated_recovery_packet
 mix prompt_runner status examples/simulated_recovery_packet
 bash examples/simulated_recovery_packet/cleanup.sh
@@ -40,6 +42,7 @@ Or:
 ```bash
 bash examples/single_repo_packet/setup.sh
 mix prompt_runner list examples/single_repo_packet
+mix prompt_runner packet preflight examples/single_repo_packet
 mix prompt_runner run examples/single_repo_packet
 mix prompt_runner status examples/single_repo_packet
 bash examples/single_repo_packet/cleanup.sh
@@ -50,6 +53,7 @@ Or:
 ```bash
 bash examples/multi_repo_packet/setup.sh
 mix prompt_runner list examples/multi_repo_packet
+mix prompt_runner packet preflight examples/multi_repo_packet
 mix prompt_runner run examples/multi_repo_packet
 mix prompt_runner status examples/multi_repo_packet
 bash examples/multi_repo_packet/cleanup.sh
@@ -65,7 +69,7 @@ bash examples/multi_repo_packet/cleanup.sh
   proves capacity, rate-limit, protocol-drop, transport-timeout, repair, and
   verifier-override behavior in one successful walkthrough
 - all four examples create their repos or workspaces locally under the
-  example directory
+  example directory; run the example `setup.sh` before `packet preflight`
 - all four examples clear `.prompt_runner/` on setup so runs start clean
 - the packet examples in this directory are meant to be executed with
   `mix prompt_runner ...` from the repository root

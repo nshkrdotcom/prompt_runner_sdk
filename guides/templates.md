@@ -128,6 +128,10 @@ is intentional.
 `mix prompt_runner packet doctor` flags prompts that still contain placeholder
 markers so incomplete scaffolds are loud before you run the packet.
 
+`mix prompt_runner packet preflight` is the separate runtime readiness check.
+Run setup first when a packet creates local repos or workspaces, then run
+preflight before provider execution.
+
 ## Recommended Practice
 
 - use home templates for personal defaults

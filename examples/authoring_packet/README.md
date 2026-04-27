@@ -41,6 +41,7 @@ From the project root:
 ```bash
 bash examples/authoring_packet/setup.sh
 mix prompt_runner list examples/authoring_packet
+mix prompt_runner packet preflight examples/authoring_packet
 mix prompt_runner packet doctor examples/authoring_packet
 mix prompt_runner checklist sync examples/authoring_packet
 mix prompt_runner run examples/authoring_packet
