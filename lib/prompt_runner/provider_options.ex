@@ -36,12 +36,6 @@ defmodule PromptRunner.ProviderOptions do
       :output_schema,
       :additional_directories
     ],
-    gemini: [
-      :model,
-      :system_prompt,
-      :sandbox,
-      :extensions
-    ],
     amp: [
       :model,
       :mode,
@@ -49,6 +43,27 @@ defmodule PromptRunner.ProviderOptions do
       :permissions,
       :mcp_config,
       :tools
+    ],
+    cursor: [
+      :model,
+      :mode,
+      :sandbox,
+      :approve_mcps,
+      :worktree,
+      :worktree_base,
+      :skip_worktree_setup,
+      :plugin_dirs,
+      :headers
+    ],
+    antigravity: [
+      :model,
+      :sandbox,
+      :dangerously_skip_permissions,
+      :conversation,
+      :continue,
+      :add_dirs,
+      :print_timeout,
+      :log_file
     ]
   }
 
@@ -57,16 +72,18 @@ defmodule PromptRunner.ProviderOptions do
   @prompt_control_support %{
     claude: MapSet.new([:system_prompt, :append_system_prompt, :max_turns, :permission_mode]),
     codex: MapSet.new([:system_prompt, :permission_mode]),
-    gemini: MapSet.new([:system_prompt, :permission_mode]),
-    amp: MapSet.new([:permission_mode])
+    amp: MapSet.new([:permission_mode]),
+    cursor: MapSet.new([:permission_mode]),
+    antigravity: MapSet.new([:permission_mode])
   }
 
   @section_providers %{
     claude_opts: :claude,
     codex_opts: :codex,
     codex_thread_opts: :codex,
-    gemini_opts: :gemini,
-    amp_opts: :amp
+    amp_opts: :amp,
+    cursor_opts: :cursor,
+    antigravity_opts: :antigravity
   }
 
   @spec common_keys() :: [atom()]

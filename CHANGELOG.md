@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.0] - 2026-04-10
+## [0.7.0] - 2026-07-13
 
 ### Changed
 
@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `examples/single_repo_packet`
   - `examples/multi_repo_packet`
 - Rewrote the README, guides, and HexDocs menu around the packet/profile model.
+- Aligned the public provider surface with `agent_session_manager ~> 0.10.0`:
+  Claude, Codex, Amp, Cursor, and Antigravity. Gemini CLI support is retired;
+  Antigravity is the Google coding-agent provider, while `gemini_ex` remains a
+  distinct model API SDK.
+- Added validated `cursor_opts` and `antigravity_opts` packet and prompt
+  sections, plus common-runtime coverage for all five ASM providers.
+- Raised the Elixir requirement to `~> 1.19` to match the ASM dependency floor.
 
 ### Fixed
 
@@ -42,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scope when entries omit an explicit `repo`.
 - Packet runtime state now serializes common result tuples into readable JSON
   maps instead of opaque tuple placeholders.
+- Hex packaging now uses an explicit shipped-example allowlist, excluding
+  generated repos, workspaces, logs, runtime state, and nested Git data.
 
 ## [0.6.1] - 2026-04-09
 

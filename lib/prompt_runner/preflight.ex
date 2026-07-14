@@ -101,10 +101,17 @@ defmodule PromptRunner.Preflight do
       errors: []
     }
 
-    cond do
-      path in [nil, ""] ->
-        %{base | errors: [%{kind: "missing_path"}]}
+    repo_check_path(base, path)
+  end
 
+  defp repo_check(_repo), do: repo_check(%{name: "unnamed", path: nil})
+
+  defp repo_check_path(base, path) when path in [nil, ""] do
+    %{base | errors: [%{kind: "missing_path"}]}
+  end
+
+  defp repo_check_path(base, path) do
+    cond do
       not File.exists?(path) ->
         %{base | path: path, errors: [%{kind: "path_not_found"}]}
 
@@ -112,33 +119,36 @@ defmodule PromptRunner.Preflight do
         %{base | exists?: true, errors: [%{kind: "not_a_directory"}]}
 
       true ->
-        case git_repo_status(path) do
-          :ok ->
-            %{base | exists?: true, directory?: true, git?: true, ready?: true}
-
-          {:error, reason} ->
-            %{base | exists?: true, directory?: true, errors: [%{kind: Atom.to_string(reason)}]}
-        end
+        repo_check_git(base, path)
     end
   end
 
-  defp repo_check(_repo), do: repo_check(%{name: "unnamed", path: nil})
+  defp repo_check_git(base, path) do
+    case git_repo_status(path) do
+      :ok ->
+        %{base | exists?: true, directory?: true, git?: true, ready?: true}
+
+      {:error, reason} ->
+        %{base | exists?: true, directory?: true, errors: [%{kind: Atom.to_string(reason)}]}
+    end
+  end
 
   defp git_repo_status(path) do
     case System.find_executable("git") do
-      nil ->
-        {:error, :git_unavailable}
+      nil -> {:error, :git_unavailable}
+      git -> git_worktree_status(git, path)
+    end
+  end
 
-      git ->
-        case System.cmd(git, ["-C", path, "rev-parse", "--is-inside-work-tree"],
-               stderr_to_stdout: true
-             ) do
-          {output, 0} ->
-            if String.trim(output) == "true", do: :ok, else: {:error, :not_git_repo}
+  defp git_worktree_status(git, path) do
+    case System.cmd(git, ["-C", path, "rev-parse", "--is-inside-work-tree"],
+           stderr_to_stdout: true
+         ) do
+      {output, 0} ->
+        if String.trim(output) == "true", do: :ok, else: {:error, :not_git_repo}
 
-          {_output, _exit_code} ->
-            {:error, :not_git_repo}
-        end
+      {_output, _exit_code} ->
+        {:error, :not_git_repo}
     end
   end
 

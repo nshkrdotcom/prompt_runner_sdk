@@ -219,6 +219,75 @@ defmodule PromptRunner.PacketTest do
     assert llm.codex_thread_opts.additional_directories == [extra]
   end
 
+  test "packet planning preserves Cursor and Antigravity option sections" do
+    root = FSHelpers.tmp_dir("prompt_runner_packet_root")
+    repo = FSHelpers.git_repo!("prompt_runner_packet_repo")
+    on_exit(fn -> File.rm_rf!(root) end)
+    on_exit(fn -> File.rm_rf!(repo) end)
+
+    assert {:ok, packet} = Packet.new("provider-surface", root: root)
+
+    File.write!(
+      packet.manifest_path,
+      """
+      ---
+      name: "provider-surface"
+      provider: "cursor"
+      model: "composer"
+      sdk_opts:
+        debug: true
+      cursor_opts:
+        mode: "plan"
+        approve_mcps: true
+      antigravity_opts:
+        sandbox: true
+        add_dirs:
+          - "#{repo}"
+      repos:
+        app:
+          path: "#{repo}"
+          default: true
+      ---
+      # Provider Surface
+      """
+    )
+
+    File.write!(
+      Path.join([packet.root, "prompts", "01_run_antigravity.prompt.md"]),
+      """
+      ---
+      id: "01"
+      phase: 1
+      name: "Run Antigravity"
+      targets:
+        - "app"
+      commit: "chore: run antigravity"
+      provider: "antigravity"
+      model: "default"
+      antigravity_opts:
+        conversation: "conversation-1"
+      verify:
+        files_exist:
+          - "hello.txt"
+      ---
+      # Run Antigravity
+      """
+    )
+
+    assert {:ok, plan} = PromptRunner.plan(packet.root, interface: :cli)
+    assert plan.config.llm_sdk == :cursor
+    assert plan.config.sdk_opts == %{"debug" => true}
+    assert plan.config.cursor_opts == %{"approve_mcps" => true, "mode" => "plan"}
+    assert plan.config.antigravity_opts["sandbox"] == true
+
+    llm = Config.llm_for_prompt(plan.config, hd(plan.prompts))
+
+    assert llm.provider == :antigravity
+    assert llm.model == "default"
+    assert llm.antigravity_opts["sandbox"] == true
+    assert llm.antigravity_opts["conversation"] == "conversation-1"
+  end
+
   test "doctor reports authoring readiness warnings" do
     root = FSHelpers.tmp_dir("prompt_runner_packet_root")
     repo = FSHelpers.git_repo!("prompt_runner_packet_repo")

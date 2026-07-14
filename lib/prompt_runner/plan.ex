@@ -132,7 +132,7 @@ defmodule PromptRunner.Plan do
   end
 
   defp resolved_config(opts, result, llm_sdk, model) do
-    config_dir = Paths.resolve(result.source_root || File.cwd!())
+    config_dir = resolved_config_dir(result.source_root)
     target_repos = resolve_target_repos(opts, result, config_dir)
     project_dir = default_project_dir(target_repos, result, config_dir)
     {log_mode, log_meta, events_mode, tool_output} = normalize_display(opts)
@@ -151,11 +151,18 @@ defmodule PromptRunner.Plan do
       prompt_overrides: normalize_prompt_overrides(opts[:prompt_overrides]),
       allowed_tools: opts[:allowed_tools],
       permission_mode: PermissionMode.normalize(opts[:permission_mode], llm_sdk),
-      adapter_opts: opts[:adapter_opts] || %{},
-      claude_opts: opts[:claude_opts] || %{},
-      codex_opts: opts[:codex_opts] || %{},
-      codex_thread_opts: opts[:codex_thread_opts] || %{},
-      cli_confirmation: opts[:cli_confirmation] || :warn,
+      sdk_opts: option_or_default(opts, :sdk_opts, %{}),
+      adapter_opts: option_or_default(opts, :adapter_opts, %{}),
+      claude_opts: option_or_default(opts, :claude_opts, %{}),
+      codex_opts: option_or_default(opts, :codex_opts, %{}),
+      codex_thread_opts: option_or_default(opts, :codex_thread_opts, %{}),
+      amp_opts: option_or_default(opts, :amp_opts, %{}),
+      cursor_opts: option_or_default(opts, :cursor_opts, %{}),
+      antigravity_opts: option_or_default(opts, :antigravity_opts, %{}),
+      system_prompt: opts[:system_prompt],
+      append_system_prompt: opts[:append_system_prompt],
+      max_turns: opts[:max_turns],
+      cli_confirmation: option_or_default(opts, :cli_confirmation, :warn),
       timeout: opts[:timeout],
       log_mode: log_mode,
       log_meta: log_meta,
@@ -164,6 +171,11 @@ defmodule PromptRunner.Plan do
       phase_names: Map.get(result, :phase_names, %{})
     }
   end
+
+  defp resolved_config_dir(nil), do: Paths.resolve(File.cwd!())
+  defp resolved_config_dir(source_root), do: Paths.resolve(source_root)
+
+  defp option_or_default(opts, key, default), do: Map.get(opts, key) || default
 
   defp validate_permission_mode(nil, _provider), do: :ok
   defp validate_permission_mode(mode, :simulated), do: validate_simulated_permission_mode(mode)
@@ -475,12 +487,14 @@ defmodule PromptRunner.Plan do
     "reasoning_effort" => :reasoning_effort,
     "permission_mode" => :permission_mode,
     "allowed_tools" => :allowed_tools,
+    "sdk_opts" => :sdk_opts,
     "adapter_opts" => :adapter_opts,
     "claude_opts" => :claude_opts,
     "codex_opts" => :codex_opts,
     "codex_thread_opts" => :codex_thread_opts,
-    "gemini_opts" => :gemini_opts,
     "amp_opts" => :amp_opts,
+    "cursor_opts" => :cursor_opts,
+    "antigravity_opts" => :antigravity_opts,
     "system_prompt" => :system_prompt,
     "append_system_prompt" => :append_system_prompt,
     "max_turns" => :max_turns,
@@ -526,12 +540,14 @@ defmodule PromptRunner.Plan do
 
   defp normalize_option_value(key, value)
        when key in [
+              :sdk_opts,
               :adapter_opts,
               :claude_opts,
               :codex_opts,
               :codex_thread_opts,
-              :gemini_opts,
-              :amp_opts
+              :amp_opts,
+              :cursor_opts,
+              :antigravity_opts
             ] and
               is_map(value) do
     stringify_keys(value)

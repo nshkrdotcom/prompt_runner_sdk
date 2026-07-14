@@ -14,10 +14,13 @@ defmodule PromptRunner.LLMFacade do
     "claude_agent_sdk" => :claude,
     "codex" => :codex,
     "codex_sdk" => :codex,
-    "gemini" => :gemini,
-    "gemini_cli_sdk" => :gemini,
     "amp" => :amp,
     "amp_sdk" => :amp,
+    "cursor" => :cursor,
+    "cursor_agent" => :cursor,
+    "cursor_cli_sdk" => :cursor,
+    "antigravity" => :antigravity,
+    "antigravity_cli_sdk" => :antigravity,
     "simulated" => :simulated,
     "simulation" => :simulated
   }

@@ -30,7 +30,8 @@ mix prompt_runner packet new runtime-review \
 Why start with `simulated`? Because it lets you prove the packet shape and
 verification contracts without requiring any external CLI or credentials.
 
-Once the packet is solid, switch the provider to Codex, Claude, Gemini, or Amp.
+Once the packet is solid, switch the provider to Codex, Claude, Amp, Cursor,
+or Antigravity.
 
 ## 2. Put Source Material Inside The Packet
 

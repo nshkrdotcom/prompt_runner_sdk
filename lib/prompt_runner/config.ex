@@ -34,8 +34,9 @@ defmodule PromptRunner.Config do
           claude_opts: map(),
           codex_opts: map(),
           codex_thread_opts: map(),
-          gemini_opts: map(),
           amp_opts: map(),
+          cursor_opts: map(),
+          antigravity_opts: map(),
           system_prompt: String.t() | map() | nil,
           append_system_prompt: String.t() | nil,
           max_turns: pos_integer() | nil,
@@ -67,8 +68,9 @@ defmodule PromptRunner.Config do
     :claude_opts,
     :codex_opts,
     :codex_thread_opts,
-    :gemini_opts,
     :amp_opts,
+    :cursor_opts,
+    :antigravity_opts,
     :system_prompt,
     :append_system_prompt,
     :max_turns,
@@ -144,8 +146,9 @@ defmodule PromptRunner.Config do
           cwd,
           config.config_dir
         ),
-      gemini_opts: config.gemini_opts || %{},
       amp_opts: config.amp_opts || %{},
+      cursor_opts: config.cursor_opts || %{},
+      antigravity_opts: config.antigravity_opts || %{},
       system_prompt: config.system_prompt,
       append_system_prompt: config.append_system_prompt,
       max_turns: config.max_turns,
@@ -311,8 +314,10 @@ defmodule PromptRunner.Config do
       codex_thread_opts:
         coalesce([llm_section[:codex_thread_opts], config[:codex_thread_opts]], %{})
         |> normalize_codex_thread_opts(config_dir),
-      gemini_opts: coalesce([llm_section[:gemini_opts], config[:gemini_opts]], %{}),
       amp_opts: coalesce([llm_section[:amp_opts], config[:amp_opts]], %{}),
+      cursor_opts: coalesce([llm_section[:cursor_opts], config[:cursor_opts]], %{}),
+      antigravity_opts:
+        coalesce([llm_section[:antigravity_opts], config[:antigravity_opts]], %{}),
       system_prompt: coalesce([llm_section[:system_prompt], config[:system_prompt]], nil),
       append_system_prompt:
         coalesce([llm_section[:append_system_prompt], config[:append_system_prompt]], nil),
@@ -696,8 +701,9 @@ defmodule PromptRunner.Config do
     |> validate_provider_option_section(:claude_opts, config.claude_opts)
     |> validate_provider_option_section(:codex_opts, config.codex_opts)
     |> validate_provider_option_section(:codex_thread_opts, config.codex_thread_opts)
-    |> validate_provider_option_section(:gemini_opts, config.gemini_opts)
     |> validate_provider_option_section(:amp_opts, config.amp_opts)
+    |> validate_provider_option_section(:cursor_opts, config.cursor_opts)
+    |> validate_provider_option_section(:antigravity_opts, config.antigravity_opts)
     |> validate_root_prompt_controls(config)
     |> validate_prompt_override_option_sections(config.prompt_overrides || %{})
     |> validate_prompt_override_prompt_controls(config)
@@ -723,8 +729,13 @@ defmodule PromptRunner.Config do
         :codex_thread_opts,
         override[:codex_thread_opts]
       )
-      |> validate_prompt_override_option_section(prompt_num, :gemini_opts, override[:gemini_opts])
       |> validate_prompt_override_option_section(prompt_num, :amp_opts, override[:amp_opts])
+      |> validate_prompt_override_option_section(prompt_num, :cursor_opts, override[:cursor_opts])
+      |> validate_prompt_override_option_section(
+        prompt_num,
+        :antigravity_opts,
+        override[:antigravity_opts]
+      )
     end)
   end
 

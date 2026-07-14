@@ -73,8 +73,8 @@ defmodule PromptRunner.Phase5PrelimCommonRuntimeTest do
     assert {:ok, stream, close_fun, _meta} =
              Session.start_stream(
                %{
-                 provider: "gemini",
-                 model: model_for(:gemini),
+                 provider: "antigravity",
+                 model: model_for(:antigravity),
                  cwd: File.cwd!(),
                  permission_mode: :bypass
                },
@@ -98,17 +98,20 @@ defmodule PromptRunner.Phase5PrelimCommonRuntimeTest do
       {:codex, "phase5prelim://prompt-runner/codex",
        ~s({"type":"response.output_text.delta","delta":"codex prompt runner","session_id":"codex-pr"}\n),
        "codex prompt runner"},
-      {:gemini, "phase5prelim://prompt-runner/gemini",
-       ~s({"type":"message","role":"assistant","delta":true,"content":"gemini prompt runner","session_id":"gemini-pr"}\n),
-       "gemini prompt runner"},
       {:amp, "phase5prelim://prompt-runner/amp",
        ~s({"type":"message_streamed","delta":"amp prompt runner","session_id":"amp-pr"}\n),
-       "amp prompt runner"}
+       "amp prompt runner"},
+      {:cursor, "phase5prelim://prompt-runner/cursor",
+       ~s({"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"cursor prompt runner"}]},"session_id":"cursor-pr","timestamp_ms":1001}\n),
+       "cursor prompt runner"},
+      {:antigravity, "phase5prelim://prompt-runner/antigravity", "antigravity prompt runner\n",
+       "antigravity prompt runner"}
     ]
   end
 
   defp model_for(:claude), do: "sonnet"
   defp model_for(:codex), do: "gpt-5.4"
-  defp model_for(:gemini), do: "gemini-2.5-pro"
   defp model_for(:amp), do: "amp-1"
+  defp model_for(:cursor), do: "composer"
+  defp model_for(:antigravity), do: "default"
 end

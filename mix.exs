@@ -8,7 +8,7 @@ defmodule PromptRunner.MixProject do
     [
       app: :prompt_runner_sdk,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -35,7 +35,7 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      local_dev_or_hex_dep(:agent_session_manager, "~> 0.9.2", "../agent_session_manager"),
+      local_dev_or_hex_dep(:agent_session_manager, "~> 0.10.0", "../agent_session_manager"),
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.11"},
       {:mox, "~> 1.1", only: :test},
@@ -227,28 +227,31 @@ defmodule PromptRunner.MixProject do
     [
       name: "prompt_runner_sdk",
       description: description(),
-      files:
-        ~w(lib guides examples assets mix.exs README.md CHANGELOG.md LICENSE run_prompts.exs),
+      files: ~w(
+          lib
+          guides
+          assets
+          mix.exs
+          README.md
+          CHANGELOG.md
+          LICENSE
+          run_prompts.exs
+          examples/README.md
+          examples/*_packet/README.md
+          examples/*_packet/setup.sh
+          examples/*_packet/cleanup.sh
+          examples/*_packet/prompt_runner_packet.md
+          examples/*_packet/prompts/*.prompt.md
+          examples/*_packet/prompts/*.checklist.md
+          examples/authoring_packet/docs/*.md
+          examples/authoring_packet/templates/*.md
+        ),
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
         "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"
       },
-      maintainers: ["nshkrdotcom"],
-      exclude_patterns: [
-        "examples/**/.prompt_runner",
-        "examples/**/.prompt_runner/**",
-        "examples/**/workspace",
-        "examples/**/workspace/**",
-        "examples/**/repos",
-        "examples/**/repos/**",
-        "examples/**/logs",
-        "examples/**/logs/**",
-        "examples/**/.progress",
-        "examples/**/.git",
-        "priv/plts",
-        ".DS_Store"
-      ]
+      maintainers: ["nshkrdotcom"]
     ]
   end
 end

@@ -990,6 +990,33 @@ defmodule PromptRunner.RunnerTest do
               }} = Runner.check_provider_runtime(:amp)
     end
 
+    test "returns ASM core-lane runtime info for :cursor" do
+      assert {:ok,
+              %{
+                provider: :cursor,
+                lane: :core,
+                cli_command: "agent",
+                cli_path_env: "CURSOR_CLI_PATH",
+                core_profile_id: :cursor
+              }} = Runner.check_provider_runtime(:cursor)
+    end
+
+    test "returns ASM core-lane runtime info for :antigravity" do
+      assert {:ok,
+              %{
+                provider: :antigravity,
+                lane: :core,
+                cli_command: "agy",
+                cli_path_env: "ANTIGRAVITY_CLI_PATH",
+                core_profile_id: :antigravity
+              }} = Runner.check_provider_runtime(:antigravity)
+    end
+
+    test "keeps retired Gemini aliases outside the provider registry" do
+      assert {:ok, nil} = Runner.check_provider_runtime(:gemini)
+      assert {:ok, nil} = Runner.check_provider_runtime(:gemini_cli_sdk)
+    end
+
     test "returns ok nil for unknown provider" do
       assert {:ok, nil} = Runner.check_provider_runtime(:unknown_provider)
     end

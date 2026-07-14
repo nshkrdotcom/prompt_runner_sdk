@@ -85,11 +85,13 @@ Shared execution keys:
 Provider-specific keys:
 
 - `adapter_opts`
+- `sdk_opts`
 - `claude_opts`
 - `codex_opts`
 - `codex_thread_opts`
-- `gemini_opts`
 - `amp_opts`
+- `cursor_opts`
+- `antigravity_opts`
 - `system_prompt`
 - `append_system_prompt`
 - `max_turns`
@@ -160,12 +162,14 @@ Prompt-local execution overrides:
 - `permission_mode`
 - `recovery`
 - `allowed_tools`
+- `sdk_opts`
 - `adapter_opts`
 - `claude_opts`
 - `codex_opts`
 - `codex_thread_opts`
-- `gemini_opts`
 - `amp_opts`
+- `cursor_opts`
+- `antigravity_opts`
 - `cli_confirmation`
 - `timeout`
 - `system_prompt`

@@ -24,8 +24,12 @@ Set the CLI credentials your chosen provider expects:
 |----------|---------|
 | Claude | `ANTHROPIC_API_KEY` |
 | Codex | `OPENAI_API_KEY` |
-| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | Amp | `AMP_API_KEY` |
+| Cursor | native `agent` login or inherited `CURSOR_API_KEY` |
+| Antigravity | native `agy` login or inherited `ANTIGRAVITY_API_KEY` |
+
+Gemini CLI support is retired. Antigravity is the current Google coding-agent
+provider; `gemini_ex` is a separate model API SDK.
 
 For local recovery demos, you can skip provider credentials entirely and use
 the built-in `simulated` provider.

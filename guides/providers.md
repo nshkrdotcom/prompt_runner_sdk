@@ -9,8 +9,9 @@ Supported providers:
 |----------|-----|-------------|
 | Claude | `:claude` | `claude` |
 | Codex | `:codex` | `codex` |
-| Gemini | `:gemini` | `gemini` |
 | Amp | `:amp` | `amp` |
+| Cursor | `:cursor` | `agent` |
+| Antigravity | `:antigravity` | `agy` |
 | Simulated | `:simulated` | built in |
 
 Prompt Runner always starts ASM sessions with `lane: :core`, so host
@@ -42,7 +43,7 @@ recovery demos:
 
 ## Shared Provider Knobs
 
-These packet or prompt keys work across providers:
+These packet or prompt keys are shared across providers:
 
 - `provider`
 - `model`
@@ -52,6 +53,10 @@ These packet or prompt keys work across providers:
 - `system_prompt`
 - `append_system_prompt`
 - `max_turns`
+
+Provider support for `system_prompt`, `append_system_prompt`, and `max_turns`
+is validated before launch; unsupported controls fail configuration instead
+of being silently ignored.
 
 Normalized shared permission modes:
 
@@ -71,8 +76,17 @@ surface supports them:
 - `claude_opts`
 - `codex_opts`
 - `codex_thread_opts`
-- `gemini_opts`
 - `amp_opts`
+- `cursor_opts`
+- `antigravity_opts`
+
+Cursor and Antigravity accept only the option keys exposed by their current
+ASM core profiles. Unsupported keys fail during config validation instead of
+being forwarded as arbitrary CLI flags.
+
+Gemini CLI support is retired. Use Antigravity for Google's coding-agent CLI.
+The `gemini_ex` package is a distinct model API SDK, not an alias for this
+provider surface.
 
 Codex-only thread settings belong in `codex_thread_opts`, for example:
 

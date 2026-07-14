@@ -39,7 +39,8 @@ The same runtime is exposed through public Elixir modules and the CLI.
   structured recovery envelopes
 - zero-dependency simulation for retry, repair, and resume demos
 - public packet/profile/runtime APIs plus matching CLI commands
-- Claude, Codex, Gemini, and Amp support through `agent_session_manager`
+- Claude, Codex, Amp, Cursor, and Antigravity support through
+  `agent_session_manager`
 - no direct provider SDK dependencies required in host applications
 
 ## Installation
@@ -57,8 +58,12 @@ mix deps.get
 ```
 
 Prompt Runner is an explicit `agent_session_manager` core-lane client. Host
-projects do not need `codex_sdk`, `claude_agent_sdk`, `gemini_cli_sdk`, or
-`amp_sdk` just to use Prompt Runner.
+projects do not need `codex_sdk`, `claude_agent_sdk`, `amp_sdk`,
+`cursor_cli_sdk`, or `antigravity_cli_sdk` just to use Prompt Runner.
+
+`gemini_cli_sdk` is retired. Antigravity is the Google coding-agent provider;
+`gemini_ex` remains a separate model API SDK and is not a Prompt Runner coding
+agent provider.
 
 For recovery demos and onboarding, Prompt Runner also ships a built-in
 `simulated` provider that requires no external CLI or API credentials.
@@ -350,17 +355,17 @@ mix credo --strict
 mix docs
 ```
 
-For sibling-repo development against a local checkout of
-`agent_session_manager`, opt in explicitly:
+For sibling-repo development, Prompt Runner automatically selects local
+checkouts of `agent_session_manager` and `cli_subprocess_core` when they are
+present next to this repository:
 
 ```bash
-PROMPT_RUNNER_USE_LOCAL_DEPS=1 mix deps.get
-PROMPT_RUNNER_USE_LOCAL_DEPS=1 mix test
+mix deps.get
+mix test
 ```
 
-Hex remains the default dependency source. `mix hex.build` and
-`mix hex.publish` ignore that local-deps opt-in so package metadata stays
-Hex-clean.
+Hex packaging tasks always select the declared Hex dependency and omit the
+local-only CLI core override, so package metadata stays Hex-clean.
 
 ## License
 

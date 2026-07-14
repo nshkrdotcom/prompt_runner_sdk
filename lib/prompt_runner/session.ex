@@ -850,14 +850,13 @@ defmodule PromptRunner.Session do
     end
   end
 
-  defp provider_opts(:gemini, llm_config) do
-    with {:ok, _cwd} <- require_cwd(llm_config, :gemini) do
+  defp provider_opts(:cursor, llm_config) do
+    with {:ok, _cwd} <- require_cwd(llm_config, :cursor) do
       provider_opts_from_sections(
         llm_config,
-        ProviderOptions.keys_for(:gemini),
+        ProviderOptions.keys_for(:cursor),
         []
         |> maybe_put(:model, llm_config[:model])
-        |> maybe_put(:system_prompt, llm_config[:system_prompt])
       )
     end
   end
@@ -867,6 +866,17 @@ defmodule PromptRunner.Session do
       provider_opts_from_sections(
         llm_config,
         ProviderOptions.keys_for(:amp),
+        []
+        |> maybe_put(:model, llm_config[:model])
+      )
+    end
+  end
+
+  defp provider_opts(:antigravity, llm_config) do
+    with {:ok, _cwd} <- require_cwd(llm_config, :antigravity) do
+      provider_opts_from_sections(
+        llm_config,
+        ProviderOptions.keys_for(:antigravity),
         []
         |> maybe_put(:model, llm_config[:model])
       )
@@ -905,8 +915,9 @@ defmodule PromptRunner.Session do
       case normalize_provider(llm_config) do
         {:ok, :claude} -> [llm_config[:claude_opts]]
         {:ok, :codex} -> [llm_config[:codex_opts], llm_config[:codex_thread_opts]]
-        {:ok, :gemini} -> [llm_config[:gemini_opts]]
         {:ok, :amp} -> [llm_config[:amp_opts]]
+        {:ok, :cursor} -> [llm_config[:cursor_opts]]
+        {:ok, :antigravity} -> [llm_config[:antigravity_opts]]
         _ -> []
       end
 
@@ -1011,8 +1022,11 @@ defmodule PromptRunner.Session do
     candidate = llm_config[:provider] || llm_config[:sdk]
 
     case LLMFacade.normalize_provider(candidate) do
-      provider when provider in [:claude, :codex, :gemini, :amp] -> {:ok, provider}
-      {:error, reason} -> {:error, reason}
+      provider when provider in [:claude, :codex, :amp, :cursor, :antigravity] ->
+        {:ok, provider}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
