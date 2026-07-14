@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `examples/single_repo_packet`
   - `examples/multi_repo_packet`
 - Rewrote the README, guides, and HexDocs menu around the packet/profile model.
+- Standardized the release README badges and Hex/HexDocs package metadata.
 - Aligned the public provider surface with `agent_session_manager ~> 0.10.0`:
   Claude, Codex, Amp, Cursor, and Antigravity. Gemini CLI support is retired;
   Antigravity is the Google coding-agent provider, while `gemini_ex` remains a

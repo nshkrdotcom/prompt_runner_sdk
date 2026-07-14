@@ -3,6 +3,8 @@ defmodule PromptRunner.MixProject do
 
   @version "0.7.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
+  @homepage_url "https://hex.pm/packages/prompt_runner_sdk"
+  @docs_url "https://hexdocs.pm/prompt_runner_sdk"
 
   def project do
     [
@@ -19,7 +21,7 @@ defmodule PromptRunner.MixProject do
       package: package(),
       name: "PromptRunnerSDK",
       source_url: @source_url,
-      homepage_url: @source_url
+      homepage_url: @homepage_url
     ]
   end
 
@@ -94,7 +96,7 @@ defmodule PromptRunner.MixProject do
       name: "PromptRunnerSDK",
       source_ref: "v#{@version}",
       source_url: @source_url,
-      homepage_url: @source_url,
+      homepage_url: @docs_url,
       assets: %{"assets" => "assets"},
       logo: "assets/prompt_runner_sdk.svg",
       extras: [
@@ -248,8 +250,11 @@ defmodule PromptRunner.MixProject do
         ),
       licenses: ["MIT"],
       links: %{
+        "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md",
         "GitHub" => @source_url,
-        "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"
+        "Hex" => @homepage_url,
+        "HexDocs" => @docs_url,
+        "License" => "#{@source_url}/blob/main/LICENSE"
       },
       maintainers: ["nshkrdotcom"]
     ]

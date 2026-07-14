@@ -9,8 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://hex.pm/packages/prompt_runner_sdk"><img src="https://img.shields.io/hexpm/v/prompt_runner_sdk.svg" alt="Hex.pm"></a>
-  <a href="https://hexdocs.pm/prompt_runner_sdk"><img src="https://img.shields.io/badge/docs-hexdocs-blue.svg" alt="Documentation"></a>
+  <a href="https://github.com/nshkrdotcom/prompt_runner_sdk"><img src="https://img.shields.io/badge/GitHub-nshkrdotcom%2Fprompt__runner__sdk-181717?logo=github" alt="GitHub"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
 </p>
 

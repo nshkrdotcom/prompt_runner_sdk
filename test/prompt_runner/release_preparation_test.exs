@@ -21,4 +21,35 @@ defmodule PromptRunner.ReleasePreparationTest do
     assert {:agent_session_manager, "~> 0.10.0", _opts} =
              List.keyfind(project[:deps], :agent_session_manager, 0)
   end
+
+  test "Hex metadata and documentation use the release presentation assets" do
+    project = Mix.Project.config()
+    package = project[:package]
+    docs = project[:docs]
+
+    assert project[:homepage_url] == "https://hex.pm/packages/prompt_runner_sdk"
+    assert docs[:homepage_url] == "https://hexdocs.pm/prompt_runner_sdk"
+    assert docs[:logo] == "assets/prompt_runner_sdk.svg"
+    assert docs[:assets] == %{"assets" => "assets"}
+
+    assert package[:links] == %{
+             "Changelog" =>
+               "https://github.com/nshkrdotcom/prompt_runner_sdk/blob/main/CHANGELOG.md",
+             "GitHub" => "https://github.com/nshkrdotcom/prompt_runner_sdk",
+             "Hex" => "https://hex.pm/packages/prompt_runner_sdk",
+             "HexDocs" => "https://hexdocs.pm/prompt_runner_sdk",
+             "License" => "https://github.com/nshkrdotcom/prompt_runner_sdk/blob/main/LICENSE"
+           }
+  end
+
+  test "README has the centered 200px logo and exactly the GitHub and MIT badges" do
+    readme = File.read!(Path.expand("../../README.md", __DIR__))
+
+    assert readme =~
+             ~s(<img src="assets/prompt_runner_sdk.svg" alt="Prompt Runner SDK" width="200" height="200">)
+
+    assert readme =~ ~s(href="https://github.com/nshkrdotcom/prompt_runner_sdk")
+    assert readme =~ ~s(href="LICENSE")
+    assert length(Regex.scan(~r/img\.shields\.io/, readme)) == 2
+  end
 end
