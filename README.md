@@ -14,9 +14,9 @@
 </p>
 
 Prompt Runner SDK executes packetized prompt workflows against local
-repositories. This README targets `prompt_runner_sdk ~> 0.7.0`.
+repositories. This README targets `prompt_runner_sdk ~> 0.8.0`.
 
-`0.7.0` is a breaking redesign:
+The packet-first design introduced in `0.7.0` carries forward unchanged:
 
 - packets replace duplicated control files
 - profiles replace ad hoc global defaults
@@ -24,6 +24,10 @@ repositories. This README targets `prompt_runner_sdk ~> 0.7.0`.
 - policy-driven retry, repair, and resume are built into the runtime
 - a built-in simulated provider can prove recovery behavior without any
   external provider CLI
+
+`0.8.0` moves the runtime onto `agent_session_manager ~> 0.12.1` and
+`cli_subprocess_core ~> 0.4.1`, and publishes the normalized option surface
+those releases added. See the [CHANGELOG](CHANGELOG.md) for the full list.
 
 The same runtime is exposed through public Elixir modules and the CLI.
 
@@ -47,7 +51,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.7.0"}
+    {:prompt_runner_sdk, "~> 0.8.0"}
   ]
 end
 ```
@@ -351,20 +355,47 @@ Use any of these:
 mix test
 mix format
 mix credo --strict
+mix dialyzer
 mix docs
 ```
 
-For sibling-repo development, Prompt Runner automatically selects local
-checkouts of `agent_session_manager` and `cli_subprocess_core` when they are
-present next to this repository:
+### Dependency Sources
+
+`agent_session_manager` and `cli_subprocess_core` resolve through the shared
+`build_support/dependency_sources.exs` helper, the same one vendored by the
+other repositories in this stack. Sibling checkouts win automatically when
+they exist next to this repository, then GitHub, then Hex:
+
+```bash
+mix deps.sources
+# dependency sources:
+#   agent_session_manager -> path (../agent_session_manager) -> 0.12.1
+#   cli_subprocess_core -> path (../cli_subprocess_core) -> 0.4.1
+```
+
+To resolve against the published releases instead — which is what you want
+before packaging, and what CI sees — create a local, gitignored override:
+
+```elixir
+# .dependency_sources.local.exs
+%{
+  deps: %{
+    agent_session_manager: %{source: :hex},
+    cli_subprocess_core: %{source: :hex}
+  }
+}
+```
 
 ```bash
 mix deps.get
 mix test
+mix hex.build
 ```
 
-Hex packaging tasks always select the declared Hex dependency and omit the
-local-only CLI core override, so package metadata stays Hex-clean.
+Packaging tasks (`hex.build`, `hex.publish`, `hex.package`) always resolve Hex
+sources regardless of the override, so package metadata stays Hex-clean. Note
+that the two modes share `deps/` and `mix.lock`, so re-run `mix deps.get`
+after switching. Delete the override file to return to sibling checkouts.
 
 ## License
 

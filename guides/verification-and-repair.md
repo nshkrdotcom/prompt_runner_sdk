@@ -1,6 +1,6 @@
 # Verification And Repair
 
-Prompt Runner 0.7.0 treats deterministic verification as the source of truth
+Prompt Runner 0.8.0 treats deterministic verification as the source of truth
 for prompt completion.
 
 ## Contract Keys

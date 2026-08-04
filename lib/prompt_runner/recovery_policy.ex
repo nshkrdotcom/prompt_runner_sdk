@@ -96,9 +96,6 @@ defmodule PromptRunner.RecoveryPolicy do
       ) ->
         {:repair, report, reason, failure}
 
-      report.pass? and verification_override_allowed?(failure, report) ->
-        {:complete, true, failure}
-
       true ->
         provider_failure_result(reason, failure)
     end

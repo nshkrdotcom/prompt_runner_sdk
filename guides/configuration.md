@@ -1,6 +1,6 @@
 # Packet Manifest Reference
 
-Prompt Runner 0.7.0 uses two primary authoring files:
+Prompt Runner 0.8.0 uses two primary authoring files:
 
 - `prompt_runner_packet.md`
 - `*.prompt.md`
@@ -96,6 +96,12 @@ Provider-specific keys:
 - `append_system_prompt`
 - `max_turns`
 - `cli_confirmation`
+
+Every provider option map also accepts the normalized common options
+(`allow_unknown_model`, `completion_only`, `output_schema`,
+`transport_headless_timeout_ms`). See the
+[Provider Guide](providers.md) for which providers support each one at
+runtime.
 
 ## Prompt Front Matter
 
@@ -196,7 +202,7 @@ recovery:
 
 ## Completion Contract Keys
 
-Prompt Runner 0.7.0 supports:
+Prompt Runner 0.8.0 supports:
 
 - `files_exist`
 - `files_absent`

@@ -47,4 +47,42 @@ defmodule PromptRunner.ProviderSurfaceTest do
                log_file: "/tmp/agy.log"
              })
   end
+
+  test "accepts the ASM 0.12 normalized common options on every provider" do
+    common = %{
+      allow_unknown_model: true,
+      completion_only: true,
+      output_schema: %{"type" => "object"},
+      transport_headless_timeout_ms: 5_000
+    }
+
+    for section <- [:claude_opts, :codex_opts, :amp_opts, :cursor_opts, :antigravity_opts] do
+      assert :ok = ProviderOptions.validate_section(section, common),
+             "expected #{section} to accept the normalized common options"
+    end
+  end
+
+  test "accepts Claude reasoning effort and the Codex app-server surface" do
+    assert :ok =
+             ProviderOptions.validate_section(:claude_opts, %{
+               model: "sonnet",
+               reasoning_effort: :high,
+               include_thinking: true
+             })
+
+    assert :ok =
+             ProviderOptions.validate_section(:codex_opts, %{
+               model: "gpt-5.4-mini",
+               reasoning_effort: :low,
+               app_server: true,
+               host_tools: [],
+               dynamic_tools: [],
+               reviewed_approval: %{}
+             })
+  end
+
+  test "still rejects an option that no provider schema publishes" do
+    assert {:error, {:unsupported_provider_option, :not_a_real_option}} =
+             ProviderOptions.validate_section(:claude_opts, %{not_a_real_option: true})
+  end
 end

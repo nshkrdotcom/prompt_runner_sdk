@@ -1,7 +1,7 @@
 # Provider Guide
 
 Prompt Runner delegates provider execution to `agent_session_manager`.
-This guide targets `prompt_runner_sdk ~> 0.7.0`.
+This guide targets `prompt_runner_sdk ~> 0.8.0`.
 
 Supported providers:
 
@@ -65,8 +65,28 @@ Normalized shared permission modes:
 - `bypass`
 - `plan`
 
-Codex currently rejects shared `permission_mode: auto`, so use `default`,
-`bypass`, or `plan` for Codex packets.
+Not every provider accepts every mode. Prompt Runner delegates the decision to
+`ASM.Permission.normalize/2`, so an unsupported pairing fails at config load
+with `{:invalid_permission_mode, provider, mode}` rather than at launch. On
+`agent_session_manager ~> 0.12.1`, Cursor and Antigravity reject `auto`, and
+Antigravity additionally rejects `plan`.
+
+## Normalized Common Options
+
+ASM 0.11/0.12 promoted several formerly provider-local settings to normalized
+options that every provider schema accepts structurally and that are gated at
+runtime by the provider's common-feature manifest. Prompt Runner accepts them
+in any provider option map:
+
+- `allow_unknown_model` — let a model newer than the shared registry through
+  to the CLI instead of failing validation
+- `completion_only` — a no-write, no-approval posture; supported by Claude and
+  Codex, and rejected with a typed capability error by Amp, Antigravity, and
+  Cursor
+- `output_schema` — structured output, gated by the `structured_output`
+  capability (Claude sends an inline JSON schema, Codex a schema file path)
+- `transport_headless_timeout_ms` — the finite bound used to reap an orphaned
+  transport, independent of stream idle timeout
 
 ## Provider-Specific Option Maps
 
@@ -99,6 +119,23 @@ codex_thread_opts:
 
 Do not put raw unsupported CLI flags such as `sandbox` or `ask_for_approval`
 under `codex_thread_opts`.
+
+Claude accepts `reasoning_effort` as of `agent_session_manager ~> 0.12.1`; it
+resolves through the shared model registry the same way Codex's does.
+`include_thinking` remains the separate control for thinking output:
+
+```yaml
+claude_opts:
+  reasoning_effort: "high"
+  include_thinking: true
+```
+
+Codex additionally exposes its app-server surface through `codex_opts`:
+
+- `app_server`
+- `host_tools`
+- `dynamic_tools`
+- `reviewed_approval`
 
 ## Simulated Provider
 

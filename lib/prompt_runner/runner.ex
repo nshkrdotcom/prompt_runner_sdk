@@ -1046,7 +1046,7 @@ defmodule PromptRunner.Runner do
           Process.get(:prompt_runner_cli_confirmation_audit, %{})
           |> Map.put(:confirmed_model, model)
           |> Map.put(:confirmed_reasoning_effort, to_string(reasoning_effort))
-          |> Map.put(:confirmation_source, confirmation.source || "codex_cli.run_started")
+          |> Map.put(:confirmation_source, confirmation.source)
 
         Process.put(:prompt_runner_cli_confirmation_printed, true)
         Process.put(:prompt_runner_cli_confirmation_audit, audit)
@@ -1062,7 +1062,7 @@ defmodule PromptRunner.Runner do
         audit =
           Process.get(:prompt_runner_cli_confirmation_audit, %{})
           |> Map.put(:confirmed_model, model)
-          |> Map.put(:confirmation_source, confirmation.source || "codex_cli.run_started")
+          |> Map.put(:confirmation_source, confirmation.source)
 
         Process.put(:prompt_runner_cli_confirmation_audit, audit)
 
@@ -1269,8 +1269,6 @@ defmodule PromptRunner.Runner do
       provider_runtime_info(provider)
     end
   end
-
-  defp preflight_llm_provider(_), do: {:ok, nil}
 
   defp provider_runtime_info(provider) when is_atom(provider) do
     if provider == :simulated do

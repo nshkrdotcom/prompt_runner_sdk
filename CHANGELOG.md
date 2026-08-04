@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-03
+
+### Added
+
+- A live Claude provider example, `examples/claude_packet/`. It runs the same
+  two prompts as `examples/single_repo_packet/` (Codex), so the pair is the
+  shortest demonstration that a packet is provider-portable. Both were
+  verified against their real CLIs for this release.
+- The normalized common option surface introduced by
+  `agent_session_manager` 0.11/0.12, accepted in every provider option map and
+  gated at runtime by the provider's common-feature manifest:
+  - `allow_unknown_model`
+  - `completion_only`
+  - `output_schema`
+  - `transport_headless_timeout_ms`
+- `reasoning_effort` for Claude, which resolves through the shared model
+  registry the same way Codex's does. `include_thinking` remains the separate
+  control for thinking output.
+- The Codex app-server option surface in `codex_opts`: `app_server`,
+  `host_tools`, `dynamic_tools`, and `reviewed_approval`.
+- `mix deps.sources`, plus a `publish_preflight` regression test that fails
+  when a committed Hex constraint cannot admit the sibling checkout it was
+  developed against.
+
+### Changed
+
+- Moved dependency resolution onto the shared
+  `build_support/dependency_sources.exs` helper (v7) vendored by the rest of
+  this stack, replacing the bespoke `local_dev_or_hex_dep` selection in
+  `mix.exs`. Sibling checkouts still win automatically, and a gitignored
+  `.dependency_sources.local.exs` can now force Hex resolution — which is what
+  makes `mix deps.get` fetch the packages that `mix hex.publish` requires.
+- Raised the runtime floor to `agent_session_manager ~> 0.12.1` and
+  `cli_subprocess_core ~> 0.4.1`. `cli_subprocess_core` is now a declared
+  dependency rather than a local-only override, matching the fact that
+  `PromptRunner.Session` consumes `CliSubprocessCore.Payload` directly.
+- Refreshed the remaining dependencies: `ex_doc ~> 0.40.3`,
+  `yaml_elixir ~> 2.12`, `mox ~> 1.2`, and `credo ~> 1.7.19`. The Credo floor
+  is deliberate: 1.7.16 and earlier crash tokenizing Elixir 1.20 sigils.
+- `output_schema` is no longer a Codex-local option. It is a normalized option
+  gated by the `structured_output` capability, so Claude can request it too.
+- Permission-mode validation is documented as capability-derived rather than
+  hardcoded per provider, since the supported set moves with ASM.
+
+### Fixed
+
+- `mix hex.publish` could not run from a workspace checkout. `mix.lock` still
+  pinned the stale `agent_session_manager 0.10.0` entry — which requires
+  `cursor_cli_sdk`, a dependency ASM 0.12 dropped — and nothing in the old
+  dependency selection could fetch the Hex packages that packaging needs. The
+  lock is regenerated from a real Hex resolution and both modes now coexist.
+- Removed an unreachable verifier-override branch from the final-action
+  decision in `PromptRunner.RecoveryPolicy`. An earlier clause already handles
+  a passing report on the provider-error path, so the branch could only ever
+  raise `KeyError` or evaluate to false.
+- Removed a dead `preflight_llm_provider/1` fallback clause; `llm_for_prompt/2`
+  always populates `:sdk`.
+- Dropped two redundant `||` fallbacks in the Codex CLI confirmation audit;
+  `confirmation_source/1` already guarantees a default.
+- The project again compiles cleanly under `--warnings-as-errors` on Elixir
+  1.20, and `mix dialyzer` reports zero errors with no ignore file.
+
 ## [0.7.0] - 2026-07-13
 
 ### Changed

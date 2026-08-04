@@ -12,14 +12,25 @@ defmodule PromptRunner.ReleasePreparationTest do
     assert "examples/authoring_packet/templates/*.md" in files
   end
 
-  test "release metadata follows the ASM 0.10 and Elixir 1.19 boundary" do
+  test "release metadata follows the ASM 0.12 and Elixir 1.19 boundary" do
     project = Mix.Project.config()
 
-    assert project[:version] == "0.7.0"
+    assert project[:version] == "0.8.0"
     assert project[:elixir] == "~> 1.19"
 
-    assert {:agent_session_manager, "~> 0.10.0", _opts} =
-             List.keyfind(project[:deps], :agent_session_manager, 0)
+    # The dependency tuple's shape varies by resolved source (path/github/hex),
+    # so the committed constraint is asserted at its source of truth instead.
+    config = DependencySources.config!(Path.expand("../..", __DIR__))
+
+    assert config[:deps][:agent_session_manager][:hex] == "~> 0.12.1"
+    assert config[:deps][:cli_subprocess_core][:hex] == "~> 0.4.1"
+
+    assert List.keymember?(project[:deps], :agent_session_manager, 0)
+    assert List.keymember?(project[:deps], :cli_subprocess_core, 0)
+  end
+
+  test "publish preflight accepts the committed hex constraints" do
+    assert {:ok, _entries} = DependencySources.publish_preflight(Path.expand("../..", __DIR__))
   end
 
   test "Hex metadata and documentation use the release presentation assets" do

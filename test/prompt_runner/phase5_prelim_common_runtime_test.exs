@@ -60,9 +60,14 @@ defmodule PromptRunner.Phase5PrelimCommonRuntimeTest do
                  false
              end)
 
+      # Plain-text providers (antigravity) carry the line terminator through as
+      # real delta content; JSON providers carry only the decoded field.
       assert Enum.any?(events, fn
-               %{type: :message_streamed, data: %{delta: ^content}} -> true
-               _event -> false
+               %{type: :message_streamed, data: %{delta: delta}} when is_binary(delta) ->
+                 String.trim_trailing(delta) == content
+
+               _event ->
+                 false
              end)
     end)
   end

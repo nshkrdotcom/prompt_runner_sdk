@@ -50,3 +50,6 @@ Thumbs.db
 *.bak
 
 .prompt_runner/
+
+# Local-only dependency source selection (see build_support/dependency_sources.exs)
+.dependency_sources.local.exs

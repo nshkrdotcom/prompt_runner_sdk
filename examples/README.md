@@ -1,15 +1,21 @@
 # Examples
 
-These examples all use the 0.7.0 packet/profile workflow.
+These examples all use the 0.8.0 packet/profile workflow.
 
 ## Included Examples
 
-| Example | Focus | What It Demonstrates |
-|---------|-------|----------------------|
-| `authoring_packet/` | Authoring UX | How to go from packet-local ADRs/docs to finished prompts, verification contracts, checklist files, and a runnable packet |
-| `simulated_recovery_packet/` | Recovery UX | Built-in retry, repair, verifier override, retry exhaustion handling, rate-limit handling, and session resume without any external provider CLI |
-| `single_repo_packet/` | Quickstart | One packet, one repo, deterministic verification, packet-local runtime state |
-| `multi_repo_packet/` | Cross-repo work | Named repos, repo-scoped verification, Codex additional directories, per-repo commits |
+| Example | Provider | Focus | What It Demonstrates |
+|---------|----------|-------|----------------------|
+| `authoring_packet/` | simulated | Authoring UX | How to go from packet-local ADRs/docs to finished prompts, verification contracts, checklist files, and a runnable packet |
+| `simulated_recovery_packet/` | simulated | Recovery UX | Built-in retry, repair, verifier override, retry exhaustion handling, rate-limit handling, and session resume without any external provider CLI |
+| `single_repo_packet/` | Codex | Quickstart | One packet, one repo, deterministic verification, packet-local runtime state |
+| `claude_packet/` | Claude | Provider portability | The same two prompts as `single_repo_packet/`, run on the Claude lane instead |
+| `multi_repo_packet/` | Codex | Cross-repo work | Named repos, repo-scoped verification, Codex additional directories, per-repo commits |
+
+The two simulated packets need no provider CLI at all. `single_repo_packet/`
+and `multi_repo_packet/` need the Codex CLI; `claude_packet/` needs the Claude
+CLI. All provider examples run against live providers — Prompt Runner ships no
+mock provider lane.
 
 ## Common Flow
 
@@ -51,6 +57,17 @@ bash examples/single_repo_packet/cleanup.sh
 Or:
 
 ```bash
+bash examples/claude_packet/setup.sh
+mix prompt_runner list examples/claude_packet
+mix prompt_runner packet preflight examples/claude_packet
+mix prompt_runner run examples/claude_packet
+mix prompt_runner status examples/claude_packet
+bash examples/claude_packet/cleanup.sh
+```
+
+Or:
+
+```bash
 bash examples/multi_repo_packet/setup.sh
 mix prompt_runner list examples/multi_repo_packet
 mix prompt_runner packet preflight examples/multi_repo_packet
@@ -68,8 +85,11 @@ bash examples/multi_repo_packet/cleanup.sh
   resume behavior because it requires no external provider CLI at all and now
   proves capacity, rate-limit, protocol-drop, transport-timeout, repair, and
   verifier-override behavior in one successful walkthrough
-- all four examples create their repos or workspaces locally under the
+- `single_repo_packet/` and `claude_packet/` run the identical prompt pair on
+  Codex and Claude respectively, so they are the shortest demonstration that a
+  packet is provider-portable
+- all five examples create their repos or workspaces locally under the
   example directory; run the example `setup.sh` before `packet preflight`
-- all four examples clear `.prompt_runner/` on setup so runs start clean
+- all five examples clear `.prompt_runner/` on setup so runs start clean
 - the packet examples in this directory are meant to be executed with
   `mix prompt_runner ...` from the repository root

@@ -1,11 +1,18 @@
 defmodule PromptRunner.ProviderOptions do
   @moduledoc false
 
+  # Normalized ASM options every provider schema accepts. `:output_schema` and
+  # `:completion_only` moved here from the Codex-local schema in ASM 0.11/0.12
+  # and are gated at runtime by the provider's common-feature manifest.
   @common_keys [
     :cli_path,
     :env,
     :args,
     :debug,
+    :allow_unknown_model,
+    :completion_only,
+    :output_schema,
+    :transport_headless_timeout_ms,
     :ollama,
     :ollama_model,
     :ollama_base_url,
@@ -21,6 +28,7 @@ defmodule PromptRunner.ProviderOptions do
       :external_model_overrides,
       :anthropic_base_url,
       :anthropic_auth_token,
+      :reasoning_effort,
       :include_thinking,
       :max_turns,
       :append_system_prompt
@@ -33,7 +41,10 @@ defmodule PromptRunner.ProviderOptions do
       :model_provider,
       :oss_provider,
       :skip_git_repo_check,
-      :output_schema,
+      :app_server,
+      :host_tools,
+      :dynamic_tools,
+      :reviewed_approval,
       :additional_directories
     ],
     amp: [

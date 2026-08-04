@@ -461,7 +461,7 @@ defmodule PromptRunner.ConfigTest do
     assert Config.llm_for_prompt(config, prompt_02).permission_mode == :bypass
   end
 
-  test "rejects Codex configs that normalize to shared auto permission mode" do
+  test "rejects configs whose provider does not support the shared auto permission mode" do
     tmp_dir =
       Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
 
@@ -486,9 +486,9 @@ defmodule PromptRunner.ConfigTest do
         commit_messages_file: "commit-messages.txt",
         progress_file: ".progress",
         log_dir: "logs",
-        model: "gpt-5.3-codex",
+        model: "composer",
         llm: %{
-          sdk: "codex_sdk",
+          sdk: "cursor_cli_sdk",
           permission_mode: :accept_edits,
           prompt_overrides: %{
             "02" => %{sdk: "amp_sdk", permission_mode: "dangerously_allow_all"}
@@ -499,10 +499,10 @@ defmodule PromptRunner.ConfigTest do
     )
 
     assert {:error, errors} = Config.load(config_path)
-    assert {:permission_mode, {:invalid_permission_mode, :codex, :auto}} in errors
+    assert {:permission_mode, {:invalid_permission_mode, :cursor, :auto}} in errors
   end
 
-  test "rejects prompt overrides that switch Codex onto shared auto permission mode" do
+  test "rejects prompt overrides that switch onto an unsupported permission mode" do
     tmp_dir =
       Path.join(System.tmp_dir!(), "prompt_runner_config_#{System.unique_integer([:positive])}")
 
@@ -532,7 +532,7 @@ defmodule PromptRunner.ConfigTest do
           sdk: "claude_agent_sdk",
           permission_mode: :bypass,
           prompt_overrides: %{
-            "02" => %{sdk: "codex_sdk", permission_mode: :accept_edits}
+            "02" => %{sdk: "cursor_cli_sdk", permission_mode: :accept_edits}
           }
         }
       }
@@ -541,7 +541,8 @@ defmodule PromptRunner.ConfigTest do
 
     assert {:error, errors} = Config.load(config_path)
 
-    assert {{:prompt_override, "02", :permission_mode}, {:invalid_permission_mode, :codex, :auto}} in errors
+    assert {{:prompt_override, "02", :permission_mode},
+            {:invalid_permission_mode, :cursor, :auto}} in errors
   end
 
   test "rejects unsupported codex_thread_opts keys at config load" do

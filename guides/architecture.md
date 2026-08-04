@@ -1,6 +1,6 @@
 # Architecture
 
-Prompt Runner 0.7.0 is organized around one packet runtime with both CLI and
+Prompt Runner 0.8.0 is organized around one packet runtime with both CLI and
 SDK entry points.
 
 ## Runtime Flow

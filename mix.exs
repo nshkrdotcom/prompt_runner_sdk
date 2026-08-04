@@ -1,7 +1,11 @@
+unless Code.ensure_loaded?(DependencySources) do
+  Code.require_file("build_support/dependency_sources.exs", __DIR__)
+end
+
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.7.0"
+  @version "0.8.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
   @homepage_url "https://hex.pm/packages/prompt_runner_sdk"
   @docs_url "https://hexdocs.pm/prompt_runner_sdk"
@@ -37,42 +41,16 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      local_dev_or_hex_dep(:agent_session_manager, "~> 0.10.0", "../agent_session_manager"),
+      DependencySources.dep(:agent_session_manager, __DIR__),
+      DependencySources.dep(:cli_subprocess_core, __DIR__),
       {:jason, "~> 1.4"},
-      {:yaml_elixir, "~> 2.11"},
-      {:mox, "~> 1.1", only: :test},
-      {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:yaml_elixir, "~> 2.12"},
+      {:mox, "~> 1.2", only: :test},
+      {:ex_doc, "~> 0.40.3", only: :dev, runtime: false},
+      # 1.7.19+ tokenizes Elixir 1.20 sigils; older releases crash on them.
+      {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: :dev, runtime: false}
-    ] ++ local_stack_dev_deps()
-  end
-
-  defp local_dev_or_hex_dep(app, version, relative_path, opts \\ []) do
-    path = Path.expand(relative_path, __DIR__)
-
-    if local_workspace_deps?() and File.dir?(path) do
-      {app, version, Keyword.put(opts, :path, relative_path)}
-    else
-      {app, version, opts}
-    end
-  end
-
-  defp local_stack_dev_deps do
-    if local_workspace_deps?() and File.dir?(Path.expand("../cli_subprocess_core", __DIR__)) do
-      [
-        {:cli_subprocess_core, path: "../cli_subprocess_core", override: true}
-      ]
-    else
-      []
-    end
-  end
-
-  defp local_workspace_deps? do
-    not hex_packaging_task?() and not Enum.member?(Path.split(__DIR__), "deps")
-  end
-
-  defp hex_packaging_task? do
-    Enum.any?(System.argv(), &(&1 in ["hex.build", "hex.publish", "hex.package"]))
+    ]
   end
 
   defp description do
@@ -125,6 +103,8 @@ defmodule PromptRunner.MixProject do
          filename: "example-authoring", title: "Authoring From ADRs Packet Example"},
         {"examples/single_repo_packet/README.md",
          filename: "example-single-repo", title: "Single Repo Packet Example"},
+        {"examples/claude_packet/README.md",
+         filename: "example-claude", title: "Claude Packet Example"},
         {"examples/simulated_recovery_packet/README.md",
          filename: "example-simulated-recovery", title: "Simulated Recovery Packet Example"},
         {"examples/multi_repo_packet/README.md",
@@ -146,6 +126,7 @@ defmodule PromptRunner.MixProject do
           "examples",
           "example-authoring",
           "example-single-repo",
+          "example-claude",
           "example-simulated-recovery",
           "example-multi-repo"
         ],
@@ -233,6 +214,7 @@ defmodule PromptRunner.MixProject do
           lib
           guides
           assets
+          build_support
           mix.exs
           README.md
           CHANGELOG.md

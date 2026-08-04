@@ -1,16 +1,17 @@
 ---
-name: "single-repo-packet"
-profile: "codex-default"
-provider: "codex"
-model: "gpt-5.4-mini"
-reasoning_effort: "low"
+name: "claude-packet"
+profile: "claude-default"
+provider: "claude"
+model: "sonnet"
 permission_mode: "bypass"
 allowed_tools:
   - "Read"
   - "Edit"
   - "Write"
   - "Bash"
-cli_confirmation: "require"
+cli_confirmation: "warn"
+claude_opts:
+  include_thinking: false
 recovery:
   resume_attempts: 2
   retry:
@@ -42,6 +43,10 @@ phases:
   "1": "Bootstrap"
   "2": "Wrap Up"
 ---
-# Single Repo Packet
+# Claude Packet
 
-Friendly single-repo packet example for Prompt Runner 0.8.0.
+Live Claude provider packet example for Prompt Runner 0.8.0.
+
+This is the Claude counterpart to [`../single_repo_packet/`](../single_repo_packet/README.md),
+which runs the same two prompts on Codex. Together they exercise both
+first-party provider lanes end to end.
