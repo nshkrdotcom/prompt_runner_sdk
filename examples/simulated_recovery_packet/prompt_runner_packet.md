@@ -40,4 +40,4 @@ phases:
 ---
 # Simulated Recovery Packet
 
-Zero-dependency recovery demo for Prompt Runner 0.8.0.
+Zero-dependency recovery demo for Prompt Runner 0.8.1.

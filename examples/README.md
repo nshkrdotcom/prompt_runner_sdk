@@ -1,6 +1,6 @@
 # Examples
 
-These examples all use the 0.8.0 packet/profile workflow.
+These examples all use the 0.8.1 packet/profile workflow.
 
 ## Included Examples
 
@@ -16,6 +16,40 @@ The two simulated packets need no provider CLI at all. `single_repo_packet/`
 and `multi_repo_packet/` need the Codex CLI; `claude_packet/` needs the Claude
 CLI. All provider examples run against live providers — Prompt Runner ships no
 mock provider lane.
+
+## Which Code The Examples Run Against
+
+Running `mix prompt_runner ...` from this repository always uses the **local
+working tree**, not the published package, and by default it resolves
+`agent_session_manager` and `cli_subprocess_core` from sibling checkouts if you
+have them. That is the right default for developing Prompt Runner, but it does
+not tell you what a released install does.
+
+Check what you are actually about to run:
+
+```bash
+mix deps.sources
+```
+
+To exercise the **published** stack instead, there are two levels:
+
+1. Published ASM/core, local Prompt Runner — add the gitignored
+   `.dependency_sources.local.exs` described in the
+   [README](../README.md#dependency-sources), then `mix deps.get`.
+2. Fully published — use Prompt Runner from Hex in a throwaway project and copy
+   an example packet into it:
+
+   ```bash
+   mix new consumer && cd consumer
+   # deps: {:prompt_runner_sdk, "~> 0.8.1"}
+   mix deps.get
+   cp -r ../prompt_runner_sdk/examples/single_repo_packet pkt
+   bash pkt/setup.sh
+   mix prompt_runner run pkt
+   ```
+
+   Nothing resolves to a sibling checkout there, so this is the honest check
+   that a release works for a real consumer.
 
 ## Common Flow
 

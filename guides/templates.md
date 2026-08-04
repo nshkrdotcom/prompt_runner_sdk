@@ -1,6 +1,6 @@
 # Templates
 
-Prompt Runner 0.8.0 uses template-based prompt scaffolding.
+Prompt Runner 0.8.1 uses template-based prompt scaffolding.
 
 Templates are markdown files with YAML front matter. They define:
 

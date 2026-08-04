@@ -44,4 +44,4 @@ phases:
 ---
 # Single Repo Packet
 
-Friendly single-repo packet example for Prompt Runner 0.8.0.
+Friendly single-repo packet example for Prompt Runner 0.8.1.

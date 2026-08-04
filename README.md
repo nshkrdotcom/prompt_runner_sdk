@@ -14,7 +14,7 @@
 </p>
 
 Prompt Runner SDK executes packetized prompt workflows against local
-repositories. This README targets `prompt_runner_sdk ~> 0.8.0`.
+repositories. This README targets `prompt_runner_sdk ~> 0.8.1`.
 
 The packet-first design introduced in `0.7.0` carries forward unchanged:
 
@@ -25,7 +25,7 @@ The packet-first design introduced in `0.7.0` carries forward unchanged:
 - a built-in simulated provider can prove recovery behavior without any
   external provider CLI
 
-`0.8.0` moves the runtime onto `agent_session_manager ~> 0.12.1` and
+The `0.8` line moves the runtime onto `agent_session_manager ~> 0.12.1` and
 `cli_subprocess_core ~> 0.4.1`, and publishes the normalized option surface
 those releases added. See the [CHANGELOG](CHANGELOG.md) for the full list.
 
@@ -51,7 +51,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.8.0"}
+    {:prompt_runner_sdk, "~> 0.8.1"}
   ]
 end
 ```

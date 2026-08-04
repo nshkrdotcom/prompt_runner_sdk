@@ -1,6 +1,6 @@
 # Packet Manifest Reference
 
-Prompt Runner 0.8.0 uses two primary authoring files:
+Prompt Runner 0.8.1 uses two primary authoring files:
 
 - `prompt_runner_packet.md`
 - `*.prompt.md`
@@ -202,7 +202,7 @@ recovery:
 
 ## Completion Contract Keys
 
-Prompt Runner 0.8.0 supports:
+Prompt Runner 0.8.1 supports:
 
 - `files_exist`
 - `files_absent`

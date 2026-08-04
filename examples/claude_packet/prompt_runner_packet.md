@@ -45,7 +45,7 @@ phases:
 ---
 # Claude Packet
 
-Live Claude provider packet example for Prompt Runner 0.8.0.
+Live Claude provider packet example for Prompt Runner 0.8.1.
 
 This is the Claude counterpart to [`../single_repo_packet/`](../single_repo_packet/README.md),
 which runs the same two prompts on Codex. Together they exercise both
