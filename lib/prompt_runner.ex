@@ -10,6 +10,20 @@ defmodule PromptRunner do
   alias PromptRunner.Runtime
   alias PromptRunner.Validator
 
+  # Baked in at compile time from mix.exs so generated packets, scaffolds, and
+  # CLI output cannot drift from the released version.
+  @version Mix.Project.config()[:version]
+
+  @doc """
+  Returns the Prompt Runner version.
+
+  This is the single source of truth for every version string Prompt Runner
+  emits, including the CLI banner, generated packet manifests, and the
+  `run_prompts.exs` install entry.
+  """
+  @spec version() :: String.t()
+  def version, do: @version
+
   @spec plan(term(), keyword()) :: {:ok, Plan.t()} | {:error, term()}
   def plan(input, opts \\ []) do
     with {:ok, %RunSpec{} = run_spec} <- RunSpec.build(input, opts),

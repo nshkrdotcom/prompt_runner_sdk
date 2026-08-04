@@ -85,7 +85,7 @@ defmodule PromptRunner.Packet do
     body = """
     # #{name}
 
-    Packet manifest for Prompt Runner 0.7.0.
+    Packet manifest for Prompt Runner #{PromptRunner.version()}.
     """
 
     with :ok <- FrontMatter.write_file(Path.join(root, @manifest_file), attrs, body) do

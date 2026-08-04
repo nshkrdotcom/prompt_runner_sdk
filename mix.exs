@@ -5,7 +5,7 @@ end
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.8.0"
+  @version "0.8.1"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
   @homepage_url "https://hex.pm/packages/prompt_runner_sdk"
   @docs_url "https://hexdocs.pm/prompt_runner_sdk"

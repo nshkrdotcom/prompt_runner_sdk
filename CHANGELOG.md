@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-03
+
+### Fixed
+
+- Generated artifacts no longer carry a stale hardcoded version. The
+  `run_prompts.exs` scaffold emitted `{:prompt_runner_sdk, "~> 0.7.0"}`, and
+  both the CLI help banner and newly created packet manifests announced
+  `Prompt Runner 0.7.0`, on a 0.8.0 install. Scaffolding a project from 0.8.0
+  therefore produced a dependency entry one minor version behind.
+
+### Changed
+
+- `PromptRunner.version/0` is now the single source of truth for every version
+  string Prompt Runner emits. It is baked in at compile time from `mix.exs`,
+  and the CLI banner, generated packet manifests, and the scaffolded install
+  entry all interpolate it.
+- Added a release-preparation regression test that fails when any file under
+  `lib/` hardcodes a release version, so this class of drift cannot ship again.
+
 ## [0.8.0] - 2026-08-03
 
 ### Added

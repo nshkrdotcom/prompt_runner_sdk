@@ -15,7 +15,7 @@ defmodule PromptRunner.ReleasePreparationTest do
   test "release metadata follows the ASM 0.12 and Elixir 1.19 boundary" do
     project = Mix.Project.config()
 
-    assert project[:version] == "0.8.0"
+    assert project[:version] == "0.8.1"
     assert project[:elixir] == "~> 1.19"
 
     # The dependency tuple's shape varies by resolved source (path/github/hex),
@@ -31,6 +31,35 @@ defmodule PromptRunner.ReleasePreparationTest do
 
   test "publish preflight accepts the committed hex constraints" do
     assert {:ok, _entries} = DependencySources.publish_preflight(Path.expand("../..", __DIR__))
+  end
+
+  test "the emitted version is derived from mix.exs" do
+    assert PromptRunner.version() == Mix.Project.config()[:version]
+  end
+
+  test "no source file hardcodes a release version" do
+    # Generated packets, scaffolds, and CLI output must interpolate
+    # PromptRunner.version/0. A literal here silently ships a stale version.
+    literals =
+      ~r/prompt_runner_sdk[^\n]{0,12}~>\s*\d+\.\d+\.\d+|Prompt Runner\s+\d+\.\d+\.\d+/
+
+    offenders =
+      Path.expand("../../lib", __DIR__)
+      |> Path.join("**/*.ex")
+      |> Path.wildcard()
+      |> Enum.flat_map(fn path ->
+        path
+        |> File.read!()
+        |> String.split("\n")
+        |> Enum.with_index(1)
+        |> Enum.filter(fn {line, _no} -> Regex.match?(literals, line) end)
+        |> Enum.map(fn {line, no} ->
+          "#{Path.relative_to_cwd(path)}:#{no}: #{String.trim(line)}"
+        end)
+      end)
+
+    assert offenders == [],
+           "hardcoded version literals found:\n  " <> Enum.join(offenders, "\n  ")
   end
 
   test "Hex metadata and documentation use the release presentation assets" do

@@ -568,7 +568,7 @@ defmodule PromptRunner.CLI do
   defp show_help do
     IO.puts("""
 
-    Prompt Runner 0.7.0
+    Prompt Runner #{PromptRunner.version()}
 
     Setup:
       prompt_runner init
