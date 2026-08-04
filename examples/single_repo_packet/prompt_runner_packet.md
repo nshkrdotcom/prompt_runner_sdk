@@ -2,7 +2,7 @@
 name: "single-repo-packet"
 profile: "codex-default"
 provider: "codex"
-model: "gpt-5.4-mini"
+model: "gpt-5.6-luna"
 reasoning_effort: "low"
 permission_mode: "bypass"
 allowed_tools:

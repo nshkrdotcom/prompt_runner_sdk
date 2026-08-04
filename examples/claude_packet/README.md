@@ -68,11 +68,11 @@ the Codex one:
 
 ```yaml
 provider: "claude"
-model: "sonnet"
+model: "haiku"
 ```
 
 Swap those two lines for `provider: "codex"` and a Codex model such as
-`gpt-5.4-mini` to run the identical prompts on the other lane.
+`gpt-5.6-luna` to run the identical prompts on the other lane.
 
 ## Cleanup
 

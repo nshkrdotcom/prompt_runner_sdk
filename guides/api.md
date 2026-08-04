@@ -18,7 +18,7 @@ Create and inspect profiles:
 {:ok, profile} =
   PromptRunner.Profile.create("codex-fast", %{
     "provider" => "codex",
-    "model" => "gpt-5.4",
+    "model" => "gpt-5.6-luna",
     "reasoning_effort" => "high"
   })
 
@@ -110,7 +110,7 @@ API calls default to an in-memory runtime store plus a no-op committer:
 {:ok, run} =
   PromptRunner.run(packet.root,
     provider: :codex,
-    model: "gpt-5.4",
+    model: "gpt-5.6-luna",
     runtime_store: :memory,
     committer: :noop
   )

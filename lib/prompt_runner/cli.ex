@@ -572,7 +572,7 @@ defmodule PromptRunner.CLI do
 
     Setup:
       prompt_runner init
-      prompt_runner profile new NAME [--provider codex --model gpt-5.4 --reasoning xhigh] [--prompt-template from-adr]
+      prompt_runner profile new NAME [--provider codex --model gpt-5.6-luna --reasoning xhigh] [--prompt-template from-adr]
       prompt_runner profile list
       prompt_runner template list [PACKET_DIR]
 

@@ -261,7 +261,7 @@ plus a no-op committer:
 {:ok, run} =
   PromptRunner.run("/path/to/packet",
     provider: :codex,
-    model: "gpt-5.4",
+    model: "gpt-5.6-luna",
     committer: :noop,
     runtime_store: :memory
   )

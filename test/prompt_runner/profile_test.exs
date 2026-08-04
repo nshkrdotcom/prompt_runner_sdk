@@ -31,7 +31,7 @@ defmodule PromptRunner.ProfileTest do
 
     assert {:ok, profile} = Profile.load()
     assert profile.name == "codex-default"
-    assert profile.options["model"] == "gpt-5.4"
+    assert profile.options["model"] == "gpt-5.6-luna"
 
     assert {:ok, simulated} = Profile.load("simulated-default")
     assert simulated.options["provider"] == "simulated"

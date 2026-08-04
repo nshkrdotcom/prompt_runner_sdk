@@ -145,7 +145,7 @@ defmodule PromptRunner.Profile do
   defp default_profile_options do
     %{
       "provider" => "codex",
-      "model" => "gpt-5.4",
+      "model" => "gpt-5.6-luna",
       "reasoning_effort" => "xhigh",
       "permission_mode" => "bypass",
       "allowed_tools" => ["Read", "Edit", "Write", "Bash"],

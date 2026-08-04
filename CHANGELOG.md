@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.1] - 2026-08-03
 
+### Changed
+
+- Default live-provider models are now `gpt-5.6-luna` for Codex and `haiku`
+  (Haiku 4.5) for Claude, across every default and every path that reaches a
+  live provider:
+  - the `codex-default` profile created by `mix prompt_runner init`
+    (`gpt-5.4` -> `gpt-5.6-luna`, `reasoning_effort: xhigh` unchanged)
+  - the legacy-interface fallback model (`claude-sonnet-4-6` -> `haiku`)
+  - `examples/single_repo_packet` and `examples/multi_repo_packet`
+    (`gpt-5.4-mini` -> `gpt-5.6-luna`)
+  - `examples/claude_packet` (`sonnet` -> `haiku`)
+  - the CLI help text and every guide/README sample
+  The simulated packets are unaffected; they never contact a provider.
+  Note that `haiku` is the shared model registry's id for Haiku 4.5 —
+  `haiku-4.5` is not a registered id or alias and is rejected as an unknown
+  model.
+
 ### Fixed
 
 - Generated artifacts no longer carry a stale hardcoded version. The

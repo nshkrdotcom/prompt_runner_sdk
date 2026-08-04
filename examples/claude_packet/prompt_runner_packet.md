@@ -2,7 +2,7 @@
 name: "claude-packet"
 profile: "claude-default"
 provider: "claude"
-model: "sonnet"
+model: "haiku"
 permission_mode: "bypass"
 allowed_tools:
   - "Read"

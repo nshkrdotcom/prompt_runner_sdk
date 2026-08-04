@@ -9,7 +9,7 @@ prompt through `targets`.
 ---
 name: "multi-repo-demo"
 provider: "codex"
-model: "gpt-5.4"
+model: "gpt-5.6-luna"
 reasoning_effort: "xhigh"
 permission_mode: "bypass"
 codex_thread_opts:

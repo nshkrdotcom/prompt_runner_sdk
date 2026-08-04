@@ -22,7 +22,7 @@ applications do not need the provider SDK packages just to run Prompt Runner.
 `mix prompt_runner init` creates `codex-default` with:
 
 - `provider: codex`
-- `model: gpt-5.4`
+- `model: gpt-5.6-luna`
 - `reasoning_effort: xhigh`
 - `permission_mode: bypass`
 - `cli_confirmation: require`
@@ -154,7 +154,7 @@ reasoning effort actually launched:
 
 ```yaml
 provider: "codex"
-model: "gpt-5.4"
+model: "gpt-5.6-luna"
 reasoning_effort: "xhigh"
 cli_confirmation: "require"
 ```

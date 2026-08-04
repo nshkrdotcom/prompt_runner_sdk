@@ -101,7 +101,7 @@ defmodule PromptRunner.Plan do
   end
 
   defp build_config(%RunSpec{} = _run_spec, %Result{} = result, opts) do
-    model = value_from(opts, [:model], "claude-sonnet-4-6")
+    model = value_from(opts, [:model], "haiku")
 
     with {:ok, llm_sdk} <- resolve_llm_sdk(opts, model) do
       config = resolved_config(opts, result, llm_sdk, model)

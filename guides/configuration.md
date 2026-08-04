@@ -26,7 +26,7 @@ name: "demo"
 profile: "codex-default"
 prompt_template: "from-adr"
 provider: "codex"
-model: "gpt-5.4"
+model: "gpt-5.6-luna"
 reasoning_effort: "xhigh"
 permission_mode: "bypass"
 allowed_tools:
@@ -128,7 +128,7 @@ context_files:
   - "workspace/README.md"
 depends_on: []
 provider: "codex"
-model: "gpt-5.4"
+model: "gpt-5.6-luna"
 verify:
   files_exist:
     - "hello.txt"

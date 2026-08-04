@@ -32,7 +32,7 @@ That creates:
 `codex-default` is optimized for local packet work:
 
 - `provider: codex`
-- `model: gpt-5.4`
+- `model: gpt-5.6-luna`
 - `reasoning_effort: xhigh`
 - `permission_mode: bypass`
 - `allowed_tools: Read, Edit, Write, Bash`
@@ -46,7 +46,7 @@ That creates:
 ```bash
 mix prompt_runner profile new claude-safe \
   --provider claude \
-  --model sonnet \
+  --model haiku \
   --prompt-template from-adr \
   --permission default \
   --tools Read,Bash

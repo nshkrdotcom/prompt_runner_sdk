@@ -21,7 +21,7 @@ mix prompt_runner template list
 Create and inspect profiles:
 
 ```bash
-mix prompt_runner profile new codex-fast --provider codex --model gpt-5.4 --reasoning high
+mix prompt_runner profile new codex-fast --provider codex --model gpt-5.6-luna --reasoning high
 mix prompt_runner profile list
 ```
 
@@ -153,7 +153,7 @@ Example:
 ```bash
 mix prompt_runner run demo \
   --provider codex \
-  --model gpt-5.4 \
+  --model gpt-5.6-luna \
   --log-mode compact \
   --cli-confirmation require
 ```
