@@ -6,13 +6,6 @@ template: "from-adr"
 targets:
   - "app"
 commit: "docs: add runtime boundaries summary"
-references:
-  - "docs/adr-001-runtime-boundaries.md"
-required_reading:
-  - "docs/adr-001-runtime-boundaries.md"
-context_files:
-  - "workspace/README.md"
-depends_on: []
 verify:
   files_exist:
     - "RUNTIME_BOUNDARIES.md"

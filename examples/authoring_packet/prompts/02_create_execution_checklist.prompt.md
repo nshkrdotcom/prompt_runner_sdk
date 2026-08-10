@@ -6,16 +6,6 @@ template: "from-adr"
 targets:
   - "app"
 commit: "docs: add execution checklist"
-references:
-  - "docs/adr-001-runtime-boundaries.md"
-  - "docs/adr-002-recovery-contract.md"
-required_reading:
-  - "docs/adr-001-runtime-boundaries.md"
-  - "docs/adr-002-recovery-contract.md"
-context_files:
-  - "workspace/RUNTIME_BOUNDARIES.md"
-depends_on:
-  - "01"
 verify:
   files_exist:
     - "EXECUTION_CHECKLIST.md"

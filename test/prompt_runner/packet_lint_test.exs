@@ -329,6 +329,37 @@ defmodule PromptRunner.PacketLintTest do
     assert report.pass?
   end
 
+  test "a contract that asserts content is not warned about", %{repo: repo, docs: docs} do
+    # `contains`, `matches`, and `doc` are each unsatisfiable by an empty file,
+    # so the missing-commands warning would be false for a contract using them.
+    for clause <- [
+          ~s(  contains:\n    - path: "NOTES.md"\n      text: "done"),
+          ~s(  matches:\n    - path: "NOTES.md"\n      pattern: "done"),
+          ~s(  doc:\n    - path: "NOTES.md"\n      min_lines: 20)
+        ] do
+      report =
+        lint(repo, docs, [
+          {"01_write.prompt.md",
+           """
+           ---
+           id: "01"
+           phase: 1
+           name: "Write notes"
+           targets:
+             - "app"
+           verify:
+             files_exist:
+               - "NOTES.md"
+           #{clause}
+           ---
+           # Write notes
+           """}
+        ])
+
+      refute "contract_without_commands" in kinds(report), "warned for #{clause}"
+    end
+  end
+
   test "changed_paths_only is reported when the packet runs with --no-commit", %{
     repo: repo,
     docs: docs

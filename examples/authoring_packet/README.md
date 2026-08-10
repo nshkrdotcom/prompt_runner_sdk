@@ -7,8 +7,8 @@ It demonstrates:
 
 - packet-local source material under `docs/`
 - a packet-local prompt template under `templates/`
-- prompt metadata for `references`, `required_reading`, `context_files`, and
-  `depends_on`
+- required reading written into the prompt **body**, where the model will see
+  it, rather than into front-matter keys the runtime never reads
 - deterministic `verify:` contracts and generated checklist files
 - a runnable packet using the built-in `simulated` provider
 
@@ -29,7 +29,8 @@ The workflow is:
 
 1. collect the source docs inside the packet
 2. choose a prompt template
-3. create prompts with explicit `required_reading`
+3. create prompts that name their source docs under `## Required Reading` in
+   the body
 4. translate deliverables into `verify:` entries
 5. generate checklist views
 6. run and inspect packet-local state
@@ -41,8 +42,9 @@ From the project root:
 ```bash
 bash examples/authoring_packet/setup.sh
 mix prompt_runner list examples/authoring_packet
-mix prompt_runner packet preflight examples/authoring_packet
+mix prompt_runner packet lint examples/authoring_packet
 mix prompt_runner packet doctor examples/authoring_packet
+mix prompt_runner packet preflight examples/authoring_packet
 mix prompt_runner checklist sync examples/authoring_packet
 mix prompt_runner run examples/authoring_packet
 mix prompt_runner status examples/authoring_packet

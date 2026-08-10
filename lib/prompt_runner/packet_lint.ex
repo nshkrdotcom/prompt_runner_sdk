@@ -13,8 +13,9 @@ defmodule PromptRunner.PacketLint do
   one exits non-zero.
 
   - `prompt_id_filename_mismatch` — prompts are ordered by the numeric filename
-    prefix (`PromptRunner.Source.DirectorySource.sort_key/1`), not by `id:`. A
-    mismatch reorders the run while the front matter still reads correctly.
+    prefix, the sort key built by `PromptRunner.Source.DirectorySource`, not by
+    `id:`. A mismatch reorders the run while the front matter still reads
+    correctly.
   - `prompt_filename_without_prefix` — with no numeric prefix the file sorts
     last, by basename, among all other unprefixed files.
   - `duplicate_prompt_id` — two prompts claiming one id collide in progress
@@ -39,8 +40,9 @@ defmodule PromptRunner.PacketLint do
     hangs the whole run after the model work is already spent.
   - `prompt_without_verify` — completion falls back to the provider's own claim
     of success.
-  - `contract_without_commands` — `files_exist` alone is satisfied by an empty
-    file.
+  - `contract_without_commands` — the contract has neither a `commands:` entry
+    nor any content assertion (`contains`, `matches`, `doc`), so it is
+    satisfied by an empty file.
   - `changed_paths_only_vacuous` — `changed_paths_only` reads
     `git status --porcelain`, which is empty precisely because a session under
     `--no-commit` committed its own work.
@@ -63,6 +65,11 @@ defmodule PromptRunner.PacketLint do
 
   @inert_keys ~w(references required_reading context_files depends_on)
   @packet_repo_alias "packet"
+
+  # Clauses that assert something about a file's *content*. A contract holding
+  # any of them is not satisfiable by an empty file, so the missing-commands
+  # warning would be false.
+  @content_clauses ~w(contains matches doc)
 
   @type finding :: %{
           required(:kind) => String.t(),
@@ -312,7 +319,7 @@ defmodule PromptRunner.PacketLint do
   end
 
   defp missing_commands_finding(prompt, contract) do
-    if Verifier.contract_items(contract) == [] do
+    if Verifier.contract_items(contract) == [] or content_asserted?(contract) do
       []
     else
       [
@@ -320,11 +327,16 @@ defmodule PromptRunner.PacketLint do
           "warning",
           "contract_without_commands",
           prompt,
-          "verify contract has no commands: entry; files_exist alone is satisfied by an " <>
+          "verify contract has no commands: entry and no content assertion " <>
+            "(#{Enum.join(@content_clauses, "/")}); files_exist alone is satisfied by an " <>
             "empty file, so the contract cannot tell a finished artifact from a touched one"
         )
       ]
     end
+  end
+
+  defp content_asserted?(contract) do
+    Enum.any?(@content_clauses, &(clause_entries(contract, &1) != []))
   end
 
   defp command_timeout_finding(entry, prompt) do
