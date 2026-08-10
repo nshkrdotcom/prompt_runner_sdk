@@ -5,6 +5,7 @@ defmodule PromptRunner.CLI do
 
   alias PromptRunner
   alias PromptRunner.Packet
+  alias PromptRunner.PacketLint
   alias PromptRunner.Packets
   alias PromptRunner.Profile
   alias PromptRunner.RecoveryConfig
@@ -226,6 +227,71 @@ defmodule PromptRunner.CLI do
     end
   end
 
+  defp run_packet_lint(rest) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [strict: :boolean, json: :boolean, no_commit: :boolean]
+      )
+
+    packet_dir = packet_dir(remaining)
+
+    lint_opts =
+      []
+      |> maybe_put(:strict, opts[:strict])
+      |> maybe_put(:no_commit, opts[:no_commit])
+
+    case PacketLint.lint(packet_dir, lint_opts) do
+      {:ok, report} -> report_lint(report, opts[:json] == true)
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp report_lint(report, true) do
+    IO.puts(Jason.encode!(report, pretty: true))
+    lint_exit(report)
+  end
+
+  defp report_lint(report, false) do
+    IO.puts("")
+    IO.puts(UI.bold("Packet lint: #{report.packet}"))
+    IO.puts(UI.cyan(report.root))
+    IO.puts("")
+
+    case report.findings do
+      [] -> IO.puts("  no authoring hazards found")
+      findings -> Enum.each(findings, &print_lint_finding/1)
+    end
+
+    IO.puts("")
+    IO.puts(lint_summary(report))
+    lint_exit(report)
+  end
+
+  defp print_lint_finding(finding) do
+    IO.puts("  #{lint_severity_label(finding.severity)} #{lint_location(finding)}")
+    IO.puts("          #{finding.message}")
+  end
+
+  defp lint_severity_label("error"), do: UI.red("ERROR  ")
+  defp lint_severity_label(_severity), do: UI.yellow("WARNING")
+
+  defp lint_location(finding) do
+    "#{finding.file || "(packet)"}  #{finding.kind}"
+  end
+
+  defp lint_summary(report) do
+    summary = "#{pluralize(report.errors, "error")}, #{pluralize(report.warnings, "warning")}"
+
+    if report.pass?, do: UI.green(summary), else: UI.red(summary)
+  end
+
+  defp pluralize(1, noun), do: "1 #{noun}"
+  defp pluralize(count, noun), do: "#{count} #{noun}s"
+
+  @spec lint_exit(map()) :: :ok | no_return()
+  defp lint_exit(%{pass?: true}), do: :ok
+  defp lint_exit(_report), do: System.halt(1)
+
   defp run_packet_explain(rest) do
     packet_dir = packet_dir(rest)
 
@@ -430,6 +496,7 @@ defmodule PromptRunner.CLI do
   defp parse_command(["packet", "doctor" | rest]), do: {:packet_doctor, rest}
   defp parse_command(["packet", "preflight" | rest]), do: {:packet_preflight, rest}
   defp parse_command(["packet", "explain" | rest]), do: {:packet_explain, rest}
+  defp parse_command(["packet", "lint" | rest]), do: {:packet_lint, rest}
   defp parse_command(["repo", "add", name, path | rest]), do: {:repo_add, name, path, rest}
   defp parse_command(["prompt", "new", id | rest]), do: {:prompt_new, id, rest}
   defp parse_command(["checklist", "sync" | rest]), do: {:checklist_sync, rest}
@@ -452,6 +519,7 @@ defmodule PromptRunner.CLI do
   defp dispatch_command({:packet_doctor, rest}), do: run_packet_doctor(rest)
   defp dispatch_command({:packet_preflight, rest}), do: run_packet_preflight(rest)
   defp dispatch_command({:packet_explain, rest}), do: run_packet_explain(rest)
+  defp dispatch_command({:packet_lint, rest}), do: run_packet_lint(rest)
   defp dispatch_command({:repo_add, name, path, rest}), do: run_repo_add(name, path, rest)
   defp dispatch_command({:prompt_new, id, rest}), do: run_prompt_new(id, rest)
   defp dispatch_command({:checklist_sync, rest}), do: run_checklist_sync(rest)
@@ -588,6 +656,7 @@ defmodule PromptRunner.CLI do
       prompt_runner packet doctor [PACKET_DIR]
       prompt_runner packet preflight [PACKET_DIR]
       prompt_runner packet explain [PACKET_DIR]
+      prompt_runner packet lint [PACKET_DIR] [--strict] [--json] [--no-commit]
       prompt_runner repo add NAME PATH [--packet PACKET_DIR] [--default]
       prompt_runner prompt new ID [--packet PACKET_DIR] --phase N --name "..." [--template TEMPLATE]
       prompt_runner checklist sync [PACKET_DIR]

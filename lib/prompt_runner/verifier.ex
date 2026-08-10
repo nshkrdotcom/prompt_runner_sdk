@@ -16,6 +16,26 @@ defmodule PromptRunner.Verifier do
           prompt_id: String.t() | nil
         }
 
+  @contract_keys ~w(
+    files_exist
+    files_absent
+    contains
+    matches
+    doc
+    commands
+    changed_paths_only
+    repos_clean
+  )
+
+  @doc """
+  Returns the contract clauses the verifier evaluates.
+
+  Anything else under `verify:` is parsed, stored, and never evaluated, which
+  is what `mix prompt_runner packet lint` reads this list to detect.
+  """
+  @spec contract_keys() :: [String.t()]
+  def contract_keys, do: @contract_keys
+
   @spec verify(Plan.t(), keyword()) :: {:ok, [report()]}
   def verify(%Plan{} = plan, opts \\ []) do
     prompt_ids = Keyword.get(opts, :prompts)
