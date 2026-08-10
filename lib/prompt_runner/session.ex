@@ -588,42 +588,76 @@ defmodule PromptRunner.Session do
   defp run_started_data(%Payload.RunStarted{} = payload, :codex) do
     metadata = normalize_map(payload.metadata)
 
+    # `model` and `reasoning_effort` are what this run asked for, and are for
+    # display. `confirmed_*` is what the provider echoed back, and is what the
+    # cli_confirmation gate judges -- so it never falls back to the argv, which
+    # would let the gate confirm a request against itself.
+    confirmed_model = metadata[:model] || metadata["model"]
+
+    confirmed_effort =
+      metadata[:reasoning_effort] ||
+        metadata["reasoning_effort"] ||
+        metadata[:reasoningEffort] ||
+        metadata["reasoningEffort"]
+
     %{
       provider_session_id: payload.provider_session_id,
       command: payload.command,
       args: payload.args,
       cwd: payload.cwd,
       metadata: metadata,
-      model: metadata[:model] || metadata["model"],
-      confirmed_model: metadata[:model] || metadata["model"],
-      reasoning_effort:
-        metadata[:reasoning_effort] ||
-          metadata["reasoning_effort"] ||
-          metadata[:reasoningEffort] ||
-          metadata["reasoningEffort"],
-      confirmed_reasoning_effort:
-        stringify_or_nil(
-          metadata[:reasoning_effort] ||
-            metadata["reasoning_effort"] ||
-            metadata[:reasoningEffort] ||
-            metadata["reasoningEffort"]
-        )
+      model: confirmed_model || model_from_args(payload.args),
+      confirmed_model: confirmed_model,
+      reasoning_effort: confirmed_effort || reasoning_effort_from_args(payload.args),
+      confirmed_reasoning_effort: stringify_or_nil(confirmed_effort)
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
   end
 
   defp run_started_data(%Payload.RunStarted{} = payload, _provider) do
+    metadata = normalize_map(payload.metadata)
+
     %{
       provider_session_id: payload.provider_session_id,
       command: payload.command,
       args: payload.args,
       cwd: payload.cwd,
-      metadata: normalize_map(payload.metadata)
+      metadata: metadata,
+      model: metadata[:model] || metadata["model"] || model_from_args(payload.args)
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) or value == [] end)
     |> Map.new()
   end
+
+  # The argv is the one place the requested model is always known, for every
+  # provider: it is what was handed to the CLI. Provider metadata is populated
+  # only by providers that announce a session, and only once they have -- which
+  # is after the run has started and the header has already been printed.
+  defp model_from_args(args) when is_list(args), do: args |> Enum.map(&to_string/1) |> model_flag()
+  defp model_from_args(_args), do: nil
+
+  defp model_flag(["--model", value | _rest]) when value != "" and binary_part(value, 0, 1) != "-",
+    do: value
+
+  defp model_flag(["--model=" <> value | _rest]) when value != "", do: value
+  defp model_flag([_arg | rest]), do: model_flag(rest)
+  defp model_flag([]), do: nil
+
+  # Codex takes reasoning effort as a config override rather than a flag:
+  #   --config model_reasoning_effort="xhigh"
+  defp reasoning_effort_from_args(args) when is_list(args) do
+    args
+    |> Enum.map(&to_string/1)
+    |> Enum.find_value(fn arg ->
+      case Regex.run(~r/^model_reasoning_effort=\"?([a-zA-Z]+)\"?$/, arg) do
+        [_match, effort] -> effort
+        _ -> nil
+      end
+    end)
+  end
+
+  defp reasoning_effort_from_args(_args), do: nil
 
   defp legacy_event(event, type, data, extra \\ %{}) do
     %{

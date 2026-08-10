@@ -15,6 +15,7 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
           indent: non_neg_integer(),
           is_tty: boolean(),
           phase: :idle | :text | :tool,
+          streamed_assistant?: boolean(),
           current_tool: map() | nil,
           tool_count: non_neg_integer(),
           event_count: non_neg_integer(),
@@ -35,6 +36,7 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
        indent: Keyword.get(opts, :indent, 2),
        is_tty: is_tty,
        phase: :idle,
+       streamed_assistant?: false,
        current_tool: nil,
        tool_count: 0,
        event_count: 0,
@@ -55,16 +57,22 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
   @impl true
   def finish(state), do: {:ok, [], state}
 
+  # "unknown session started" was this renderer reporting a gap it could not
+  # fill: the model is named on the launched argv, but nothing put it in the
+  # event. It does now -- and if a provider ever genuinely does not name one,
+  # say so rather than printing "unknown" where a model name belongs.
   defp render(%{type: :run_started, data: data}, state) do
-    model = map_get(data, :model) || "unknown"
     icon = ANSI.blue(ANSI.info(), state.color)
-    line = ["\n", indent(state), icon, " ", to_string(model), " session started\n"]
-    {line, %{state | phase: :idle}}
+    line = ["\n", indent(state), icon, " ", session_started_label(data), "\n"]
+    {line, %{state | phase: :idle, streamed_assistant?: false}}
   end
 
   defp render(%{type: :message_streamed, data: data}, state) do
     text = map_get(data, :delta) || map_get(data, :content) || ""
-    {render_text(text, state), %{state | phase: :text}}
+    thinking? = map_get(data, :kind) == :thinking
+
+    {render_text(text, state),
+     %{state | phase: :text, streamed_assistant?: state.streamed_assistant? or not thinking?}}
   end
 
   defp render(%{type: :tool_call_started, data: data}, state) do
@@ -108,7 +116,20 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
      }}
   end
 
-  defp render(%{type: :message_received}, state), do: {[], state}
+  # A provider either streams a message as deltas or delivers it whole. Claude
+  # streams, so printing the completed message too would double it. Codex does
+  # not stream at all -- suppressing this unconditionally, as this renderer used
+  # to, left a Codex run with nothing on screen but "session started".
+  #
+  # So the test is what actually reached the screen, not which provider sent it.
+  # Reasoning text does not count: it is displayed, but it is not the message.
+  defp render(%{type: :message_received, data: data}, %{streamed_assistant?: false} = state) do
+    text = map_get(data, :content) || ""
+    {render_text(text, state), %{state | phase: :text, streamed_assistant?: false}}
+  end
+
+  defp render(%{type: :message_received}, state),
+    do: {[], %{state | streamed_assistant?: false}}
 
   defp render(%{type: :run_completed, data: data}, state) do
     {close_text, state} = close_text_block(state)
@@ -158,6 +179,14 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
     {close_text, state} = close_text_block(state)
     label = ANSI.dim("? #{type}", state.color)
     {[close_text, indent(state), label, "\n"], %{state | phase: :idle}}
+  end
+
+  defp session_started_label(data) do
+    case {map_get(data, :model), map_get(data, :reasoning_effort)} do
+      {nil, _} -> "session started"
+      {model, nil} -> "#{model} session started"
+      {model, effort} -> "#{model} (#{effort}) session started"
+    end
   end
 
   defp render_text("", _state), do: []

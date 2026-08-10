@@ -103,4 +103,97 @@ defmodule PromptRunner.SessionTest do
     assert hidden_run_started.data.metadata["labels"] == %{"topic" => "demo"}
     assert meta.session_opts[:lane] == :core
   end
+
+  # These drive the whole chain the way a real run does: a fixture CLI writes
+  # the JSONL `codex exec --json` actually writes, cli_subprocess_core decodes
+  # it, and the bridge turns it into the events a renderer consumes.
+  defp codex_stream(lines) do
+    tmp_dir =
+      Path.join(System.tmp_dir!(), "prompt_runner_session_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp_dir)
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    script_path = Path.join(tmp_dir, "codex_fixture.sh")
+    body = Enum.map_join(lines, "\n", &"printf '%s\\n' '#{&1}'")
+    File.write!(script_path, "#!/usr/bin/env bash\n" <> body <> "\n")
+    File.chmod!(script_path, 0o755)
+
+    llm = %{
+      provider: "codex",
+      model: "gpt-5.6-sol",
+      cwd: tmp_dir,
+      permission_mode: :bypass,
+      codex_thread_opts: %{reasoning_effort: :xhigh},
+      sdk_opts: %{cli_path: script_path}
+    }
+
+    {:ok, stream, close_fun, _meta} = Session.start_stream(llm, "say ok")
+    events = Enum.take(stream, 30)
+    close_fun.()
+    events
+  end
+
+  defp visible(events, type) do
+    Enum.filter(events, &(&1.type == type and not Map.get(&1, :hidden?, false)))
+  end
+
+  test "a codex run reports the model it launched with, not 'unknown'" do
+    events = codex_stream([~s({"type":"turn.completed","stop_reason":"end_turn"})])
+
+    assert [run_started] = visible(events, :run_started)
+    assert run_started.data.model == "gpt-5.6-sol"
+    assert run_started.data.reasoning_effort == "xhigh"
+
+    # The requested model is for display only. Confirmation still depends on
+    # the provider echoing it back, which this fixture never does.
+    refute Map.has_key?(run_started.data, :confirmed_model)
+  end
+
+  test "a codex shell command surfaces as a tool call and a tool result" do
+    events =
+      codex_stream([
+        ~s({"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"mix test"}}),
+        ~s({"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"mix test","aggregated_output":"16 tests, 0 failures","exit_code":0,"status":"completed"}}),
+        ~s({"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"the suite is green"}}),
+        ~s({"type":"turn.completed","stop_reason":"end_turn"})
+      ])
+
+    assert [started] = visible(events, :tool_call_started)
+    assert started.data.tool_name == "bash"
+    assert started.data.tool_input["command"] == "mix test"
+
+    assert [completed] = visible(events, :tool_call_completed)
+    assert completed.data.tool_call_id == started.data.tool_call_id
+    assert completed.data.tool_output == "16 tests, 0 failures"
+
+    assert [message] = visible(events, :message_received)
+    assert message.data.content == "the suite is green"
+  end
+
+  test "a failing codex command renders as a failed tool call" do
+    events =
+      codex_stream([
+        ~s({"type":"item.completed","item":{"id":"i","type":"command_execution","aggregated_output":"boom","exit_code":1,"status":"failed"}}),
+        ~s({"type":"turn.completed","stop_reason":"end_turn"})
+      ])
+
+    assert [failed] = visible(events, :tool_call_failed)
+    assert failed.data.tool_output == "boom"
+  end
+
+  # Without this the run has no terminal event at all: the provider stops
+  # talking and the consumer waits for a result that never comes.
+  test "a failed codex turn terminates the run instead of going silent" do
+    events =
+      codex_stream([
+        ~s({"type":"turn.failed","error":{"message":"You have hit your usage limit."}})
+      ])
+
+    assert [error] = visible(events, :error_occurred)
+    assert error.data.error_message =~ "usage limit"
+
+    assert [failed] = visible(events, :run_failed)
+    assert failed.data.error_message =~ "usage limit"
+  end
 end
