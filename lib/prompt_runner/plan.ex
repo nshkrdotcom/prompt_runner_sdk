@@ -112,14 +112,29 @@ defmodule PromptRunner.Plan do
     end
   end
 
+  # Each layer is key-normalized *before* it is merged, so a later layer always
+  # overrides an earlier one.
+  #
+  # Normalizing once at the end instead was a silent-override bug: packet
+  # metadata arrives with string keys and call/CLI options with atom keys, so
+  # `%{"provider" => "claude"}` and `%{provider: "simulated"}` both survived the
+  # merge as distinct keys. `normalize_options/1` then reduced over the result
+  # and whichever key it happened to visit last won — which, by Erlang term
+  # order, is the string one. The effect was that `--provider`, `--model`,
+  # `--committer`, and every other call-site override was discarded whenever the
+  # packet manifest set the same key, and a run intended for the simulated
+  # provider started the packet's live provider instead.
   defp merged_opts(run_spec, result) do
-    defaults()
-    |> deep_merge(env_overrides())
-    |> deep_merge(global_config(result))
-    |> deep_merge(local_config(result.source_root))
-    |> deep_merge(result.metadata[:options] || result.metadata["options"] || %{})
-    |> deep_merge(Map.new(run_spec.opts))
-    |> normalize_options()
+    [
+      defaults(),
+      env_overrides(),
+      global_config(result),
+      local_config(result.source_root),
+      result.metadata[:options] || result.metadata["options"] || %{},
+      Map.new(run_spec.opts)
+    ]
+    |> Enum.map(&normalize_options/1)
+    |> Enum.reduce(%{}, &deep_merge(&2, &1))
   end
 
   defp resolve_llm_sdk(opts, model) do
