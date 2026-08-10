@@ -12,6 +12,27 @@ defmodule PromptRunner.CLI do
   alias PromptRunner.Template
   alias PromptRunner.UI
 
+  # `plan` and `run` share one switch surface deliberately. When they did not,
+  # `plan` parsed nothing and passed nothing to `PromptRunner.plan/2`, so
+  # `prompt_runner plan --provider X` reported the packet's provider regardless
+  # and could not be used to check what an override would actually do.
+  @run_switches [
+    all: :boolean,
+    phase: :integer,
+    no_commit: :boolean,
+    dry_run: :boolean,
+    provider: :string,
+    model: :string,
+    log_mode: :string,
+    log_meta: :string,
+    events_mode: :string,
+    tool_output: :string,
+    cli_confirmation: :string,
+    runtime_store: :string,
+    committer: :string,
+    skip_preflight: :boolean
+  ]
+
   @spec main(list()) :: :ok | no_return()
   def main(args \\ System.argv()) do
     args
@@ -308,9 +329,10 @@ defmodule PromptRunner.CLI do
   end
 
   defp run_plan(rest) do
-    packet_dir = packet_dir(rest)
+    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: @run_switches)
+    packet_dir = packet_dir(remaining)
 
-    case PromptRunner.plan(packet_dir, interface: :cli) do
+    case PromptRunner.plan(packet_dir, cli_opts(opts)) do
       {:ok, plan} ->
         print_plan_summary(plan)
         :ok
@@ -321,24 +343,7 @@ defmodule PromptRunner.CLI do
   end
 
   defp run_run(rest) do
-    {opts, remaining, _invalid} =
-      OptionParser.parse(rest,
-        switches: [
-          all: :boolean,
-          phase: :integer,
-          no_commit: :boolean,
-          provider: :string,
-          model: :string,
-          log_mode: :string,
-          log_meta: :string,
-          events_mode: :string,
-          tool_output: :string,
-          cli_confirmation: :string,
-          runtime_store: :string,
-          committer: :string,
-          skip_preflight: :boolean
-        ]
-      )
+    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: @run_switches)
 
     {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining)
 
@@ -351,6 +356,7 @@ defmodule PromptRunner.CLI do
           |> maybe_put(:all, opts[:all] || prompt_ids == [])
           |> maybe_put(:phase, opts[:phase])
           |> maybe_put(:no_commit, opts[:no_commit])
+          |> maybe_put(:dry_run, opts[:dry_run])
 
         case Runner.execute_plan(plan, cli_run_opts, prompt_ids) do
           :ok -> :ok
@@ -588,10 +594,13 @@ defmodule PromptRunner.CLI do
 
     Execution:
       prompt_runner list [PACKET_DIR]
-      prompt_runner plan [PACKET_DIR]
-      prompt_runner run [PACKET_DIR] [PROMPT_ID...] [--skip-preflight]
+      prompt_runner plan [PACKET_DIR] [--provider PROVIDER] [--model MODEL]
+      prompt_runner run [PACKET_DIR] [PROMPT_ID...] [--skip-preflight] [--dry-run]
       prompt_runner repair [--packet PACKET_DIR] PROMPT_ID
       prompt_runner status [PACKET_DIR]
+
+    `plan` and `run` accept the same override flags, so `plan` shows exactly
+    what `run` would resolve.
 
     """)
   end
