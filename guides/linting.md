@@ -16,7 +16,6 @@ Every check exists because a real packet hit it.
 mix prompt_runner packet lint demo
 mix prompt_runner packet lint demo --strict
 mix prompt_runner packet lint demo --json
-mix prompt_runner packet lint demo --no-commit
 ```
 
 Exit status is `0` when only warnings remain and non-zero when any error is
@@ -113,22 +112,30 @@ false. If the deliverable is a document rather than code,
 
 ### `changed_paths_only_vacuous`
 
-`changed_paths_only` reads `git status --porcelain`. In a packet that runs with
-`--no-commit`, each session commits its own work, so the tree is clean by the
-time the verifier runs and the clause passes vacuously. Use
-[`repos_clean:`](verification-and-repair.md) instead.
+`changed_paths_only` reads `git status --porcelain`, so it only ever sees work
+that is **still uncommitted**.
 
-Lint cannot know how a packet is run, so this check fires only when told:
+It is the correct clause when the runner owns the commit — the default for CLI
+packet runs — and it is worth keeping there.
 
-```bash
-mix prompt_runner packet lint demo --no-commit
-```
+It passes vacuously whenever the session commits its own work instead: under
+`--no-commit`, under `committer: noop`, or under standing instructions that
+tell the agent to commit. In all three cases the tree is already clean when the
+verifier runs, so the clause cannot fail no matter what the session did. Use
+[`repos_clean:`](verification-and-repair.md) for those packets.
 
-or when the manifest declares it:
+This warning is unconditional. Lint cannot see how a packet is run, and a check
+that only fires once someone has already declared `--no-commit` would stay
+silent for exactly the packets most likely to have the problem — silence by
+default is the failure mode the rest of this linter exists to remove. If the
+runner commits for your packet, the message tells you so in one read and you
+can ignore it.
 
-```yaml
-no_commit: true
-```
+Every packet under `examples/` trips this warning, and every one of them uses
+the clause correctly: they are CLI packet runs, where the runner owns the
+commit. That is the calibration to keep in mind — this is the one warning in
+the set whose most common cause is a correct usage, which is why it stays a
+warning and exits zero.
 
 ### `inert_front_matter_key`
 

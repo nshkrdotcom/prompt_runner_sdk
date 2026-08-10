@@ -85,8 +85,6 @@ The four are complementary and in increasing order of what they touch:
 
 - `--strict` — promote every warning to an error, which is what CI wants
 - `--json` — machine-readable report
-- `--no-commit` — lint as if runs use `--no-commit`, which enables the
-  `changed_paths_only` vacuity check
 
 ## Execution Commands
 
@@ -191,7 +189,6 @@ duration of a run, and quiet time comes from file mtimes. See
 
 - `--strict`
 - `--json`
-- `--no-commit`
 
 `packet new` accepts:
 

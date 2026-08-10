@@ -116,7 +116,7 @@ verify:
 |-----|---------|---------|
 | `repo` | prompt's default scope | repository to check |
 | `pushed` | `false` | also require an upstream, and require `HEAD` to match it |
-| `fetch_timeout_ms` | `90000` | bound on the fetch performed before comparing |
+| `remote_timeout_ms` | `90000` | bound on the remote query |
 
 `pushed: false` checks only that the working tree is clean. A branch with no
 upstream is fine — a repository that starts local and stays local until its
@@ -126,10 +126,17 @@ upstream is not compared.
 `pushed: true` additionally **requires** an upstream. A missing upstream is a
 failure, not a pass: the clause was asked to assert publication and cannot.
 
-Before comparing, Prompt Runner fetches under a bounded timeout. Nothing here
-mutates a working tree, an index, or a local branch. A fetch that fails or
-times out is reported in `details:` and the comparison falls back to the cached
-remote-tracking ref rather than inventing a verdict.
+The comparison asks the remote directly with `git ls-remote`, under a bounded
+timeout. `ls-remote` is a pure query — unlike `git fetch` it does not create or
+move remote-tracking refs — so this clause writes nothing at all into the
+repository it is judging. A gate that mutates any part of its subject is a gate
+that can change the thing it measures.
+
+When the remote cannot be reached, `details:` says so and the comparison falls
+back to the cached remote-tracking ref. That fallback is biased toward
+reporting *not pushed*, since a cached ref can only be behind the remote and
+never ahead of it, which is the safe direction for a clause whose job is to
+assert publication.
 
 ### `changed_paths_only` vs `repos_clean`
 
@@ -141,8 +148,11 @@ owns the commit.
 
 Under `--no-commit`, each session commits its own work, so the tree is clean
 when the verifier runs and `changed_paths_only` passes vacuously — it can never
-fail. `repos_clean` is the clause for that arrangement.
-`mix prompt_runner packet lint --no-commit` reports the mistake.
+fail. The same is true under `committer: noop`, and under standing instructions
+that tell the agent to commit. `repos_clean` is the clause for those
+arrangements. `mix prompt_runner packet lint` warns on every use of
+`changed_paths_only`, because it cannot see which arrangement you are in; the
+message names the condition under which the clause is still correct.
 
 ## Outcome Matrix
 

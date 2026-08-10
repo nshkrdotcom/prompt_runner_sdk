@@ -44,8 +44,9 @@ defmodule PromptRunner.PacketLint do
     nor any content assertion (`contains`, `matches`, `doc`), so it is
     satisfied by an empty file.
   - `changed_paths_only_vacuous` — `changed_paths_only` reads
-    `git status --porcelain`, which is empty precisely because a session under
-    `--no-commit` committed its own work.
+    `git status --porcelain`, so it can only see work that is still
+    uncommitted. It passes vacuously in any packet where the session commits
+    its own work.
   - `inert_front_matter_key` — `references`, `required_reading`,
     `context_files`, and `depends_on` are parsed and stored and then never read
     at runtime.
@@ -58,7 +59,6 @@ defmodule PromptRunner.PacketLint do
   deciding the latter needs a shell parser.
   """
 
-  alias PromptRunner.FrontMatter
   alias PromptRunner.Packet
   alias PromptRunner.Source.PacketSource
   alias PromptRunner.Verifier
@@ -84,7 +84,6 @@ defmodule PromptRunner.PacketLint do
           packet: String.t(),
           root: String.t(),
           strict?: boolean(),
-          no_commit?: boolean(),
           findings: [finding()],
           errors: non_neg_integer(),
           warnings: non_neg_integer(),
@@ -97,8 +96,6 @@ defmodule PromptRunner.PacketLint do
   Options:
 
   - `:strict` — promote every warning to an error.
-  - `:no_commit` — lint as if runs use `--no-commit`. A manifest that declares
-    `no_commit: true` or `committer: "noop"` implies this without the option.
   """
   @spec lint(String.t(), keyword()) :: {:ok, report()} | {:error, term()}
   def lint(root, opts \\ []) when is_binary(root) do
@@ -110,12 +107,11 @@ defmodule PromptRunner.PacketLint do
 
   defp build_report(packet, prompts, opts) do
     strict? = opts[:strict] == true
-    no_commit? = no_commit?(packet, opts)
     repo_names = Enum.map(packet.repos, & &1.name)
 
     findings =
       duplicate_id_findings(prompts)
-      |> Kernel.++(Enum.flat_map(prompts, &prompt_findings(&1, repo_names, no_commit?)))
+      |> Kernel.++(Enum.flat_map(prompts, &prompt_findings(&1, repo_names)))
       |> Enum.map(&promote(&1, strict?))
       |> Enum.sort_by(&{&1.file || "", &1.kind, &1.message})
 
@@ -125,7 +121,6 @@ defmodule PromptRunner.PacketLint do
       packet: packet.name,
       root: packet.root,
       strict?: strict?,
-      no_commit?: no_commit?,
       findings: findings,
       errors: errors,
       warnings: length(findings) - errors,
@@ -133,27 +128,13 @@ defmodule PromptRunner.PacketLint do
     }
   end
 
-  defp no_commit?(packet, opts) do
-    attrs = manifest_attributes(packet)
-
-    opts[:no_commit] == true or attrs["no_commit"] == true or
-      attrs["committer"] in ["noop", "none"]
-  end
-
-  defp manifest_attributes(packet) do
-    case FrontMatter.load_file(packet.manifest_path) do
-      {:ok, %{attributes: attrs}} when is_map(attrs) -> attrs
-      _other -> %{}
-    end
-  end
-
   defp promote(finding, true), do: %{finding | severity: "error"}
   defp promote(finding, false), do: finding
 
-  defp prompt_findings(prompt, repo_names, no_commit?) do
+  defp prompt_findings(prompt, repo_names) do
     filename_findings(prompt) ++
       target_findings(prompt, repo_names) ++
-      contract_findings(prompt, repo_names, no_commit?) ++
+      contract_findings(prompt, repo_names) ++
       inert_key_findings(prompt)
   end
 
@@ -269,14 +250,14 @@ defmodule PromptRunner.PacketLint do
 
   # -- contract
 
-  defp contract_findings(prompt, repo_names, no_commit?) do
+  defp contract_findings(prompt, repo_names) do
     contract = prompt.verify || %{}
 
     empty_contract_findings(prompt, contract) ++
       unknown_clause_findings(prompt, contract) ++
       command_findings(prompt, contract) ++
       verify_repo_findings(prompt, contract, repo_names) ++
-      changed_paths_findings(prompt, contract, no_commit?)
+      changed_paths_findings(prompt, contract)
   end
 
   defp empty_contract_findings(prompt, contract) do
@@ -407,7 +388,12 @@ defmodule PromptRunner.PacketLint do
 
   defp entry_repo_finding(_entry, _clause, _prompt, _repo_names), do: []
 
-  defp changed_paths_findings(prompt, contract, true) do
+  # Unconditional, because lint cannot see how the packet is run and a check
+  # that only fires once someone has already configured the thing correctly is
+  # close to useless. The wording has to let a legitimate user dismiss it in one
+  # read, so it names the mechanism and the exact condition under which the
+  # clause still works.
+  defp changed_paths_findings(prompt, contract) do
     case clause_entries(contract, "changed_paths_only") do
       [] ->
         []
@@ -418,15 +404,16 @@ defmodule PromptRunner.PacketLint do
             "warning",
             "changed_paths_only_vacuous",
             prompt,
-            "changed_paths_only is used in a packet that runs with --no-commit; the clause " <>
-              "reads git status --porcelain, which is empty precisely because the session " <>
-              "committed its own work, so it passes vacuously. Use repos_clean: instead"
+            "changed_paths_only reads git status --porcelain, so it only ever sees work " <>
+              "that is still uncommitted. It is correct when the runner owns the commit, " <>
+              "and it passes vacuously whenever the session commits its own work instead " <>
+              "(--no-commit, committer: noop, or standing instructions telling the agent " <>
+              "to commit), because the tree is already clean when the verifier runs. If " <>
+              "the runner commits for this packet, ignore this; otherwise use repos_clean:"
           )
         ]
     end
   end
-
-  defp changed_paths_findings(_prompt, _contract, false), do: []
 
   defp clause_entries(contract, clause) do
     contract

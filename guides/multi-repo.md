@@ -83,5 +83,5 @@ verify:
 
 Under `--no-commit`, `changed_paths_only` passes vacuously — it reads
 `git status --porcelain`, which is empty precisely because the session already
-committed. `mix prompt_runner packet lint --no-commit` reports that mistake.
-See [Verification And Repair](verification-and-repair.md).
+committed. `mix prompt_runner packet lint` warns about every use of the clause
+for that reason. See [Verification And Repair](verification-and-repair.md).

@@ -339,7 +339,8 @@ load, run, and produce a wrong answer without raising:
 - a verify command with no `timeout`, when the verifier has none of its own
 - a contract with no `commands:` entry, when `files_exist` is satisfied by an
   empty file
-- `changed_paths_only` in a `--no-commit` packet, where it passes vacuously
+- `changed_paths_only`, which only sees uncommitted work and so passes
+  vacuously in any packet where the session commits for itself
 - `references`, `required_reading`, `context_files`, and `depends_on`, which
   are parsed, stored, and never read
 

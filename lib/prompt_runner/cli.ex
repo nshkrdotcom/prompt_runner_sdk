@@ -230,16 +230,10 @@ defmodule PromptRunner.CLI do
 
   defp run_packet_lint(rest) do
     {opts, remaining, _invalid} =
-      OptionParser.parse(rest,
-        switches: [strict: :boolean, json: :boolean, no_commit: :boolean]
-      )
+      OptionParser.parse(rest, switches: [strict: :boolean, json: :boolean])
 
     packet_dir = packet_dir(remaining)
-
-    lint_opts =
-      []
-      |> maybe_put(:strict, opts[:strict])
-      |> maybe_put(:no_commit, opts[:no_commit])
+    lint_opts = maybe_put([], :strict, opts[:strict])
 
     case PacketLint.lint(packet_dir, lint_opts) do
       {:ok, report} -> report_lint(report, opts[:json] == true)
@@ -673,7 +667,7 @@ defmodule PromptRunner.CLI do
       prompt_runner packet doctor [PACKET_DIR]
       prompt_runner packet preflight [PACKET_DIR]
       prompt_runner packet explain [PACKET_DIR]
-      prompt_runner packet lint [PACKET_DIR] [--strict] [--json] [--no-commit]
+      prompt_runner packet lint [PACKET_DIR] [--strict] [--json]
       prompt_runner repo add NAME PATH [--packet PACKET_DIR] [--default]
       prompt_runner prompt new ID [--packet PACKET_DIR] --phase N --name "..." [--template TEMPLATE]
       prompt_runner checklist sync [PACKET_DIR]

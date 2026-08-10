@@ -103,9 +103,8 @@ Enum.each(report.findings, fn finding ->
 end)
 ```
 
-Options are `:strict` (promote warnings to errors) and `:no_commit` (lint as if
-runs use `--no-commit`, which enables the `changed_paths_only` vacuity check).
-See [Packet Linting](linting.md).
+The only option is `:strict`, which promotes every warning to an error. See
+[Packet Linting](linting.md).
 
 ## Planning And Running
 

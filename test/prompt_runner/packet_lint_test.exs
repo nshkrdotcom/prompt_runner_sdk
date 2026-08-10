@@ -33,12 +33,12 @@ defmodule PromptRunner.PacketLintTest do
     {:ok, repo: repo, docs: docs}
   end
 
-  defp manifest(repo, docs, extra) do
+  defp manifest(repo, docs) do
     """
     ---
     name: "lint-packet"
     profile: "codex-default"
-    #{extra}repos:
+    repos:
       app:
         path: "#{repo}"
         default: true
@@ -50,14 +50,7 @@ defmodule PromptRunner.PacketLintTest do
   end
 
   defp lint(repo, docs, prompts, opts \\ []) do
-    {manifest_extra, opts} = Keyword.pop(opts, :manifest_extra, "")
-
-    root =
-      FSHelpers.packet!(
-        "prompt_runner_lint_packet",
-        manifest(repo, docs, manifest_extra),
-        prompts
-      )
+    root = FSHelpers.packet!("prompt_runner_lint_packet", manifest(repo, docs), prompts)
 
     on_exit(fn -> File.rm_rf!(root) end)
 
@@ -360,10 +353,13 @@ defmodule PromptRunner.PacketLintTest do
     end
   end
 
-  test "changed_paths_only is reported when the packet runs with --no-commit", %{
+  test "changed_paths_only is always reported, whatever the commit arrangement", %{
     repo: repo,
     docs: docs
   } do
+    # Lint cannot see how a packet is run, and a check that only fires once
+    # someone has already declared `--no-commit` is close to useless: the
+    # packets most likely to get this wrong are the ones that never say so.
     prompts = [
       {"01_write.prompt.md",
        """
@@ -383,16 +379,30 @@ defmodule PromptRunner.PacketLintTest do
        """}
     ]
 
-    silent = lint(repo, docs, prompts)
-    refute "changed_paths_only_vacuous" in kinds(silent)
+    report = lint(repo, docs, prompts)
+    found = finding(report, "changed_paths_only_vacuous")
 
-    flagged = lint(repo, docs, prompts, no_commit: true)
-    found = finding(flagged, "changed_paths_only_vacuous")
     assert found.severity == "warning"
-    assert found.message =~ "git status --porcelain"
+    assert report.pass?
 
-    from_manifest = lint(repo, docs, prompts, manifest_extra: "no_commit: true\n")
-    assert "changed_paths_only_vacuous" in kinds(from_manifest)
+    # Both halves must be readable in one pass: the mechanism, and the exact
+    # condition under which the clause is still the right one.
+    assert found.message =~ "git status --porcelain"
+    assert found.message =~ "still uncommitted"
+    assert found.message =~ "correct when the runner owns the commit"
+    assert found.message =~ "--no-commit"
+    assert found.message =~ "committer: noop"
+    assert found.message =~ "repos_clean"
+
+    # And it is promoted like any other warning.
+    strict = lint(repo, docs, prompts, strict: true)
+    assert finding(strict, "changed_paths_only_vacuous").severity == "error"
+  end
+
+  test "a contract without changed_paths_only is not warned about", %{repo: repo, docs: docs} do
+    report = lint(repo, docs, [clean_prompt()])
+
+    refute "changed_paths_only_vacuous" in kinds(report)
   end
 
   test "inert front-matter keys are reported with the reason they are inert", %{
