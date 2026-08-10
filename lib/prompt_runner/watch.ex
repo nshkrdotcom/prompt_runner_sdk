@@ -1,4 +1,8 @@
 defmodule PromptRunner.Watch do
+  # Declared before the @moduledoc so the documented skip list and the list the
+  # scan actually uses cannot drift apart.
+  @pruned_entries [".git", "_build", "deps", "node_modules"]
+
   @moduledoc """
   Supervision for a long unattended packet run.
 
@@ -16,12 +20,11 @@ defmodule PromptRunner.Watch do
   - `prompt` — the id in the newest `prompt-*.log` under the packet's log
     directory, or `none`.
   - `quiet` — minutes since the newest file mtime across the packet's log
-    directory and every configured repository, with `.git` pruned. Mtime, not
-    JSON: the event schema differs between `events_mode: compact`
-    (`{"t": epoch_ms}`) and `full` (`{"ts": "ISO8601"}`), and an earlier
-    implementation parsed one of them and silently reported zero quiet time for
-    the other. An mtime cannot be the wrong schema. `?` means no file was
-    found to measure.
+    directory and every configured repository. Mtime, not JSON: the event
+    schema differs between `events_mode: compact` (`{"t": epoch_ms}`) and
+    `full` (`{"ts": "ISO8601"}`), and an earlier implementation parsed one of
+    them and silently reported zero quiet time for the other. An mtime cannot
+    be the wrong schema. `?` means no file was found to measure.
   - `repos`, `dirty`, `commits` — the number of configured repositories, the
     total `git status --porcelain` line count across them, and the total number
     of commits reachable from each `HEAD`.
@@ -31,9 +34,17 @@ defmodule PromptRunner.Watch do
   watcher that greps for known failure signatures only catches failures someone
   predicted, and its silence is indistinguishable from health.
 
-  The quiet-time scan walks every configured repository, so on very large
-  repositories the default 15-minute interval matters; `--interval` is the
-  lever.
+  ## What The Quiet Scan Skips
+
+  `#{Enum.join(@pruned_entries, "`, `")}`.
+
+  All four are derived output or internal bookkeeping whose mtimes say nothing
+  about whether a session is making progress, and on a large repository they
+  dominate the walk — a build directory alone can outnumber the source tree by
+  an order of magnitude. Pruning them trades a rarer false "quiet" for a scan
+  that stays cheap enough to run on an interval, which is the right trade: the
+  15-minute default and a generous staleness threshold absorb the former, and
+  an O(repo) walk every interval is a cost that never goes away.
   """
 
   alias PromptRunner.Git
@@ -41,7 +52,6 @@ defmodule PromptRunner.Watch do
   alias PromptRunner.Paths
 
   @default_interval_seconds 900
-  @pruned_entries [".git"]
 
   @type sample :: %{
           packet: String.t(),

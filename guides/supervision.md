@@ -63,12 +63,19 @@ A watcher that parses one of them reports zero elapsed time for the other,
 which is exactly the situation the event stream exists to distinguish from a
 hang. An mtime cannot be the wrong schema.
 
-`watch` walks the packet's log directory and every configured repository,
-pruning `.git`, and takes the newest file mtime it finds. When there is nothing
-to measure it prints `quiet=?min` rather than a fabricated `0`.
+`watch` walks the packet's log directory and every configured repository and
+takes the newest file mtime it finds. When there is nothing to measure it
+prints `quiet=?min` rather than a fabricated `0`.
 
-That walk is the only expensive thing `watch` does. On very large repositories
-the default 15-minute interval matters; `--interval` is the lever.
+The walk skips `.git`, `_build`, `deps`, and `node_modules`. All four are
+derived output or internal bookkeeping whose mtimes say nothing about whether a
+session is making progress, and on a large repository they dominate the scan —
+a build directory alone can outnumber the source tree by an order of magnitude.
+Pruning them trades a rarer false "quiet" for a scan cheap enough to run on an
+interval, and the 15-minute default absorbs the former.
+
+That walk is still the only expensive thing `watch` does. On very large
+repositories `--interval` is the lever.
 
 ### It decides nothing
 

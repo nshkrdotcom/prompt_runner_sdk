@@ -164,6 +164,30 @@ defmodule PromptRunner.WatchTest do
     assert stale_sample.quiet_minutes >= 179
   end
 
+  test "derived output does not count as progress", %{root: root, repo: repo} do
+    # A build directory is written by every `mix compile` and can outnumber the
+    # source tree by an order of magnitude. Its mtimes say nothing about
+    # whether a session is advancing, and walking it every interval is the
+    # expensive half of the scan.
+    stale = System.os_time(:second) - 3 * 3600
+    File.touch!(Path.join(repo, "README.md"), stale)
+
+    for dir <- ["_build", "deps", "node_modules", ".git"] do
+      path = Path.join([repo, dir, "artifact.txt"])
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, "derived\n")
+    end
+
+    assert {:ok, sample} = Watch.sample(root)
+    assert sample.quiet_minutes >= 179
+
+    # A real source write still registers immediately.
+    File.write!(Path.join(repo, "lib.ex"), "actual work\n")
+
+    assert {:ok, working} = Watch.sample(root)
+    assert working.quiet_minutes == 0
+  end
+
   test "prompt is read from the newest prompt log", %{root: root} do
     log_dir = Paths.state_dir(root) |> Path.join("logs")
     File.mkdir_p!(log_dir)
