@@ -819,6 +819,19 @@ defmodule PromptRunner.Session do
         []
         |> maybe_put(:stream_timeout_ms, resolve_effective_timeout_ms(llm_config))
         |> maybe_put(:queue_timeout_ms, resolve_stream_idle_timeout(llm_config))
+        # ASM.Run.State defaults :run_deadline_ms to 600_000 — a ten-minute
+        # total wall-clock budget for the whole run, independent of the stream
+        # and transport timeouts. Prompt Runner never set it, so a packet whose
+        # `timeout` was deliberately unbounded still had every prompt killed at
+        # ten minutes with `provider_runtime_claim`: "exceeded its total run
+        # deadline". Any packet whose prompts do more than a few minutes of work
+        # was silently capped.
+        #
+        # The run deadline is the same quantity `timeout` already means here, so
+        # it derives from the same resolution: an explicit timeout bounds the
+        # run, and an absent one yields the seven-day emergency bound rather
+        # than ten minutes.
+        |> maybe_put(:run_deadline_ms, resolve_effective_timeout_ms(llm_config))
         |> maybe_put(:continuation, normalize_continuation(llm_config[:continuation]))
 
       {:ok, common_opts ++ provider_opts, stream_opts}
