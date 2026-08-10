@@ -11,6 +11,11 @@ Shaped by a thirty-session unattended program built on 0.8.1. Every addition
 here is something that program had to build for itself in shell, and every fix
 is something it hit in the field.
 
+**If you are on 0.8.1 or earlier and run packets unattended, read the first
+entry under Fixed before anything else.** A prompt that could not satisfy its
+verify contract re-invoked the provider without bound, and the cost of that is
+paid in provider tokens for as long as nobody is watching.
+
 ### Added
 
 - `mix prompt_runner packet lint [DIR]`, a static authoring-hazard gate and the
@@ -23,12 +28,13 @@ is something it hit in the field.
   legacy `@group` syntax in `targets:` (repo groups are never expanded for
   packets), and an unrecognized `verify:` clause. Warnings: a `verify.commands`
   entry not wrapped in `timeout`, a prompt with no `verify` contract, a
-  contract with no `commands:` entry, `changed_paths_only` in a packet that
-  runs with `--no-commit`, and the four inert front-matter keys.
-  `--strict` promotes warnings to errors, `--json` emits a machine-readable
-  report, and `--no-commit` enables the vacuity check. The known-clause list is
-  read from `PromptRunner.Verifier.contract_keys/0` so lint and the verifier
-  cannot drift.
+  contract with neither a `commands:` entry nor any content assertion, any use
+  of `changed_paths_only` (it only sees uncommitted work, so it passes
+  vacuously wherever the session commits for itself), and the four inert
+  front-matter keys. `--strict` promotes warnings to errors and `--json` emits
+  a machine-readable report. The known-clause list is read from
+  `PromptRunner.Verifier.contract_keys/0` so lint and the verifier cannot
+  drift.
 - The `doc:` verify clause, an artifact-quality gate. `files_exist` is
   satisfied by a three-line stub, so a prompt whose deliverable is a written
   document had no way to assert the document was written. `doc:` asserts a
@@ -42,12 +48,17 @@ is something it hit in the field.
   requires an upstream and compares `HEAD` to it — a missing upstream is a
   failure, since the clause was asked to assert publication and cannot.
   `pushed: false` (the default) treats an absent upstream as fine. The upstream
-  comparison fetches under a bounded timeout (`fetch_timeout_ms`, default 90s);
-  a fetch that fails or times out is reported in `details:` and the comparison
-  falls back to cached remote-tracking refs. Nothing mutates a working tree,
-  an index, or a local branch.
-- `mix prompt_runner watch [DIR]`, supervision for a long unattended run. One
-  compact line per interval:
+  comparison asks the remote with `git ls-remote` under a bounded timeout
+  (`remote_timeout_ms`, default 90s) rather than fetching: `ls-remote` is a
+  pure query and does not create or move remote-tracking refs, so the clause
+  writes nothing at all into the repository it is judging. When the remote
+  cannot be reached, `details:` says so and the comparison falls back to the
+  cached remote-tracking ref, which can only be behind the remote and never
+  ahead of it — the safe direction for a clause asserting publication.
+- `mix prompt_runner watch [DIR]`, supervision for a long unattended run. The
+  quiet-time scan skips `.git`, `_build`, `deps`, and `node_modules`, whose
+  mtimes are derived output and say nothing about session progress while
+  dominating the walk on a large repository. One compact line per interval:
   `WATCH 16:57Z runner=UP prompt=11 quiet=0min repos=3 dirty=0 commits=27`.
   `--interval SECONDS` (default 900), `--once`, and `--json`.
   `PromptRunner.Watch.sample/2` is public for host applications with their own
@@ -70,16 +81,45 @@ is something it hit in the field.
 
 ### Fixed
 
-- A prompt that could not satisfy its verify contract repaired forever.
+- **A prompt that could not satisfy its verify contract repaired forever.**
+  This is the most operationally serious item in the release.
+
   `RecoveryPolicy.final_action/5` returns `{:verification_failed, ...}` when
-  repair is *not* available — disabled, out of attempts, or the attempt was
-  itself a repair — and the runner routed that outcome through the same
-  function as `{:repair, ...}`, which returns `{:repair, ...}`. The outcome
-  handler then started another repair attempt, which ran in `:repair` mode,
-  took the same branch, and started another. An unattended run re-invoked the
-  provider without bound while the attempt list in `state.json` grew on every
-  pass. `{:verification_failed, ...}` is now terminal, and the failure names
-  the unmet items instead of inspecting the whole verifier report.
+  repair is *not* available — repair disabled, its attempts spent, or the
+  attempt that just failed was itself a repair. The runner routed that outcome
+  through the same function as `{:repair, ...}`, which returns `{:repair, ...}`,
+  and the outcome handler reacts to `{:repair, ...}` by starting another repair
+  attempt. That attempt ran in `:repair` mode, took the same branch, and
+  started another one.
+
+  *Exposure:* every release through 0.8.1, on the default recovery policy, with
+  no configuration required to trigger it. Any prompt whose contract simply
+  cannot be met — a typo'd path in `files_exist`, a deliverable the model will
+  not produce, a verify command that can never exit zero — re-invoked the
+  provider without bound. Unattended, that continues until someone notices;
+  with a live provider the cost is real tokens per iteration, at the packet's
+  own model and permission mode.
+
+  *It did not look like a loop.* Each pass printed an ordinary
+  `Verification failed for prompt NN` and started over, so the terminal showed
+  a plausible retry cadence rather than a runaway. The clearest signal was
+  indirect: the `attempts` list in `.prompt_runner/state.json` grew without
+  bound, every entry after the first carrying `"mode": "repair"`, until
+  re-encoding that file became the slowest operation in the run.
+
+  *Detection on an affected version:*
+  `jq '.prompts["01"].attempts | length' .prompt_runner/state.json` climbing
+  past `1 + recovery.repair.max_attempts` means the loop is running.
+
+  `{:verification_failed, ...}` is now terminal: the run stops and reports the
+  unmet items. The two outcomes share only the state recording they
+  legitimately have in common, and the reported failure names the failing items
+  instead of inspecting the whole verifier report:
+
+  ```text
+  ERROR: verification failed: file_exists docs/report.md: missing
+  ```
+
 - Call options were silently discarded by packet metadata. `Plan.merged_opts/2`
   normalized option keys once, *after* merging every layer, so
   `%{"provider" => "claude"}` from a packet manifest and
