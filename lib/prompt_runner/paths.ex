@@ -1,6 +1,28 @@
 defmodule PromptRunner.Paths do
   @moduledoc false
 
+  @state_dir ".prompt_runner"
+  @pid_file "run.pid"
+  @log_dir "logs"
+
+  @doc "Packet-local runtime state directory."
+  @spec state_dir(String.t()) :: String.t()
+  def state_dir(packet_dir) when is_binary(packet_dir),
+    do: packet_dir |> resolve() |> Path.join(@state_dir)
+
+  @doc "Log directory inside a runtime state directory."
+  @spec log_dir(String.t()) :: String.t()
+  def log_dir(state_dir) when is_binary(state_dir), do: Path.join(state_dir, @log_dir)
+
+  @doc """
+  Path of the run pid file inside a runtime state directory.
+
+  The runner writes it for the duration of a run so supervision can check
+  liveness by signalling a pid rather than by matching a process name.
+  """
+  @spec pid_file(String.t()) :: String.t()
+  def pid_file(state_dir) when is_binary(state_dir), do: Path.join(state_dir, @pid_file)
+
   @spec resolve(String.t() | nil, String.t() | nil) :: String.t() | nil
   def resolve(path, base_dir \\ nil)
 

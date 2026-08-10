@@ -12,6 +12,7 @@ defmodule PromptRunner.CLI do
   alias PromptRunner.Runner
   alias PromptRunner.Template
   alias PromptRunner.UI
+  alias PromptRunner.Watch
 
   # `plan` and `run` share one switch surface deliberately. When they did not,
   # `plan` parsed nothing and passed nothing to `PromptRunner.plan/2`, so
@@ -466,6 +467,20 @@ defmodule PromptRunner.CLI do
     :ok
   end
 
+  defp run_watch(rest) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [interval: :integer, once: :boolean, json: :boolean]
+      )
+
+    packet_dir = packet_dir(remaining)
+
+    case Watch.run(packet_dir, opts) do
+      :ok -> :ok
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
   defp packet_dir([], explicit), do: explicit || File.cwd!()
   defp packet_dir([candidate | _rest], nil), do: candidate
   defp packet_dir(_remaining, explicit), do: explicit
@@ -505,6 +520,7 @@ defmodule PromptRunner.CLI do
   defp parse_command(["run" | rest]), do: {:run, rest}
   defp parse_command(["repair" | rest]), do: {:repair, rest}
   defp parse_command(["status" | rest]), do: {:status, rest}
+  defp parse_command(["watch" | rest]), do: {:watch, rest}
   defp parse_command(["help" | _rest]), do: :help
   defp parse_command(["--help" | _rest]), do: :help
   defp parse_command(["-h" | _rest]), do: :help
@@ -528,6 +544,7 @@ defmodule PromptRunner.CLI do
   defp dispatch_command({:run, rest}), do: run_run(rest)
   defp dispatch_command({:repair, rest}), do: run_repair(rest)
   defp dispatch_command({:status, rest}), do: run_status(rest)
+  defp dispatch_command({:watch, rest}), do: run_watch(rest)
   defp dispatch_command(:help), do: show_help()
   defp dispatch_command(:unknown), do: handle_error(:unknown_command)
 
@@ -667,6 +684,7 @@ defmodule PromptRunner.CLI do
       prompt_runner run [PACKET_DIR] [PROMPT_ID...] [--skip-preflight] [--dry-run]
       prompt_runner repair [--packet PACKET_DIR] PROMPT_ID
       prompt_runner status [PACKET_DIR]
+      prompt_runner watch [PACKET_DIR] [--interval SECONDS] [--once] [--json]
 
     `plan` and `run` accept the same override flags, so `plan` shows exactly
     what `run` would resolve.

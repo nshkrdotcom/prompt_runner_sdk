@@ -4,6 +4,7 @@ defmodule PromptRunner.Runner do
   alias PromptRunner.CommitMessages
   alias PromptRunner.Config
   alias PromptRunner.FailureEnvelope
+  alias PromptRunner.Paths
   alias PromptRunner.Plan
   alias PromptRunner.Preflight
   alias PromptRunner.Progress
@@ -99,13 +100,37 @@ defmodule PromptRunner.Runner do
       opts[:run] ->
         with {:ok, _report} <- maybe_preflight_plan(plan, opts),
              {:ok, targets} <- build_targets(plan, opts, remaining) do
-          run_targets(plan, targets, opts[:no_commit] || false)
+          run_supervised(plan, targets, opts[:no_commit] || false)
         end
 
       true ->
         {:error, :no_command}
     end
   end
+
+  defp run_supervised(plan, targets, skip_commit) do
+    with_pid_file(plan, fn -> run_targets(plan, targets, skip_commit) end)
+  end
+
+  # Liveness has to be checkable from outside the run, and a process-name match
+  # is not that check: it matches any command line containing the pattern,
+  # including the supervisor's own shell, so it reports a healthy run forever.
+  # A pid file plus a signal-zero probe cannot self-match. It is written only
+  # when the plan has a state directory, so in-memory API runs stay free of
+  # filesystem side effects.
+  defp with_pid_file(%Plan{state_dir: state_dir}, fun) when is_binary(state_dir) do
+    path = Paths.pid_file(state_dir)
+    File.mkdir_p!(state_dir)
+    File.write!(path, System.pid() <> "\n")
+
+    try do
+      fun.()
+    after
+      File.rm(path)
+    end
+  end
+
+  defp with_pid_file(_plan, fun), do: fun.()
 
   defp maybe_preflight_plan(plan, opts) do
     if opts[:skip_preflight] do
