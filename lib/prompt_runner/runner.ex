@@ -157,10 +157,16 @@ defmodule PromptRunner.Runner do
     end)
   end
 
+  @doc false
+  @spec build_targets_for_test(Plan.t(), keyword(), [String.t()]) ::
+          {:ok, [String.t()]} | {:error, term()}
+  def build_targets_for_test(plan, opts, remaining),
+    do: build_targets(plan, opts, remaining)
+
   defp build_targets(plan, opts, remaining) do
     cond do
       remaining != [] ->
-        {:ok, [hd(remaining)]}
+        explicit_targets(plan, remaining)
 
       opts[:phase] ->
         {:ok, Prompts.phase_nums(plan, opts[:phase])}
@@ -189,6 +195,26 @@ defmodule PromptRunner.Runner do
 
       true ->
         {:error, :no_target}
+    end
+  end
+
+  # Every listed prompt runs, in the order given.
+  #
+  # This used to be `[hd(remaining)]`, so `run PACKET 01 02 03` silently ran only
+  # `01` and exited 0 — reporting success for work it had discarded.
+  # `guides/cli.md` has documented the multi-prompt form since the CLI existed,
+  # and it never worked. It is the worst shape of bug this SDK can have: a
+  # resumption that quietly does a fraction of what was asked and then claims to
+  # be finished.
+  #
+  # An id naming no prompt is an error rather than a silent no-op, for the same
+  # reason: a typo in a resume list should stop the run, not shorten it.
+  defp explicit_targets(plan, remaining) do
+    known = Prompts.nums(plan)
+
+    case Enum.reject(remaining, &(&1 in known)) do
+      [] -> {:ok, remaining}
+      unknown -> {:error, {:unknown_prompts, unknown, known}}
     end
   end
 

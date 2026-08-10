@@ -81,6 +81,15 @@ paid in provider tokens for as long as nobody is watching.
 
 ### Fixed
 
+- `run PACKET 01 02 03` now runs **every** listed prompt, in the order given.
+  `build_targets/3` returned `[hd(remaining)]`, so it ran only the first, exited
+  `0`, and reported success for the work it had discarded — while `guides/cli.md`
+  has documented the multi-prompt form since the CLI existed. This is the most
+  dangerous shape of defect for an unattended program: a mid-run resume with the
+  nineteen remaining prompt ids executed one of them and stopped cleanly, with
+  nothing in the log to say the other eighteen had been dropped. A prompt id that
+  names no prompt is now an error rather than a silent no-op, on the same
+  reasoning — a typo in a resume list should stop the run, not shorten it.
 - **A prompt that could not satisfy its verify contract repaired forever.**
   This is the most operationally serious item in the release.
 
