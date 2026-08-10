@@ -1,0 +1,200 @@
+defmodule PromptRunner.Verifier.ReposClean do
+  @moduledoc """
+  The `repos_clean:` verify clause: assert that sessions committed their work.
+
+  ```yaml
+  verify:
+    repos_clean:
+      - repo: "app"
+        pushed: true      # default false
+  ```
+
+  When a packet runs with `--no-commit`, the runner's committer never runs and
+  each session is responsible for committing its own work. `changed_paths_only`
+  is useless in that arrangement — it reads `git status --porcelain`, which is
+  empty precisely because the session committed — so it passes vacuously.
+  `repos_clean:` is the clause that actually holds such a packet to account.
+
+  `pushed:` semantics:
+
+  - `pushed: false` (the default) checks only that the working tree is clean. A
+    branch with no upstream is fine, and an existing upstream is not compared.
+    A repository that starts local and stays local until its author decides to
+    publish it must not fail a gate for that.
+  - `pushed: true` additionally requires an upstream. A missing upstream is a
+    failure, not a pass: the clause was asked to assert publication and cannot.
+
+  The upstream comparison fetches first, under a bounded timeout
+  (`fetch_timeout_ms`, default 90s), because a verify clause runs after the
+  model work is already spent and an unreachable remote must not hang the run.
+  A fetch that fails or times out is reported in `details` and the comparison
+  falls back to the cached remote-tracking ref rather than inventing a verdict.
+  Nothing here mutates a working tree, an index, or a local branch.
+  """
+
+  alias PromptRunner.Git
+
+  @default_fetch_timeout_ms 90_000
+  @max_reported_paths 10
+
+  @doc "Builds the verifier report item for one `repos_clean:` entry."
+  @spec report(String.t() | nil, String.t() | nil, term()) :: map()
+  def report(repo, nil, entry), do: missing_repo_report(repo, pushed?(entry))
+
+  def report(repo, root, entry) do
+    if Git.worktree?(root) do
+      clean_report(repo, root, pushed?(entry), fetch_timeout_ms(entry))
+    else
+      repo
+      |> base(root, pushed?(entry))
+      |> Map.merge(%{pass?: false, details: "not a git repository: #{root}"})
+    end
+  end
+
+  @doc "Returns the checklist label for one `repos_clean:` entry."
+  @spec label(term()) :: String.t()
+  def label(entry) do
+    if pushed?(entry) do
+      "repo committed and pushed: #{entry_repo(entry)}"
+    else
+      "repo committed: #{entry_repo(entry)}"
+    end
+  end
+
+  @doc "Returns the repo name declared by an entry, or nil when it is implicit."
+  @spec entry_repo(term()) :: String.t() | nil
+  def entry_repo(entry) when is_map(entry), do: Map.get(entry, "repo")
+  def entry_repo(entry) when is_binary(entry), do: entry
+  def entry_repo(entry), do: to_string(entry)
+
+  defp pushed?(entry) when is_map(entry), do: Map.get(entry, "pushed") == true
+  defp pushed?(_entry), do: false
+
+  defp fetch_timeout_ms(entry) when is_map(entry) do
+    case Map.get(entry, "fetch_timeout_ms") do
+      value when is_integer(value) and value > 0 -> value
+      _other -> @default_fetch_timeout_ms
+    end
+  end
+
+  defp fetch_timeout_ms(_entry), do: @default_fetch_timeout_ms
+
+  defp missing_repo_report(repo, pushed?) do
+    repo
+    |> base(nil, pushed?)
+    |> Map.merge(%{pass?: false, details: "missing_repo: #{repo || "(unnamed)"}"})
+  end
+
+  defp base(repo, root, pushed?) do
+    %{
+      kind: "repos_clean",
+      repo: repo,
+      path: root,
+      pushed?: pushed?,
+      branch: nil,
+      head: nil,
+      upstream: nil,
+      dirty_count: 0
+    }
+  end
+
+  defp clean_report(repo, root, pushed?, timeout_ms) do
+    branch = Git.value(root, ["rev-parse", "--abbrev-ref", "HEAD"])
+    head = Git.value(root, ["rev-parse", "--short", "HEAD"])
+
+    base =
+      repo
+      |> base(root, pushed?)
+      |> Map.merge(%{branch: branch, head: head})
+
+    case Git.status_lines(root) do
+      {:error, output} ->
+        Map.merge(base, %{pass?: false, details: "git status failed: #{output}"})
+
+      {:ok, []} ->
+        Map.merge(base, upstream_result(root, branch, head, pushed?, timeout_ms))
+
+      {:ok, dirty} ->
+        Map.merge(base, %{
+          dirty_count: length(dirty),
+          pass?: false,
+          details: dirty_details(dirty)
+        })
+    end
+  end
+
+  defp dirty_details(dirty) do
+    shown = Enum.take(dirty, @max_reported_paths)
+    omitted = length(dirty) - length(shown)
+    suffix = if omitted > 0, do: ", and #{omitted} more", else: ""
+
+    "uncommitted changes (#{length(dirty)}): #{Enum.join(shown, ", ")}#{suffix}"
+  end
+
+  defp upstream_result(root, branch, head, pushed?, timeout_ms) do
+    upstream_verdict(root, branch, head, Git.upstream_ref(root), pushed?, timeout_ms)
+  end
+
+  defp upstream_verdict(_root, branch, head, nil, true, _timeout_ms) do
+    %{
+      pass?: false,
+      details: "no upstream for branch #{branch} at #{head}; pushed: true requires one"
+    }
+  end
+
+  defp upstream_verdict(_root, branch, head, nil, _pushed?, _timeout_ms) do
+    %{pass?: true, details: "ok: #{branch} at #{head} (local only, no upstream)"}
+  end
+
+  defp upstream_verdict(_root, branch, head, upstream, false, _timeout_ms) do
+    %{
+      upstream: upstream,
+      pass?: true,
+      details: "ok: #{branch} at #{head} (upstream #{upstream}, push not asserted)"
+    }
+  end
+
+  defp upstream_verdict(root, branch, head, upstream, true, timeout_ms) do
+    note = fetch_note(root, upstream, timeout_ms)
+    local_sha = Git.value(root, ["rev-parse", "HEAD"])
+    upstream_sha = Git.value(root, ["rev-parse", upstream])
+
+    upstream
+    |> pushed_verdict(branch, head, local_sha, upstream_sha)
+    |> Map.update!(:details, &(&1 <> note))
+  end
+
+  defp pushed_verdict(upstream, branch, head, sha, sha) when is_binary(sha) do
+    %{
+      upstream: upstream,
+      pass?: true,
+      details: "ok: #{branch} at #{head} (pushed to #{upstream})"
+    }
+  end
+
+  defp pushed_verdict(upstream, branch, head, _local_sha, upstream_sha) do
+    %{
+      upstream: upstream,
+      pass?: false,
+      details:
+        "not pushed: #{branch} HEAD #{head} does not match #{upstream} #{short(upstream_sha)}"
+    }
+  end
+
+  defp short(nil), do: "(unresolved)"
+  defp short(sha) when is_binary(sha), do: String.slice(sha, 0, 7)
+
+  defp fetch_note(root, upstream, timeout_ms) do
+    case Git.fetch(root, remote_of(upstream), timeout_ms) do
+      :ok -> ""
+      {:error, {:timeout, ms}} -> " [fetch timed out after #{ms}ms; used cached refs]"
+      {:error, reason} -> " [fetch failed (#{inspect(reason)}); used cached refs]"
+    end
+  end
+
+  defp remote_of(upstream) do
+    upstream
+    |> String.split("/", parts: 2)
+    |> List.first()
+  end
+end

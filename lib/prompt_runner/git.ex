@@ -1,6 +1,12 @@
 defmodule PromptRunner.Git do
   @moduledoc """
-  Git commit helpers for single-repo and multi-repo prompt runs.
+  Git commit helpers for single-repo and multi-repo prompt runs, plus the
+  read-only repository inspection used by the verifier and by `watch`.
+
+  Everything in the inspection surface uses `git -C <root>` rather than the
+  `:cd` option so a path that does not exist reports a git error instead of
+  raising, and nothing in it mutates a working tree, an index, or a local
+  branch.
   """
 
   alias PromptRunner.CommitMessages
@@ -9,6 +15,104 @@ defmodule PromptRunner.Git do
   alias PromptRunner.UI
 
   @type source :: Plan.t() | Config.t()
+
+  @doc "Returns true when `root` is inside a git work tree."
+  @spec worktree?(String.t()) :: boolean()
+  def worktree?(root) when is_binary(root) do
+    case cmd(root, ["rev-parse", "--is-inside-work-tree"]) do
+      {output, 0} -> String.trim(output) == "true"
+      _other -> false
+    end
+  end
+
+  @doc """
+  Returns the trimmed `git status --porcelain` lines for `root`.
+
+  An empty list means the working tree is clean.
+  """
+  @spec status_lines(String.t()) :: {:ok, [String.t()]} | {:error, String.t()}
+  def status_lines(root) when is_binary(root) do
+    case cmd(root, ["status", "--porcelain"]) do
+      {output, 0} -> {:ok, output |> String.split("\n", trim: true) |> Enum.map(&String.trim/1)}
+      {output, _code} -> {:error, String.trim(output)}
+    end
+  end
+
+  @doc "Returns the number of commits reachable from HEAD, or nil when unavailable."
+  @spec commit_count(String.t()) :: non_neg_integer() | nil
+  def commit_count(root) when is_binary(root) do
+    case value(root, ["rev-list", "--count", "HEAD"]) do
+      nil -> nil
+      count -> parse_count(count)
+    end
+  end
+
+  @doc "Runs a git command in `root` and returns `{output, exit_code}`."
+  @spec cmd(String.t(), [String.t()]) :: {String.t(), non_neg_integer()}
+  def cmd(root, args) when is_binary(root) and is_list(args) do
+    System.cmd("git", ["-C", root | args], stderr_to_stdout: true)
+  end
+
+  @doc "Runs a git command in `root` and returns its trimmed output, or nil on failure."
+  @spec value(String.t(), [String.t()]) :: String.t() | nil
+  def value(root, args) when is_binary(root) and is_list(args) do
+    case cmd(root, args) do
+      {output, 0} -> String.trim(output)
+      _other -> nil
+    end
+  end
+
+  @doc """
+  Returns the upstream ref for the current branch (for example `origin/main`),
+  or nil when the branch has no upstream configured.
+  """
+  @spec upstream_ref(String.t()) :: String.t() | nil
+  def upstream_ref(root) when is_binary(root) do
+    value(root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+  end
+
+  @doc """
+  Fetches `remote` into `root` under a bounded timeout.
+
+  A fetch updates remote-tracking refs only; it never touches the working tree,
+  the index, or a local branch. The timeout matters because a verify clause runs
+  after the model work is already spent — an unreachable remote must not hang
+  the run.
+  """
+  @spec fetch(String.t(), String.t(), timeout()) :: :ok | {:error, term()}
+  def fetch(root, remote, timeout_ms)
+      when is_binary(root) and is_binary(remote) and is_integer(timeout_ms) do
+    task = Task.async(fn -> safe_cmd(root, ["fetch", "--quiet", remote]) end)
+
+    case Task.yield(task, timeout_ms) || Task.shutdown(task, :brutal_kill) do
+      {:ok, {:ok, _output, 0}} -> :ok
+      {:ok, {:ok, output, code}} -> {:error, {:exit_status, code, first_line(output)}}
+      {:ok, {:error, reason}} -> {:error, reason}
+      _other -> {:error, {:timeout, timeout_ms}}
+    end
+  end
+
+  defp safe_cmd(root, args) do
+    {output, code} = cmd(root, args)
+    {:ok, output, code}
+  rescue
+    error -> {:error, Exception.message(error)}
+  end
+
+  defp first_line(output) do
+    output
+    |> String.split("\n", trim: true)
+    |> List.first()
+    |> Kernel.||("")
+    |> String.trim()
+  end
+
+  defp parse_count(count) do
+    case Integer.parse(count) do
+      {value, _rest} -> value
+      :error -> nil
+    end
+  end
 
   @spec commit_multi_repo(source(), String.t(), list({String.t(), String.t()})) ::
           list({String.t(), term()})

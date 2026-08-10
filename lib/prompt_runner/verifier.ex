@@ -6,6 +6,8 @@ defmodule PromptRunner.Verifier do
   alias PromptRunner.Config
   alias PromptRunner.Paths
   alias PromptRunner.Plan
+  alias PromptRunner.Verifier.Doc
+  alias PromptRunner.Verifier.ReposClean
 
   @type report :: %{
           pass?: boolean(),
@@ -39,8 +41,10 @@ defmodule PromptRunner.Verifier do
       |> Kernel.++(verify_files_absent(contract, repo_index, default_scope))
       |> Kernel.++(verify_contains(contract, repo_index, default_scope))
       |> Kernel.++(verify_matches(contract, repo_index, default_scope))
+      |> Kernel.++(verify_doc(contract, repo_index, default_scope))
       |> Kernel.++(verify_commands(contract, repo_index, default_scope))
       |> Kernel.++(verify_changed_paths_only(contract, repo_index, default_scope))
+      |> Kernel.++(verify_repos_clean(contract, repo_index, default_scope))
 
     failures = Enum.reject(items, & &1.pass?)
 
@@ -67,6 +71,12 @@ defmodule PromptRunner.Verifier do
 
       {"matches", entries} ->
         Enum.map(entries, &%{label: "matches: #{format_entry_path(&1)}"})
+
+      {"doc", entries} ->
+        Enum.map(entries, &%{label: doc_label(&1)})
+
+      {"repos_clean", entries} ->
+        Enum.map(entries, &%{label: ReposClean.label(&1)})
 
       {"commands", entries} ->
         Enum.map(entries, &%{label: "command: #{format_command(&1)}"})
@@ -169,6 +179,25 @@ defmodule PromptRunner.Verifier do
     end)
   end
 
+  defp verify_doc(contract, repo_index, default_scope) do
+    contract
+    |> Map.get("doc", [])
+    |> Enum.map(fn entry ->
+      entry
+      |> resolve_entry(repo_index, default_scope)
+      |> Doc.report(entry)
+    end)
+  end
+
+  defp verify_repos_clean(contract, repo_index, default_scope) do
+    contract
+    |> Map.get("repos_clean", [])
+    |> Enum.map(fn entry ->
+      repo = ReposClean.entry_repo(entry) || repo_for_scope(repo_index, default_scope)
+      ReposClean.report(repo, repo_root(repo_index, repo), entry)
+    end)
+  end
+
   defp verify_commands(contract, repo_index, default_scope) do
     contract
     |> Map.get("commands", [])
@@ -211,7 +240,9 @@ defmodule PromptRunner.Verifier do
     |> Map.update("files_absent", [], &normalize_entries/1)
     |> Map.update("contains", [], &normalize_entries/1)
     |> Map.update("matches", [], &normalize_entries/1)
+    |> Map.update("doc", [], &normalize_entries/1)
     |> Map.update("changed_paths_only", [], &normalize_entries/1)
+    |> Map.update("repos_clean", [], &normalize_entries/1)
   end
 
   defp verify_changed_paths_repo({repo, allowed_paths}, repo_index) do
@@ -387,6 +418,10 @@ defmodule PromptRunner.Verifier do
   defp normalize_value(value) when is_map(value), do: stringify_keys(value)
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value), do: value
+
+  defp doc_label(entry) do
+    "doc: #{format_entry_path(entry)} (>= #{Doc.min_lines(entry)} non-blank lines)"
+  end
 
   defp format_entry_path(%{"repo" => repo, "path" => path}) when is_binary(repo),
     do: "#{repo}:#{path}"
