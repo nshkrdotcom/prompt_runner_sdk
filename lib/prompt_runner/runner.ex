@@ -1005,6 +1005,10 @@ defmodule PromptRunner.Runner do
 
   defp merge_root_and_resume_error(root_result, _resume_result), do: root_result
 
+  defp format_error_reason({:verification_failed, report}, _config) do
+    {"verification failed: #{verifier_failure_summary(report)}", nil, false}
+  end
+
   defp format_error_reason(reason, config) do
     provider_error = extract_provider_error(reason)
 
@@ -1022,6 +1026,27 @@ defmodule PromptRunner.Runner do
 
     {summary, stderr_detail, truthy?(map_get(provider_error, :truncated?))}
   end
+
+  defp verifier_failure_summary(report) when is_map(report) do
+    report
+    |> Map.get(:failures, Map.get(report, "failures", []))
+    |> Enum.map_join("; ", &verifier_failure_line/1)
+    |> case do
+      "" -> "no failing items recorded"
+      summary -> summary
+    end
+  end
+
+  defp verifier_failure_summary(report), do: inspect(report)
+
+  defp verifier_failure_line(failure) when is_map(failure) do
+    subject =
+      map_get(failure, :path) || map_get(failure, :command) || map_get(failure, :repo) || "?"
+
+    "#{map_get(failure, :kind) || "check"} #{subject}: #{map_get(failure, :details) || "failed"}"
+  end
+
+  defp verifier_failure_line(failure), do: inspect(failure)
 
   defp extract_provider_error(reason) do
     case map_get(reason, :provider_error) do
@@ -1486,7 +1511,7 @@ defmodule PromptRunner.Runner do
         fail_prompt_attempt(ctx, report, reason, failure)
 
       {:verification_failed, reason, failure} ->
-        request_prompt_repair(ctx, report, reason, failure)
+        fail_verification_attempt(ctx, report, reason, failure)
 
       {:retry, reason, failure, delay_ms} ->
         retry_prompt_attempt(ctx, report, reason, failure, delay_ms)
@@ -1541,6 +1566,24 @@ defmodule PromptRunner.Runner do
   end
 
   defp request_prompt_repair(ctx, report, reason, failure) do
+    record_verification_failure(ctx, report, reason, failure)
+    {:repair, report, reason, failure}
+  end
+
+  # `{:verification_failed, ...}` is the policy saying repair is *not*
+  # available — repair is disabled, its attempts are spent, or this attempt was
+  # already a repair. It used to be routed through `request_prompt_repair/4`,
+  # which returns `{:repair, ...}`, so `handle_attempt_outcome/2` started
+  # another repair attempt regardless. Every subsequent attempt ran in `:repair`
+  # mode, took the same branch, and started another one: a prompt that could not
+  # satisfy its contract re-invoked the provider forever, unattended, with the
+  # state file growing on every pass.
+  defp fail_verification_attempt(ctx, report, reason, failure) do
+    record_verification_failure(ctx, report, reason, failure)
+    return_error(ctx.plan, ctx.prompt.num, reason, false)
+  end
+
+  defp record_verification_failure(ctx, report, reason, failure) do
     Progress.mark_failed(ctx.plan, ctx.prompt.num)
 
     Runtime.mark_status(ctx.plan, ctx.prompt.num, "verification_failed", %{
@@ -1553,7 +1596,6 @@ defmodule PromptRunner.Runner do
     emit_observer(ctx.plan, %{type: :prompt_failed, prompt: ctx.prompt, reason: reason})
 
     IO.puts(UI.red("Verification failed for prompt #{ctx.prompt.num}"))
-    {:repair, report, reason, failure}
   end
 
   defp retry_prompt_attempt(ctx, report, reason, failure, delay_ms) do
