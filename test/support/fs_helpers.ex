@@ -50,6 +50,16 @@ defmodule PromptRunner.Test.FSHelpers do
     :ok
   end
 
+  @doc "Clones `remote` into a fresh directory with a committer identity configured."
+  def clone!(remote, prefix) do
+    parent = tmp_dir(prefix)
+    path = Path.join(parent, "clone")
+    git!(parent, ["clone", "-q", remote, path])
+    git!(path, ["config", "user.name", "Prompt Runner Test"])
+    git!(path, ["config", "user.email", "prompt-runner@example.com"])
+    path
+  end
+
   @doc "Adds `remote` as `origin` and pushes the current branch with upstream tracking."
   def push_to_origin!(repo, remote) do
     git!(repo, ["remote", "add", "origin", remote])

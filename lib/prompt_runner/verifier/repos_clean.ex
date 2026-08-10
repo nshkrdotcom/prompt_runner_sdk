@@ -24,17 +24,25 @@ defmodule PromptRunner.Verifier.ReposClean do
   - `pushed: true` additionally requires an upstream. A missing upstream is a
     failure, not a pass: the clause was asked to assert publication and cannot.
 
-  The upstream comparison fetches first, under a bounded timeout
-  (`fetch_timeout_ms`, default 90s), because a verify clause runs after the
-  model work is already spent and an unreachable remote must not hang the run.
-  A fetch that fails or times out is reported in `details` and the comparison
-  falls back to the cached remote-tracking ref rather than inventing a verdict.
-  Nothing here mutates a working tree, an index, or a local branch.
+  The upstream comparison asks the remote directly with `git ls-remote`, under a
+  bounded timeout (`remote_timeout_ms`, default 90s). `ls-remote` is a pure
+  query: unlike `git fetch` it does not create or move remote-tracking refs, so
+  this clause writes nothing at all into the repository it is judging. A gate
+  that mutates any part of its subject is a gate that can change the thing it
+  measures.
+
+  The bound matters because a verify clause runs after the model work is
+  already spent and an unreachable remote must not hang the run. When the
+  remote cannot be reached, the comparison falls back to the cached
+  remote-tracking ref and says so in `details`. That fallback is biased toward
+  reporting *not pushed*, because a cached ref can only be behind the remote,
+  never ahead of it — the safe direction for a clause whose whole job is to
+  assert publication.
   """
 
   alias PromptRunner.Git
 
-  @default_fetch_timeout_ms 90_000
+  @default_remote_timeout_ms 90_000
   @max_reported_paths 10
 
   @doc "Builds the verifier report item for one `repos_clean:` entry."
@@ -43,7 +51,7 @@ defmodule PromptRunner.Verifier.ReposClean do
 
   def report(repo, root, entry) do
     if Git.worktree?(root) do
-      clean_report(repo, root, pushed?(entry), fetch_timeout_ms(entry))
+      clean_report(repo, root, pushed?(entry), remote_timeout_ms(entry))
     else
       repo
       |> base(root, pushed?(entry))
@@ -70,14 +78,14 @@ defmodule PromptRunner.Verifier.ReposClean do
   defp pushed?(entry) when is_map(entry), do: Map.get(entry, "pushed") == true
   defp pushed?(_entry), do: false
 
-  defp fetch_timeout_ms(entry) when is_map(entry) do
-    case Map.get(entry, "fetch_timeout_ms") do
+  defp remote_timeout_ms(entry) when is_map(entry) do
+    case Map.get(entry, "remote_timeout_ms") || Map.get(entry, "fetch_timeout_ms") do
       value when is_integer(value) and value > 0 -> value
-      _other -> @default_fetch_timeout_ms
+      _other -> @default_remote_timeout_ms
     end
   end
 
-  defp fetch_timeout_ms(_entry), do: @default_fetch_timeout_ms
+  defp remote_timeout_ms(_entry), do: @default_remote_timeout_ms
 
   defp missing_repo_report(repo, pushed?) do
     repo
@@ -155,13 +163,44 @@ defmodule PromptRunner.Verifier.ReposClean do
   end
 
   defp upstream_verdict(root, branch, head, upstream, true, timeout_ms) do
-    note = fetch_note(root, upstream, timeout_ms)
     local_sha = Git.value(root, ["rev-parse", "HEAD"])
-    upstream_sha = Git.value(root, ["rev-parse", upstream])
+    {upstream_sha, note} = remote_head(root, upstream, timeout_ms)
 
     upstream
     |> pushed_verdict(branch, head, local_sha, upstream_sha)
     |> Map.update!(:details, &(&1 <> note))
+  end
+
+  # Ask the remote. Falling back to the cached remote-tracking ref keeps a
+  # transient network failure from being reported as a verdict nobody
+  # established, and the note says which of the two answered.
+  defp remote_head(root, upstream, timeout_ms) do
+    {remote, ref} = remote_and_ref(upstream)
+
+    case Git.ls_remote(root, remote, ref, timeout_ms) do
+      {:ok, sha} -> {sha, ""}
+      {:error, :ref_absent} -> {nil, " [#{ref} is absent from #{remote}]"}
+      {:error, reason} -> {Git.value(root, ["rev-parse", upstream]), unreachable_note(reason)}
+    end
+  end
+
+  defp unreachable_note({:timeout, ms}) do
+    " [#{remote_query_label()} timed out after #{ms}ms; compared against the cached " <>
+      "remote-tracking ref, which can only be behind the remote]"
+  end
+
+  defp unreachable_note(reason) do
+    " [#{remote_query_label()} failed (#{inspect(reason)}); compared against the cached " <>
+      "remote-tracking ref, which can only be behind the remote]"
+  end
+
+  defp remote_query_label, do: "git ls-remote"
+
+  defp remote_and_ref(upstream) do
+    case String.split(upstream, "/", parts: 2) do
+      [remote, branch] -> {remote, "refs/heads/" <> branch}
+      [remote] -> {remote, "HEAD"}
+    end
   end
 
   defp pushed_verdict(upstream, branch, head, sha, sha) when is_binary(sha) do
@@ -183,18 +222,4 @@ defmodule PromptRunner.Verifier.ReposClean do
 
   defp short(nil), do: "(unresolved)"
   defp short(sha) when is_binary(sha), do: String.slice(sha, 0, 7)
-
-  defp fetch_note(root, upstream, timeout_ms) do
-    case Git.fetch(root, remote_of(upstream), timeout_ms) do
-      :ok -> ""
-      {:error, {:timeout, ms}} -> " [fetch timed out after #{ms}ms; used cached refs]"
-      {:error, reason} -> " [fetch failed (#{inspect(reason)}); used cached refs]"
-    end
-  end
-
-  defp remote_of(upstream) do
-    upstream
-    |> String.split("/", parts: 2)
-    |> List.first()
-  end
 end

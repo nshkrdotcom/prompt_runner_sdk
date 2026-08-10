@@ -197,6 +197,7 @@ defmodule PromptRunner.VerifierReposCleanTest do
     before_head = FSHelpers.git!(repo, ["rev-parse", "HEAD"])
     before_branches = FSHelpers.git!(repo, ["branch", "--list"])
     before_status = FSHelpers.git!(repo, ["status", "--porcelain"])
+    before_remote_refs = FSHelpers.git!(repo, ["for-each-ref", "refs/remotes"])
 
     {_report, item} =
       verify(repo, """
@@ -209,6 +210,42 @@ defmodule PromptRunner.VerifierReposCleanTest do
     assert FSHelpers.git!(repo, ["rev-parse", "HEAD"]) == before_head
     assert FSHelpers.git!(repo, ["branch", "--list"]) == before_branches
     assert FSHelpers.git!(repo, ["status", "--porcelain"]) == before_status
+    assert FSHelpers.git!(repo, ["for-each-ref", "refs/remotes"]) == before_remote_refs
+  end
+
+  test "verification does not move remote-tracking refs", %{repo: repo} do
+    # The assertion above cannot bite while the cached ref already matches the
+    # remote. Move the remote ahead from a second clone, so a `git fetch` would
+    # visibly rewrite `refs/remotes/origin/*`, and prove it does not happen.
+    # `git ls-remote` answers the same question without writing anything.
+    remote = FSHelpers.bare_repo!("prompt_runner_clean_remote")
+    on_exit(fn -> File.rm_rf!(remote) end)
+    branch = FSHelpers.push_to_origin!(repo, remote)
+
+    other = FSHelpers.clone!(remote, "prompt_runner_clean_clone")
+    on_exit(fn -> File.rm_rf!(other) end)
+    FSHelpers.commit_file!(other, "FROM_ELSEWHERE.md", "# Elsewhere\n")
+    FSHelpers.git!(other, ["push", "-q", "origin", branch])
+
+    remote_tip = FSHelpers.git!(other, ["rev-parse", "HEAD"])
+    cached_before = FSHelpers.git!(repo, ["rev-parse", "origin/#{branch}"])
+    refute cached_before == remote_tip
+
+    {_report, item} =
+      verify(repo, """
+        repos_clean:
+          - repo: "app"
+            pushed: true
+      """)
+
+    assert FSHelpers.git!(repo, ["rev-parse", "origin/#{branch}"]) == cached_before
+
+    # And the verdict used the live remote, not the stale cached ref: HEAD
+    # matches the cached ref exactly, so a cache-based comparison would have
+    # passed.
+    refute item.pass?
+    assert item.details =~ "not pushed"
+    assert item.details =~ String.slice(remote_tip, 0, 7)
   end
 
   test "contract_items exposes repos_clean entries so checklist sync covers them" do

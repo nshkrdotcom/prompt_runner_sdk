@@ -5,8 +5,8 @@ defmodule PromptRunner.Git do
 
   Everything in the inspection surface uses `git -C <root>` rather than the
   `:cd` option so a path that does not exist reports a git error instead of
-  raising, and nothing in it mutates a working tree, an index, or a local
-  branch.
+  raising, and nothing in it writes: not the working tree, not the index, not a
+  local branch, and not a remote-tracking ref.
   """
 
   alias PromptRunner.CommitMessages
@@ -72,23 +72,46 @@ defmodule PromptRunner.Git do
   end
 
   @doc """
-  Fetches `remote` into `root` under a bounded timeout.
+  Resolves `ref` on `remote` and returns its object id, under a bounded timeout.
 
-  A fetch updates remote-tracking refs only; it never touches the working tree,
-  the index, or a local branch. The timeout matters because a verify clause runs
-  after the model work is already spent — an unreachable remote must not hang
-  the run.
+  `git ls-remote` is a pure query: it opens a connection, reads the remote's ref
+  advertisement, and writes nothing. Unlike `git fetch` it does not create or
+  move remote-tracking refs, so a verify clause built on it cannot alter the
+  repository it is judging — a gate that mutates anything in its subject is a
+  gate that can change the thing it measures.
+
+  The timeout matters because a verify clause runs after the model work is
+  already spent: an unreachable remote must not hang the run.
+
+  Returns `{:error, :ref_absent}` when the remote has no such ref.
   """
-  @spec fetch(String.t(), String.t(), timeout()) :: :ok | {:error, term()}
-  def fetch(root, remote, timeout_ms)
-      when is_binary(root) and is_binary(remote) and is_integer(timeout_ms) do
-    task = Task.async(fn -> safe_cmd(root, ["fetch", "--quiet", remote]) end)
+  @spec ls_remote(String.t(), String.t(), String.t(), timeout()) ::
+          {:ok, String.t()} | {:error, term()}
+  def ls_remote(root, remote, ref, timeout_ms)
+      when is_binary(root) and is_binary(remote) and is_binary(ref) and is_integer(timeout_ms) do
+    case bounded_cmd(root, ["ls-remote", "--exit-code", remote, ref], timeout_ms) do
+      {:ok, output, 0} -> parse_ls_remote(output)
+      {:ok, _output, 2} -> {:error, :ref_absent}
+      {:ok, output, code} -> {:error, {:exit_status, code, first_line(output)}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # `Task.shutdown/2` unlinks before killing, so a timeout closes the port and
+  # takes the git process with it without disturbing the caller.
+  defp bounded_cmd(root, args, timeout_ms) do
+    task = Task.async(fn -> safe_cmd(root, args) end)
 
     case Task.yield(task, timeout_ms) || Task.shutdown(task, :brutal_kill) do
-      {:ok, {:ok, _output, 0}} -> :ok
-      {:ok, {:ok, output, code}} -> {:error, {:exit_status, code, first_line(output)}}
-      {:ok, {:error, reason}} -> {:error, reason}
+      {:ok, result} -> result
       _other -> {:error, {:timeout, timeout_ms}}
+    end
+  end
+
+  defp parse_ls_remote(output) do
+    case output |> String.split(~r/\s+/, trim: true) |> List.first() do
+      sha when is_binary(sha) and sha != "" -> {:ok, sha}
+      _other -> {:error, :ref_absent}
     end
   end
 
