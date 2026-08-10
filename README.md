@@ -14,7 +14,7 @@
 </p>
 
 Prompt Runner SDK executes packetized prompt workflows against local
-repositories. This README targets `prompt_runner_sdk ~> 0.8.1`.
+repositories. This README targets `prompt_runner_sdk ~> 0.9.0`.
 
 The packet-first design introduced in `0.7.0` carries forward unchanged:
 
@@ -25,9 +25,22 @@ The packet-first design introduced in `0.7.0` carries forward unchanged:
 - a built-in simulated provider can prove recovery behavior without any
   external provider CLI
 
-The `0.8` line moves the runtime onto `agent_session_manager ~> 0.12.1` and
-`cli_subprocess_core ~> 0.4.1`, and publishes the normalized option surface
-those releases added. See the [CHANGELOG](CHANGELOG.md) for the full list.
+`0.9.0` is shaped by a thirty-session unattended program run on `0.8.1`. Every
+addition is something that program had to build for itself, and every fix is
+something it hit:
+
+- `packet lint` — a static gate for authoring hazards, the constructs that load
+  and run and quietly mean something else
+- `doc:` and `repos_clean:` verify clauses — artifact quality, and repository
+  discipline for packets where each session commits its own work
+- `watch` — one line of supervision facts per interval, backed by a pid file
+  the runner now writes
+- `plan` honours the same override flags as `run`, and `run --dry-run` is
+  reachable from the CLI at last
+- a verification failure with the repair budget spent now fails instead of
+  repairing forever
+
+See the [CHANGELOG](CHANGELOG.md) for the full list.
 
 The same runtime is exposed through public Elixir modules and the CLI.
 
@@ -38,8 +51,10 @@ The same runtime is exposed through public Elixir modules and the CLI.
 - template-based prompt scaffolding with home-scoped and packet-local templates
 - home-scoped profiles under `~/.config/prompt_runner/`
 - deterministic completion contracts plus generated checklist views
+- a static authoring linter for the hazards that do not raise
 - policy-driven retry, repair, and resume based on verifier state plus
   structured recovery envelopes
+- supervision for long unattended runs, by pid file and file mtime
 - zero-dependency simulation for retry, repair, and resume demos
 - public packet/profile/runtime APIs plus matching CLI commands
 - Claude, Codex, Amp, Cursor, and Antigravity support through
@@ -51,7 +66,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.8.1"}
+    {:prompt_runner_sdk, "~> 0.9.0"}
   ]
 end
 ```
@@ -120,15 +135,8 @@ mix prompt_runner prompt new 01 \
 If you want a real provider packet after that, switch the packet to a real
 profile/provider/model or start with `codex-default`.
 
-The generated prompt is template-based. It should then be finished by adding:
-
-- `references`
-- `required_reading`
-- `context_files`
-- `depends_on`
-- a deterministic `verify:` contract
-
-Example:
+The generated prompt is template-based. Finish it by writing the source
+material into the body and adding a deterministic `verify:` contract:
 
 ```markdown
 ---
@@ -139,19 +147,14 @@ template: "from-adr"
 targets:
   - "app"
 commit: "docs: add runtime boundaries summary"
-references:
-  - "docs/adr-001-runtime-boundaries.md"
-required_reading:
-  - "docs/adr-001-runtime-boundaries.md"
-context_files:
-  - "workspace/README.md"
-depends_on: []
 verify:
   files_exist:
     - "RUNTIME_BOUNDARIES.md"
   contains:
     - path: "RUNTIME_BOUNDARIES.md"
       text: "Prompt Runner owns packet orchestration."
+  commands:
+    - "timeout 60 test -s RUNTIME_BOUNDARIES.md"
   changed_paths_only:
     - "RUNTIME_BOUNDARIES.md"
 ---
@@ -174,12 +177,17 @@ Read ADR 001 and create `RUNTIME_BOUNDARIES.md` in the target repo.
 Do not modify any other files. Respond with exactly `ok`.
 ```
 
-Turn the verification contract into a human checklist:
+Required reading belongs in the body: only the markdown after the front matter
+reaches the model. Commands belong inside `timeout`: the verifier runs them
+through `bash -lc` with no timeout of its own.
+
+Turn the verification contract into a human checklist and check the packet:
 
 ```bash
 mix prompt_runner checklist sync demo
-mix prompt_runner packet preflight demo
+mix prompt_runner packet lint demo
 mix prompt_runner packet doctor demo
+mix prompt_runner packet preflight demo
 ```
 
 Inspect, run, and check status:
@@ -187,11 +195,19 @@ Inspect, run, and check status:
 ```bash
 mix prompt_runner list demo
 mix prompt_runner plan demo
+mix prompt_runner run demo --dry-run
 mix prompt_runner run demo
 mix prompt_runner status demo
 ```
 
 Packet-local runtime state is written to `demo/.prompt_runner/`.
+
+For a long run, supervise it from a second pane:
+
+```bash
+mix prompt_runner watch demo
+# WATCH 16:57Z runner=UP prompt=11 quiet=0min repos=1 dirty=0 commits=27
+```
 
 For a ready-made authoring walkthrough from ADRs/docs to finished prompts, see
 [`examples/authoring_packet/`](examples/authoring_packet/README.md).
@@ -271,19 +287,23 @@ plus a no-op committer:
 
 Prompt Runner no longer equates provider success with completion.
 
-Each prompt can declare a deterministic completion contract with checks such as:
+Each prompt can declare a deterministic completion contract:
 
-- `files_exist`
-- `files_absent`
-- `contains`
-- `matches`
-- `commands`
-- `changed_paths_only`
+| Clause | Asserts |
+|--------|---------|
+| `files_exist` / `files_absent` | the path is there, or is not |
+| `contains` / `matches` | file content, literally or by regex |
+| `doc` | the document is substantive: line floor, required sections, no unresolved markers |
+| `commands` | a shell command exits zero |
+| `changed_paths_only` | nothing changed outside an allowed set |
+| `repos_clean` | the repository is committed, and optionally pushed |
 
 After every attempt, the runner verifies the contract:
 
 - verifier pass: prompt completes
-- verifier fail after provider success: synthesize a repair prompt
+- verifier fail after provider success: synthesize a repair prompt, while the
+  repair budget lasts
+- verifier fail with the repair budget spent: fail, naming the unmet items
 - provider failure plus verifier pass: complete unless the failure is a local
   deterministic contradiction
 - remote/provider-claimed auth, config, model-unavailable, capacity, and
@@ -300,14 +320,31 @@ mix prompt_runner checklist sync demo
 The checklist is derived output for humans. The verifier report in
 `.prompt_runner/state.json` remains the actual completion source of truth.
 
-`mix prompt_runner packet doctor` also flags common authoring gaps before a
-packet run:
+`mix prompt_runner packet doctor` flags common authoring gaps before a packet
+run:
 
 - no prompts
 - no default repo
 - prompt has no targets
 - prompt has no verification items
 - prompt still contains scaffold placeholder markers
+
+`mix prompt_runner packet lint` flags authoring *hazards* — constructs that
+load, run, and produce a wrong answer without raising:
+
+- a prompt id that does not match its filename's numeric prefix, when ordering
+  comes from the filename
+- duplicate prompt ids, an unknown repo in `targets:` or a verify entry, or
+  legacy `@group` syntax that expands to nothing in a packet
+- a verify command with no `timeout`, when the verifier has none of its own
+- a contract with no `commands:` entry, when `files_exist` is satisfied by an
+  empty file
+- `changed_paths_only` in a `--no-commit` packet, where it passes vacuously
+- `references`, `required_reading`, `context_files`, and `depends_on`, which
+  are parsed, stored, and never read
+
+`--strict` promotes warnings to errors; `--json` emits a machine-readable
+report.
 
 `mix prompt_runner packet preflight` is the machine-readable runtime readiness
 gate. It checks packet-local repo paths and git readiness, prints JSON, exits
@@ -316,6 +353,25 @@ start yet. CLI `run` calls packet preflight before invoking a provider; pass
 `--skip-preflight` only when you intentionally want the run path to handle
 packet readiness failures itself. Setup remains explicit: if a packet documents
 a setup command such as `bash examples/.../setup.sh`, run it before preflight.
+
+## Supervision
+
+A long unattended run needs a way to tell "alive and thinking" from "hung", and
+the obvious implementations of that check fail silently in the direction of
+"healthy". `mix prompt_runner watch` avoids both traps:
+
+- liveness comes from `.prompt_runner/run.pid`, which the runner writes for the
+  duration of a run and removes on exit. A process-name match would also match
+  the supervisor's own shell and report a live run forever.
+- quiet time comes from file mtimes, not from parsing the JSONL event log,
+  whose schema differs between `events_mode: compact` and `full`.
+
+```bash
+mix prompt_runner watch demo --interval 900
+# WATCH 16:57Z runner=UP prompt=11 quiet=0min repos=3 dirty=0 commits=27
+```
+
+See [Supervising A Long Run](guides/supervision.md).
 
 ## CLI Entry Points
 
@@ -345,6 +401,8 @@ Use any of these:
 - [Provider Guide](guides/providers.md)
 - [Simulated Provider](guides/simulated-provider.md)
 - [Verification And Repair](guides/verification-and-repair.md)
+- [Packet Linting](guides/linting.md)
+- [Supervising A Long Run](guides/supervision.md)
 - [Multi-Repository Packets](guides/multi-repo.md)
 - [Rendering Modes](guides/rendering.md)
 - [Architecture](guides/architecture.md)
@@ -352,8 +410,9 @@ Use any of these:
 ## Development
 
 ```bash
+mix format --check-formatted
+mix compile --force --warnings-as-errors
 mix test
-mix format
 mix credo --strict
 mix dialyzer
 mix docs

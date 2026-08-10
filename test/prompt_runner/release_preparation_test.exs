@@ -15,7 +15,7 @@ defmodule PromptRunner.ReleasePreparationTest do
   test "release metadata follows the ASM 0.12 and Elixir 1.19 boundary" do
     project = Mix.Project.config()
 
-    assert project[:version] == "0.8.1"
+    assert project[:version] == "0.9.0"
     assert project[:elixir] == "~> 1.19"
 
     # The dependency tuple's shape varies by resolved source (path/github/hex),
@@ -60,6 +60,47 @@ defmodule PromptRunner.ReleasePreparationTest do
 
     assert offenders == [],
            "hardcoded version literals found:\n  " <> Enum.join(offenders, "\n  ")
+  end
+
+  test "every documentation extra exists and is grouped" do
+    docs = Mix.Project.config()[:docs]
+    root = Path.expand("../..", __DIR__)
+
+    extras =
+      Enum.map(docs[:extras], fn
+        {path, opts} -> {to_string(path), opts[:filename] || Path.basename(path)}
+        path -> {to_string(path), to_string(path)}
+      end)
+
+    missing = Enum.reject(extras, fn {path, _name} -> File.regular?(Path.join(root, path)) end)
+
+    assert missing == [], "documentation extras missing from disk: #{inspect(missing)}"
+
+    grouped = docs[:groups_for_extras] |> Keyword.values() |> List.flatten()
+    ungrouped = extras |> Enum.map(&elem(&1, 1)) |> Enum.reject(&(&1 in grouped))
+
+    assert ungrouped == [], "documentation extras with no group: #{inspect(ungrouped)}"
+  end
+
+  test "every guide on disk is published" do
+    root = Path.expand("../..", __DIR__)
+
+    published =
+      Mix.Project.config()[:docs][:extras]
+      |> Enum.map(fn
+        {path, _opts} -> to_string(path)
+        path -> to_string(path)
+      end)
+
+    unpublished =
+      root
+      |> Path.join("guides/*.md")
+      |> Path.wildcard()
+      |> Enum.map(&Path.relative_to(&1, root))
+      |> Enum.reject(&(&1 in published))
+
+    assert unpublished == [],
+           "guides not registered in mix.exs docs.extras: #{inspect(unpublished)}"
   end
 
   test "Hex metadata and documentation use the release presentation assets" do

@@ -58,17 +58,35 @@ mix prompt_runner template list demo
 Use the packet manifest's `recovery:` block for the full policy surface. The
 CLI flags are convenience shorthands for common resume/retry/repair defaults.
 
-Inspect packet metadata and runtime readiness:
+## Packet Inspection Commands
 
 ```bash
-mix prompt_runner packet explain demo
-mix prompt_runner packet preflight demo
-mix prompt_runner packet doctor demo
+mix prompt_runner packet explain demo      # resolved manifest metadata
+mix prompt_runner packet lint demo         # authoring hazards
+mix prompt_runner packet doctor demo       # authoring gaps
+mix prompt_runner packet preflight demo    # runtime readiness
 ```
 
-`packet preflight` is the runtime gate used before provider execution. It
-prints JSON, exits non-zero when packet repos or git state are not ready, and
-is called automatically by `run` unless `--skip-preflight` is explicit.
+The four are complementary and in increasing order of what they touch:
+
+- `explain` prints the packet's repos, phases, and resolved options as JSON.
+- `lint` is static. It reports constructs that load, run, and silently produce
+  a wrong answer: an id that does not match its filename prefix, a verify
+  command with no `timeout`, a target naming a repo that does not exist. Exits
+  non-zero on errors. See [Packet Linting](linting.md).
+- `doctor` reports authoring gaps — no prompts, no default repo, a prompt with
+  no targets or no verifier items, scaffold placeholders left in a body.
+- `preflight` is the runtime gate used before provider execution. It checks
+  packet repo paths and git readiness, prints JSON, exits non-zero when the run
+  should not start, and is called automatically by `run` unless
+  `--skip-preflight` is explicit.
+
+`packet lint` flags:
+
+- `--strict` — promote every warning to an error, which is what CI wants
+- `--json` — machine-readable report
+- `--no-commit` — lint as if runs use `--no-commit`, which enables the
+  `changed_paths_only` vacuity check
 
 ## Execution Commands
 
@@ -77,7 +95,12 @@ List and plan:
 ```bash
 mix prompt_runner list demo
 mix prompt_runner plan demo
+mix prompt_runner plan demo --provider simulated --model simulated-demo
 ```
+
+`plan` accepts the same override flags as `run`, so it reports the plan `run`
+would actually build. Before 0.9.0 it parsed no flags at all and always
+reported the packet's own provider and model.
 
 Run everything:
 
@@ -86,11 +109,27 @@ mix prompt_runner run demo
 mix prompt_runner run demo --skip-preflight
 ```
 
+Preview without starting a provider:
+
+```bash
+mix prompt_runner run demo --dry-run
+```
+
+`--dry-run` prints, per prompt, the resolved provider, model, working
+directory, permission mode, target repos, and the commit message that would be
+used. It starts nothing.
+
 Run specific prompts:
 
 ```bash
 mix prompt_runner run demo 01 02
 mix prompt_runner run demo --phase 2
+```
+
+Let each session own its commits:
+
+```bash
+mix prompt_runner run demo --no-commit
 ```
 
 Repair a failed prompt from stored verifier state:
@@ -105,9 +144,27 @@ Print runtime status JSON:
 mix prompt_runner status demo
 ```
 
+## Supervision
+
+```bash
+mix prompt_runner watch demo
+mix prompt_runner watch demo --interval 300
+mix prompt_runner watch demo --once --json
+```
+
+One compact line per interval:
+
+```text
+WATCH 16:57Z runner=UP prompt=11 quiet=0min repos=3 dirty=0 commits=27
+```
+
+Liveness comes from the `.prompt_runner/run.pid` file the runner writes for the
+duration of a run, and quiet time comes from file mtimes. See
+[Supervising A Long Run](supervision.md) for why both matter.
+
 ## Useful Execution Flags
 
-`run` accepts:
+`run` and `plan` both accept:
 
 - `--provider`
 - `--model`
@@ -118,6 +175,22 @@ mix prompt_runner status demo
 - `--cli-confirmation`
 - `--runtime-store`
 - `--committer`
+- `--skip-preflight`
+- `--no-commit`
+- `--dry-run`
+- `--all`
+- `--phase N`
+
+`watch` accepts:
+
+- `--interval SECONDS` (default 900)
+- `--once`
+- `--json`
+
+`packet lint` accepts:
+
+- `--strict`
+- `--json`
 - `--no-commit`
 
 `packet new` accepts:
@@ -170,5 +243,6 @@ Then use the same commands:
 
 ```bash
 ./prompt_runner run demo
+./prompt_runner watch demo --once
 ./prompt_runner status demo
 ```

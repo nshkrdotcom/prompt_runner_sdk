@@ -1,13 +1,13 @@
 # Getting Started
 
-This guide targets `prompt_runner_sdk ~> 0.8.1`.
+This guide targets `prompt_runner_sdk ~> 0.9.0`.
 
 ## Install
 
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.8.1"}
+    {:prompt_runner_sdk, "~> 0.9.0"}
   ]
 end
 ```
@@ -119,19 +119,14 @@ template: "from-adr"
 targets:
   - "app"
 commit: "docs: add runtime boundaries summary"
-references:
-  - "docs/adr-001-runtime-boundaries.md"
-required_reading:
-  - "docs/adr-001-runtime-boundaries.md"
-context_files:
-  - "workspace/README.md"
-depends_on: []
 verify:
   files_exist:
     - "RUNTIME_BOUNDARIES.md"
   contains:
     - path: "RUNTIME_BOUNDARIES.md"
       text: "Prompt Runner owns packet orchestration."
+  commands:
+    - "timeout 60 test -s RUNTIME_BOUNDARIES.md"
   changed_paths_only:
     - "RUNTIME_BOUNDARIES.md"
 ---
@@ -154,12 +149,24 @@ Read ADR 001 and create `RUNTIME_BOUNDARIES.md` in the target repo.
 Do not modify any other files. Respond with exactly `ok`.
 ```
 
-Generate the checklist view:
+Two things to notice, because both are easy to get wrong:
+
+- Required reading goes in the **body**. Only the markdown after the front
+  matter reaches the model; the `required_reading:` front-matter key is parsed,
+  stored, and never sent anywhere.
+- Every `commands:` entry is wrapped in `timeout`. The verifier runs commands
+  through `bash -lc` with no timeout of its own, so a hung command hangs the
+  whole run after the model work is already spent.
+
+`mix prompt_runner packet lint` reports both mistakes.
+
+Generate the checklist view and check the packet:
 
 ```bash
 mix prompt_runner checklist sync demo
-mix prompt_runner packet preflight demo
+mix prompt_runner packet lint demo
 mix prompt_runner packet doctor demo
+mix prompt_runner packet preflight demo
 ```
 
 ## Inspect And Run
@@ -167,11 +174,24 @@ mix prompt_runner packet doctor demo
 ```bash
 mix prompt_runner list demo
 mix prompt_runner plan demo
+mix prompt_runner run demo --dry-run
 mix prompt_runner run demo
 mix prompt_runner status demo
 ```
 
+`plan` takes the same override flags as `run`, so
+`mix prompt_runner plan demo --provider simulated` shows the plan that override
+would actually build. `run --dry-run` prints the per-prompt execution details
+and starts nothing.
+
 `status` prints `.prompt_runner/state.json` as formatted JSON.
+
+For a long run, supervise it from a second pane:
+
+```bash
+mix prompt_runner watch demo
+# WATCH 16:57Z runner=UP prompt=11 quiet=0min repos=1 dirty=0 commits=27
+```
 
 `packet preflight` is the runtime readiness gate that `run` calls before a
 provider starts. If a packet uses generated or packet-local repos, run the
@@ -203,4 +223,6 @@ file-backed state or git commits.
 - [Profiles](profiles.md)
 - [Simulated Provider](simulated-provider.md)
 - [Verification And Repair](verification-and-repair.md)
+- [Packet Linting](linting.md)
+- [Supervising A Long Run](supervision.md)
 - [Examples](../examples/README.md)

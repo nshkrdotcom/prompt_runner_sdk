@@ -79,30 +79,28 @@ mix prompt_runner prompt new 01 \
 If the packet has `prompt_template: "from-adr"`, that template is used
 automatically. Otherwise pass `--template`.
 
-## 5. Fill In The Planning Metadata
+## 5. Write The Source Material Into The Body
 
-Use these prompt keys:
+Put every path a mission must read into the prompt body, under
+`## Required Reading`:
 
-- `references`
-- `required_reading`
-- `context_files`
-- `depends_on`
+```markdown
+## Required Reading
 
-Example:
-
-```yaml
-references:
-  - "docs/adr-001-runtime-boundaries.md"
-required_reading:
-  - "docs/adr-001-runtime-boundaries.md"
-context_files:
-  - "workspace/README.md"
-depends_on:
-  - "01"
+- `docs/adr-001-runtime-boundaries.md`
+- `docs/adr-002-verification.md`
 ```
 
-These keys are descriptive. They do not directly change runtime semantics, but
-they make prompts self-describing and reviewable.
+Use absolute paths when the prompt spans repositories — the session's working
+directory is the first entry in `targets:`.
+
+Front-matter `references`, `required_reading`, `context_files`, and
+`depends_on` look like the natural home for this and are not. They are parsed,
+stored on `PromptRunner.Prompt`, and never read: never sent to the provider,
+never used for ordering. Only the markdown body reaches the model, and
+scheduling comes from the numeric filename prefix.
+
+`mix prompt_runner packet lint` reports any prompt still carrying them.
 
 ## 6. Translate Deliverables Into `verify:`
 
@@ -117,6 +115,8 @@ verify:
   contains:
     - path: "RUNTIME_BOUNDARIES.md"
       text: "Prompt Runner owns packet orchestration."
+  commands:
+    - "timeout 120 test -s RUNTIME_BOUNDARIES.md"
   changed_paths_only:
     - "RUNTIME_BOUNDARIES.md"
 ```
@@ -125,8 +125,16 @@ Use:
 
 - `files_exist` for required outputs
 - `contains` or `matches` for important content
-- `commands` when repo-local checks are stronger than file inspection
-- `changed_paths_only` to stop collateral edits
+- `doc` when the deliverable is a written document and `files_exist` would be
+  satisfied by a stub
+- `commands` when repo-local checks are stronger than file inspection, always
+  wrapped in `timeout`
+- `changed_paths_only` to stop collateral edits when the runner owns the commit
+- `repos_clean` instead, when the packet runs with `--no-commit` and each
+  session commits its own work
+
+See [Verification And Repair](verification-and-repair.md) for the full clause
+reference.
 
 ## 7. Generate Checklist Views
 
@@ -139,16 +147,20 @@ contract plus `.prompt_runner/state.json`.
 
 If a prompt has no verifier items yet, `checklist sync` warns loudly.
 
-## 8. Preflight And Doctor Before Run
+## 8. Lint, Doctor, And Preflight Before Run
 
 ```bash
-mix prompt_runner packet preflight runtime-review
+mix prompt_runner packet lint runtime-review --strict
 mix prompt_runner packet doctor runtime-review
+mix prompt_runner packet preflight runtime-review
 ```
 
-Preflight is the runtime gate that checks packet-local repo paths and git
-readiness. Doctor includes the same runtime readiness fields plus authoring
-guidance. Doctor flags common authoring gaps:
+Lint reports authoring hazards — an id that does not match its filename prefix,
+a verify command with no `timeout`, a target naming a repo that does not exist,
+a typo'd verify clause. All of those load and run and quietly mean something
+else. See [Packet Linting](linting.md).
+
+Doctor flags authoring gaps:
 
 - no prompts
 - no default repo
@@ -156,30 +168,41 @@ guidance. Doctor flags common authoring gaps:
 - prompt has no verification items
 - prompt still contains scaffold placeholder markers
 
+Preflight is the runtime gate that checks packet-local repo paths and git
+readiness, and `run` calls it automatically.
+
 ## 9. Run And Iterate
 
 ```bash
 mix prompt_runner list runtime-review
 mix prompt_runner plan runtime-review
+mix prompt_runner run runtime-review --dry-run
 mix prompt_runner run runtime-review
 mix prompt_runner status runtime-review
 ```
 
-If verification fails after a nominal provider success, Prompt Runner can repair
-the prompt automatically when recovery is enabled.
+If verification fails after a nominal provider success, Prompt Runner repairs
+the prompt automatically while the repair budget lasts, then fails with the
+unmet verifier items.
 
 ## 10. Move To A Real Provider
 
 Once the packet structure is stable:
 
 - switch profile/provider/model in `prompt_runner_packet.md`
-- keep the same prompts, references, and `verify:` contracts
-- rerun `packet preflight`, `packet doctor`, `plan`, and `run`
+- keep the same prompts, source material, and `verify:` contracts
+- verify the override does what you expect with
+  `mix prompt_runner plan runtime-review --provider codex`
+- rerun `packet lint`, `packet doctor`, `packet preflight`, `plan`, and `run`
+- for a long run, supervise it with `mix prompt_runner watch runtime-review`
 
 ## Best Practices
 
 - keep source docs inside the packet when possible
+- write every path a mission must read into the prompt body, not into inert
+  front-matter keys
 - make prompt boundaries correspond to reviewable outputs
 - treat `verify:` as part of the prompt, not cleanup work
+- wrap every `verify.commands` entry in `timeout`
 - use packet-local templates for shared team authoring patterns
 - use the authoring example in `examples/authoring_packet/` as a reference

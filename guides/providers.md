@@ -1,7 +1,7 @@
 # Provider Guide
 
 Prompt Runner delegates provider execution to `agent_session_manager`.
-This guide targets `prompt_runner_sdk ~> 0.8.1`.
+This guide targets `prompt_runner_sdk ~> 0.9.0`.
 
 Supported providers:
 

@@ -5,7 +5,126 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2026-08-10
+
+Shaped by a thirty-session unattended program built on 0.8.1. Every addition
+here is something that program had to build for itself in shell, and every fix
+is something it hit in the field.
+
+### Added
+
+- `mix prompt_runner packet lint [DIR]`, a static authoring-hazard gate and the
+  sibling of `packet doctor`. Doctor reports authoring *gaps*; lint reports
+  authoring *hazards* — constructs that load cleanly, run, and produce a wrong
+  answer without ever raising. Errors: a prompt id that does not match its
+  filename's numeric prefix (ordering comes from the filename, so a mismatch
+  silently reorders the run), a filename with no numeric prefix, duplicate
+  prompt ids, an unknown repo in `targets:` or in a verify entry's `repo:`,
+  legacy `@group` syntax in `targets:` (repo groups are never expanded for
+  packets), and an unrecognized `verify:` clause. Warnings: a `verify.commands`
+  entry not wrapped in `timeout`, a prompt with no `verify` contract, a
+  contract with no `commands:` entry, `changed_paths_only` in a packet that
+  runs with `--no-commit`, and the four inert front-matter keys.
+  `--strict` promotes warnings to errors, `--json` emits a machine-readable
+  report, and `--no-commit` enables the vacuity check. The known-clause list is
+  read from `PromptRunner.Verifier.contract_keys/0` so lint and the verifier
+  cannot drift.
+- The `doc:` verify clause, an artifact-quality gate. `files_exist` is
+  satisfied by a three-line stub, so a prompt whose deliverable is a written
+  document had no way to assert the document was written. `doc:` asserts a
+  non-blank line floor (`min_lines`), verbatim `requires_sections`, and the
+  absence of `forbids_markers` (`TODO`/`TBD`/`FIXME`/`XXX` by default; an
+  explicit empty list opts out, a custom list replaces the default).
+- The `repos_clean:` verify clause, which asserts that sessions committed their
+  own work. Under `--no-commit` the runner's committer never runs and
+  `changed_paths_only` passes vacuously, because `git status --porcelain` is
+  empty precisely because the session committed. `pushed: true` additionally
+  requires an upstream and compares `HEAD` to it — a missing upstream is a
+  failure, since the clause was asked to assert publication and cannot.
+  `pushed: false` (the default) treats an absent upstream as fine. The upstream
+  comparison fetches under a bounded timeout (`fetch_timeout_ms`, default 90s);
+  a fetch that fails or times out is reported in `details:` and the comparison
+  falls back to cached remote-tracking refs. Nothing mutates a working tree,
+  an index, or a local branch.
+- `mix prompt_runner watch [DIR]`, supervision for a long unattended run. One
+  compact line per interval:
+  `WATCH 16:57Z runner=UP prompt=11 quiet=0min repos=3 dirty=0 commits=27`.
+  `--interval SECONDS` (default 900), `--once`, and `--json`.
+  `PromptRunner.Watch.sample/2` is public for host applications with their own
+  monitoring.
+- A run pid file. Any run with a file-backed state directory writes
+  `.prompt_runner/run.pid` for its duration and removes it on exit, including
+  on failure, so liveness can be checked by signalling a pid. `watch` uses it
+  rather than a process-name match: such a pattern matches any command line
+  containing it, including the supervisor's own shell, and reports a live run
+  forever.
+- `--dry-run` on `run`. The runner has honoured `opts[:dry_run]` since the
+  packet rewrite, but no CLI switch ever set it, so
+  `prompt_runner run <packet> --dry-run` dropped the unknown flag and started a
+  real provider session.
+- `PromptRunner.Verifier.contract_keys/0`, and read-only repository inspection
+  in `PromptRunner.Git` (`worktree?/1`, `status_lines/1`, `commit_count/1`,
+  `upstream_ref/1`, `fetch/3`) shared by the verifier and `watch`.
+- Two guides: [Packet Linting](guides/linting.md) and
+  [Supervising A Long Run](guides/supervision.md).
+
+### Fixed
+
+- A prompt that could not satisfy its verify contract repaired forever.
+  `RecoveryPolicy.final_action/5` returns `{:verification_failed, ...}` when
+  repair is *not* available — disabled, out of attempts, or the attempt was
+  itself a repair — and the runner routed that outcome through the same
+  function as `{:repair, ...}`, which returns `{:repair, ...}`. The outcome
+  handler then started another repair attempt, which ran in `:repair` mode,
+  took the same branch, and started another. An unattended run re-invoked the
+  provider without bound while the attempt list in `state.json` grew on every
+  pass. `{:verification_failed, ...}` is now terminal, and the failure names
+  the unmet items instead of inspecting the whole verifier report.
+- Call options were silently discarded by packet metadata. `Plan.merged_opts/2`
+  normalized option keys once, *after* merging every layer, so
+  `%{"provider" => "claude"}` from a packet manifest and
+  `%{provider: "simulated"}` from the call site both survived the deep merge as
+  distinct keys, and normalization-after-merge let whichever it visited last
+  win — by Erlang term order, the string one. Every CLI and API override was
+  affected whenever the packet set the same key, and the failure pointed in the
+  worst possible direction: a run intended for the simulated provider started
+  the packet's live provider, at the packet's model, permission mode, and
+  system prompt. Each layer is now normalized before it is merged.
+- The ASM run deadline is derived from `timeout`. `ASM.Run.State` defaults
+  `:run_deadline_ms` to 600_000 — a total wall-clock budget for the whole run,
+  armed independently of the stream and transport timeouts — and Prompt Runner
+  never set it. A packet that deliberately left `timeout` unset got seven days
+  on the stream and transport bounds and ten minutes on the run, and every
+  prompt doing more than a few minutes of work died with a
+  `provider_runtime_claim` naming a deadline nothing had configured, after the
+  model had already done the work and often after it had committed it. All four
+  bounds now derive from `resolve_effective_timeout_ms/1`: an explicit
+  `timeout` bounds the run, and an absent one means the seven-day emergency
+  bound.
+- `prompt_runner plan` reported the packet's provider regardless of overrides.
+  `CLI.run_plan/1` parsed no flags and passed none to `PromptRunner.plan/2`, so
+  the natural way to check an override before spending a session answered about
+  a different plan than `run` would build. `plan` and `run` now share one switch
+  list.
+
+### Changed
+
+- The built-in templates and `prompt new` no longer scaffold `references`,
+  `required_reading`, `context_files`, or `depends_on`. None of them is read at
+  runtime — they are parsed, stored on `PromptRunner.Prompt`, and never sent to
+  the provider or used for ordering — so the first prompt anyone scaffolded
+  taught them to record required reading in a field the model never sees. The
+  `## Required Reading` body section stays, since the body is what reaches the
+  model, and the `verify:` skeleton now offers `commands:` in place of
+  `changed_paths_only:`. Prompts that still carry the keys keep working; lint
+  reports them.
+- Full documentation refresh for 0.9.0 across `README.md` and every guide,
+  including the run-deadline behaviour, the difference between
+  `changed_paths_only` and `repos_clean`, and why the terminal event counters
+  are not evidence that a session did work.
+- Release preparation now asserts that every documentation extra registered in
+  `mix.exs` exists on disk and is grouped, and that every guide on disk is
+  registered.
 
 ## [0.8.1] - 2026-08-03
 
@@ -416,7 +535,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
-[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.7.0...HEAD
+[0.9.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.8.1...v0.9.0
+[0.8.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.5.1...v0.6.0

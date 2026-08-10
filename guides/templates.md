@@ -1,6 +1,6 @@
 # Templates
 
-Prompt Runner 0.8.1 uses template-based prompt scaffolding.
+Prompt Runner 0.9.0 uses template-based prompt scaffolding.
 
 Templates are markdown files with YAML front matter. They define:
 
@@ -81,14 +81,10 @@ Example:
 
 ```markdown
 ---
-references: []
-required_reading: []
-context_files: []
-depends_on: []
 verify:
   files_exist: []
   contains: []
-  changed_paths_only: []
+  commands: []
 ---
 # {{name}}
 
@@ -128,13 +124,33 @@ is intentional.
 `mix prompt_runner packet doctor` flags prompts that still contain placeholder
 markers so incomplete scaffolds are loud before you run the packet.
 
-`mix prompt_runner packet preflight` is the separate runtime readiness check.
-Run setup first when a packet creates local repos or workspaces, then run
-preflight before provider execution.
+`mix prompt_runner packet lint` is the separate authoring-hazard check, and
+`mix prompt_runner packet preflight` the separate runtime readiness check. Run
+setup first when a packet creates local repos or workspaces, then run preflight
+before provider execution.
+
+## Keys Templates Deliberately Omit
+
+Before 0.9.0 both built-in templates scaffolded `references`,
+`required_reading`, `context_files`, and `depends_on`. They no longer do,
+because none of them is read at runtime: they are parsed, stored on
+`PromptRunner.Prompt`, and never sent to the provider or used for ordering.
+Scaffolding a key the runtime ignores teaches the wrong habit on the first
+prompt someone writes.
+
+Put required reading in the body, under `## Required Reading`, where the model
+will actually see it. `mix prompt_runner packet lint` warns about any prompt
+still carrying the front-matter forms.
 
 ## Recommended Practice
 
 - use home templates for personal defaults
 - use packet-local templates when a packet needs a shared authoring shape
-- keep `verify:` skeletons in the template
+- keep `verify:` skeletons in the template, including an empty `commands:` list
+  as a reminder that `files_exist` alone is satisfied by an empty file
 - replace placeholder markers before running real work
+- run `mix prompt_runner packet lint --strict` before a real run
+
+If you created home templates with an earlier release, they still contain the
+inert keys. `mix prompt_runner packet lint` will point at the prompts they
+generate; edit `~/.config/prompt_runner/templates/*.prompt.md` to drop them.

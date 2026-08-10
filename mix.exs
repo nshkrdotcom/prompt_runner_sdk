@@ -5,7 +5,7 @@ end
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.8.1"
+  @version "0.9.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
   @homepage_url "https://hex.pm/packages/prompt_runner_sdk"
   @docs_url "https://hexdocs.pm/prompt_runner_sdk"
@@ -95,6 +95,8 @@ defmodule PromptRunner.MixProject do
          filename: "simulated-provider", title: "Simulated Provider"},
         {"guides/verification-and-repair.md",
          filename: "verification-and-repair", title: "Verification And Repair"},
+        {"guides/linting.md", filename: "linting", title: "Packet Linting"},
+        {"guides/supervision.md", filename: "supervision", title: "Supervising A Long Run"},
         {"guides/rendering.md", filename: "rendering", title: "Rendering Modes"},
         {"guides/multi-repo.md", filename: "multi-repo", title: "Multi-Repository Packets"},
         {"guides/architecture.md", filename: "architecture", title: "Architecture"},
@@ -112,7 +114,14 @@ defmodule PromptRunner.MixProject do
       ],
       groups_for_extras: [
         Overview: ["readme", "getting-started", "from-adrs-to-packets"],
-        Authoring: ["cli", "configuration", "templates", "profiles", "multi-repo"],
+        Authoring: [
+          "cli",
+          "configuration",
+          "templates",
+          "profiles",
+          "multi-repo",
+          "linting"
+        ],
         Configuration: [
           "configuration",
           "providers",
@@ -120,6 +129,7 @@ defmodule PromptRunner.MixProject do
           "verification-and-repair",
           "rendering"
         ],
+        Operations: ["supervision"],
         Embedding: ["api"],
         Architecture: ["architecture"],
         Examples: [
@@ -139,9 +149,13 @@ defmodule PromptRunner.MixProject do
         "Core API": [
           PromptRunner,
           PromptRunner.Packet,
+          PromptRunner.PacketLint,
           PromptRunner.Packets,
           PromptRunner.Profile,
           PromptRunner.Verifier,
+          PromptRunner.Verifier.Doc,
+          PromptRunner.Verifier.ReposClean,
+          PromptRunner.Watch,
           PromptRunner.RecoveryConfig,
           PromptRunner.FailureEnvelope,
           PromptRunner.RecoveryPolicy,

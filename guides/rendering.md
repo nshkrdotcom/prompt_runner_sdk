@@ -46,3 +46,20 @@ to:
 - `compact`
 - `full`
 - `off`
+
+The two modes emit different schemas, which matters to anything that reads the
+files:
+
+```text
+compact:  {"e":{"t":"tu"},"t":1786332318176}          epoch milliseconds
+full:     {"data":{...},"ts":"2026-08-10T05:08:53Z"}  ISO 8601
+```
+
+Do not judge whether a session did work from the terminal counters — a verified
+run that wrote a file has reported `--- 5 events, 0 tools ---`. Read the event
+log or the repository. `mix prompt_runner watch` deliberately measures activity
+by file mtime rather than by parsing either schema. See
+[Supervising A Long Run](supervision.md).
+
+A run with a file-backed store also writes `.prompt_runner/run.pid` for its
+duration, so a supervisor can check liveness without matching process names.

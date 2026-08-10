@@ -65,3 +65,23 @@ CLI packet runs default to git commits. Multi-repo commits are applied repo by
 repo after verification passes.
 
 API runs default to a no-op committer unless you opt into git.
+
+### When Sessions Own Their Commits
+
+The built-in committer squashes a multi-repository change under one generated
+message and never pushes. For a packet whose standing orders make each session
+commit its own work across several repositories, run with `--no-commit` and
+gate on the result instead:
+
+```yaml
+verify:
+  repos_clean:
+    - repo: "alpha"
+      pushed: true
+    - repo: "beta"
+```
+
+Under `--no-commit`, `changed_paths_only` passes vacuously — it reads
+`git status --porcelain`, which is empty precisely because the session already
+committed. `mix prompt_runner packet lint --no-commit` reports that mistake.
+See [Verification And Repair](verification-and-repair.md).

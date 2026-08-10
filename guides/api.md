@@ -1,6 +1,6 @@
 # API Guide
 
-The 0.8.1 API is packet-first. The CLI is a convenience layer over these
+The 0.9.0 API is packet-first. The CLI is a convenience layer over these
 modules.
 
 ## Packet And Profile APIs
@@ -86,6 +86,27 @@ Inspect packet health:
 `preflight` is the runtime readiness gate that checks packet-local repo paths
 and git readiness before provider execution.
 
+## Authoring Hazards
+
+`PromptRunner.PacketLint.lint/2` is the static hazard gate behind
+`mix prompt_runner packet lint`:
+
+```elixir
+{:ok, report} = PromptRunner.PacketLint.lint(packet.root, strict: true)
+
+report.pass?
+report.errors
+report.warnings
+
+Enum.each(report.findings, fn finding ->
+  IO.puts("#{finding.severity} #{finding.file} #{finding.kind}: #{finding.message}")
+end)
+```
+
+Options are `:strict` (promote warnings to errors) and `:no_commit` (lint as if
+runs use `--no-commit`, which enables the `changed_paths_only` vacuity check).
+See [Packet Linting](linting.md).
+
 ## Planning And Running
 
 ```elixir
@@ -140,6 +161,29 @@ For deterministic recovery demos:
 `PromptRunner.status/1` returns the packet runtime state from
 `.prompt_runner/state.json`.
 
+## Supervision
+
+`PromptRunner.Watch.sample/2` collects one measurement of a packet's
+supervision facts, for embedding in a host application's own monitoring:
+
+```elixir
+{:ok, sample} = PromptRunner.Watch.sample(packet.root)
+
+sample.runner        # :up | :down, from .prompt_runner/run.pid
+sample.prompt        # id in the newest prompt log, or nil
+sample.quiet_minutes # minutes since the newest mtime, or nil
+sample.dirty         # uncommitted paths across configured repos
+sample.commits
+
+IO.puts(PromptRunner.Watch.format_line(sample))
+# WATCH 16:57Z runner=UP prompt=11 quiet=0min repos=3 dirty=0 commits=27
+```
+
+`PromptRunner.Watch.run/2` is the interval loop used by
+`mix prompt_runner watch`. The runner writes `.prompt_runner/run.pid` for the
+duration of any run with a file-backed state directory and removes it on exit,
+including on failure. See [Supervising A Long Run](supervision.md).
+
 ## Deterministic Verification
 
 Run verification without executing prompts:
@@ -154,7 +198,13 @@ Or verify one prompt:
 ```elixir
 prompt = Enum.find(plan.prompts, &(&1.num == "01"))
 report = PromptRunner.Verifier.verify_prompt(plan, prompt)
+
+report.pass?
+report.failures  # each with :kind, :repo, :details
 ```
+
+`PromptRunner.Verifier.contract_keys/0` returns the clauses the verifier
+evaluates, and `contract_items/1` renders a contract as checklist labels.
 
 ## Observer Callbacks
 
