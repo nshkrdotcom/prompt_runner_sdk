@@ -67,8 +67,16 @@ defmodule PromptRunner.TemplateTest do
         template
       )
 
-    assert attrs["references"] == []
-    assert attrs["required_reading"] == []
+    # The scaffold no longer emits `references`, `required_reading`,
+    # `context_files`, or `depends_on`: they are parsed, stored, and never read
+    # at runtime, and `packet lint` reports them as inert. Scaffolding a key
+    # the runtime ignores teaches the wrong thing on the first prompt someone
+    # writes.
+    refute Map.has_key?(attrs, "references")
+    refute Map.has_key?(attrs, "required_reading")
+    refute Map.has_key?(attrs, "context_files")
+    refute Map.has_key?(attrs, "depends_on")
+    assert attrs["verify"]["files_exist"] == []
     assert attrs["template"] == "from-adr"
     assert body =~ "# Map contracts"
     assert body =~ "## Required Reading"

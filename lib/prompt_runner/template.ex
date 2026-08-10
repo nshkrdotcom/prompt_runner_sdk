@@ -24,14 +24,10 @@ defmodule PromptRunner.Template do
 
   @default_template """
   ---
-  references: []
-  required_reading: []
-  context_files: []
-  depends_on: []
   verify:
     files_exist: []
     contains: []
-    changed_paths_only: []
+    commands: []
   ---
   # {{name}}
 
@@ -63,14 +59,10 @@ defmodule PromptRunner.Template do
 
   @from_adr_template """
   ---
-  references: []
-  required_reading: []
-  context_files: []
-  depends_on: []
   verify:
     files_exist: []
     contains: []
-    changed_paths_only: []
+    commands: []
   ---
   # {{name}}
 

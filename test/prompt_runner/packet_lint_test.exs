@@ -441,6 +441,31 @@ defmodule PromptRunner.PacketLintTest do
     assert Enum.all?(strict.findings, &(&1.severity == "error"))
   end
 
+  test "a freshly scaffolded prompt carries no inert front-matter keys", %{repo: repo} do
+    root = FSHelpers.tmp_dir("prompt_runner_lint_scaffold")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, packet} =
+             PromptRunner.Packet.new("demo",
+               root: root,
+               repos: [{"app", repo}],
+               default_repo: "app"
+             )
+
+    assert {:ok, _path} =
+             PromptRunner.Packets.create_prompt(packet.root, %{
+               "id" => "01",
+               "phase" => 1,
+               "name" => "Write notes",
+               "targets" => ["app"]
+             })
+
+    assert {:ok, report} = PacketLint.lint(packet.root, [])
+
+    refute "inert_front_matter_key" in kinds(report)
+    assert report.pass?
+  end
+
   test "lint reports a packet that cannot be loaded" do
     root = FSHelpers.tmp_dir("prompt_runner_lint_missing")
     on_exit(fn -> File.rm_rf!(root) end)

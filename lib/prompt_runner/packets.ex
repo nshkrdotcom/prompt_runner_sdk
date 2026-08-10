@@ -58,10 +58,6 @@ defmodule PromptRunner.Packets do
       "targets" => Map.get(attrs, "targets", default_targets(packet)),
       "commit" => Map.get(attrs, "commit", default_commit(name))
     })
-    |> Map.put_new("references", [])
-    |> Map.put_new("required_reading", [])
-    |> Map.put_new("context_files", [])
-    |> Map.put_new("depends_on", [])
     |> Map.put_new("verify", %{})
   end
 
