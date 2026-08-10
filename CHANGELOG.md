@@ -81,6 +81,26 @@ paid in provider tokens for as long as nobody is watching.
 
 ### Fixed
 
+- **The studio renderer showed nothing at all for a provider that does not
+  stream.** It discarded `message_received` outright, which is right for a
+  provider that already streamed the same text as deltas and would otherwise
+  print it twice, and wrong for one that only ever delivers a message whole.
+  Codex does the latter, so a Codex run rendered its header and then stayed
+  blank for the rest of the session while the provider was working normally.
+  The test is now what actually reached the screen rather than which provider
+  sent it; reasoning text is displayed but does not count as having shown the
+  message. Only the studio renderer was affected — compact and verbose have
+  always rendered `message_received`.
+- **Every run opened with `unknown session started`.** The model is named on
+  the launched argv, but nothing carried it into the `run_started` event:
+  provider metadata is populated only once a provider announces its session,
+  which is after the header has already printed. The header now falls back to
+  the argv, and reports reasoning effort alongside the model where the run
+  requested one. `confirmed_model` deliberately does not use that fallback —
+  the `cli_confirmation` gate judges what the provider echoed back, and reading
+  the argv would let it confirm a request against itself. Where a provider
+  genuinely names no model, the header now says so rather than printing
+  `unknown` where a model name belongs.
 - `run PACKET 01 02 03` now runs **every** listed prompt, in the order given.
   `build_targets/3` returned `[hd(remaining)]`, so it ran only the first, exited
   `0`, and reported success for the work it had discarded — while `guides/cli.md`
