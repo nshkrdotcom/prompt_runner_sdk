@@ -46,7 +46,9 @@ objects with stable `code` fields such as `runtime_unhealthy`, `not_running`,
 and `progress_stale`; a stopped service is therefore durable failure evidence,
 not an exception in the monitoring process. A failed sample ends that watch,
 and a continuous acceptance interval must start again after the underlying
-failure is repaired.
+failure is repaired. With `--json`, every sample and the final report occupy one
+line on stdout; an unhealthy report is the last JSON object before exit status
+1, with no ANSI or inspected Elixir term appended.
 
 The escript embeds erlexec's compiled native port and materializes it once into
 a version-, architecture-, and digest-addressed directory under the current

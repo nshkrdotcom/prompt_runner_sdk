@@ -654,8 +654,16 @@ defmodule PromptRunner.CLI do
 
     case WorkspaceWatch.run(manifest_path, watch_opts) do
       {:ok, report} ->
-        IO.puts(Jason.encode!(report, pretty: true))
+        IO.puts(Jason.encode!(report, pretty: opts[:json] != true))
         :ok
+
+      {:error, {:workspace_watch_unhealthy, report} = reason} ->
+        if opts[:json] == true do
+          IO.puts(Jason.encode!(report))
+          System.halt(1)
+        else
+          handle_error(reason)
+        end
 
       {:error, reason} ->
         handle_error(reason)
