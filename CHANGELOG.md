@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `mix prompt_runner run PACKET --remaining`, and `remaining: true` on
+  `PromptRunner.run/2`.
+  Runs every prompt whose recorded status is not `completed`, in order,
+  including prompts earlier than the furthest one that finished. `--continue`
+  resumes from `last_completed + 1`, so a packet whose 03 failed while 04
+  succeeded resumed at 05 and stepped over 03 in silence; both live packets
+  carried a `remaining_prompts()` bash function to work around it. A prompt with
+  no record is remaining, and an unreadable store makes every prompt remaining —
+  a resume that silently runs nothing is worse than one that re-verifies
+  finished work. When `--remaining` selects nothing, the run says so.
+- Pre-flight verification. Under `--remaining`, a prompt's verify contract is
+  evaluated before the provider is invoked; one that already passes is marked
+  completed with no session and records `session_ran: false` and
+  `source: "preflight_verify"`. A contract with no evaluable clause, and one
+  containing `changed_paths_only`, are never pre-flighted — both would pass
+  vacuously. `--verify-first` / `--no-verify-first` state it explicitly;
+  naming a prompt id is a request to run it, so pre-flight is off for explicit
+  ids by default.
+- `verify_command_missing_path` in `packet lint`: a `commands:` entry naming a
+  script that does not exist under the directory the verifier will run it in.
+- `prompts: ["02", "03"]` on `PromptRunner.run/2`. The CLI passes explicit ids
+  positionally; an embedded caller has no argv, so running a named subset
+  previously required reaching into the runner internals. Integers and unpadded
+  ids are accepted.
+
+### Changed
+
+- `--continue` now names the prompts it is stepping over and points at
+  `--remaining`. Its selection is unchanged — it is a documented behaviour and
+  some callers want it.
+- A repair attempt's failure block is rendered as labelled fields and the
+  command's own output rather than `inspect/1` of an Elixir map, capped at a
+  line budget with an explicit truncation marker.
+
+### Fixed
+
+- A verifier that cannot run is no longer read as failed work. Exit 126 and 127
+  are classified `verifier_fault` and exit 124 `verifier_timeout`, distinct from
+  a contract failure. A fault halts the run naming the command and its cwd,
+  does not mark the prompt failed, and does not spend a repair attempt — it is
+  not evidence about the work in either direction. A contract kept referencing
+  `bin/check_doc.sh` after those scripts moved one directory down; every clause
+  exited 127 and a finished attempt was discarded.
+- A tool call outside a non-empty `allowed_tools` no longer fails a run on a
+  lane that only observes tools after they have executed. `agent_session_manager`
+  records the allowlist miss on the event instead, and the runner writes it to
+  the session log as a `GUARDRAIL` line. Requires `agent_session_manager` with
+  lane-aware `Execution.PolicyPlug`.
+
 ## [0.9.1] - 2026-08-10
 
 ### Fixed

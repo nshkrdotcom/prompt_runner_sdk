@@ -22,7 +22,8 @@ defmodule PromptRunner.Rendering.StudioRendererTest do
 
   describe "the session header" do
     test "names the model the run actually launched with" do
-      assert render([event(:run_started, %{model: "gpt-5.6-sol"})]) =~ "gpt-5.6-sol session started"
+      assert render([event(:run_started, %{model: "gpt-5.6-sol"})]) =~
+               "gpt-5.6-sol session started"
     end
 
     test "includes reasoning effort when the run asked for one" do
@@ -101,7 +102,10 @@ defmodule PromptRunner.Rendering.StudioRendererTest do
             tool_call_id: "item_3",
             tool_input: %{"command" => "mix test"}
           }),
-          event(:tool_call_completed, %{tool_call_id: "item_3", tool_output: "16 tests, 0 failures"})
+          event(:tool_call_completed, %{
+            tool_call_id: "item_3",
+            tool_output: "16 tests, 0 failures"
+          })
         ])
 
       assert output =~ "mix test"

@@ -385,11 +385,16 @@ defmodule PromptRunner.Session do
 
   defp bridge_event(%{kind: :tool_use, payload: %Payload.ToolUse{} = payload} = event, _provider) do
     [
-      legacy_event(event, :tool_call_started, %{
-        tool_call_id: payload.tool_call_id,
-        tool_name: payload.tool_name,
-        tool_input: payload.input
-      })
+      legacy_event(
+        event,
+        :tool_call_started,
+        %{
+          tool_call_id: payload.tool_call_id,
+          tool_name: payload.tool_name,
+          tool_input: payload.input
+        }
+        |> put_guardrail(event)
+      )
     ]
   end
 
@@ -496,6 +501,18 @@ defmodule PromptRunner.Session do
 
   defp bridge_event(%{kind: :stderr}, _provider), do: []
   defp bridge_event(_event, _provider), do: []
+
+  # A lane that observes tools only after they have run cannot have a call
+  # blocked, so ASM records the allowlist miss on the event instead of failing
+  # the run. Carrying it through is what lets the runner write it down.
+  defp put_guardrail(data, %{metadata: metadata}) when is_map(metadata) do
+    case metadata[:guardrail] || metadata["guardrail"] do
+      guardrail when is_map(guardrail) -> Map.put(data, :guardrail, normalize_map(guardrail))
+      _other -> data
+    end
+  end
+
+  defp put_guardrail(data, _event), do: data
 
   defp codex_hidden_confirmation_event(
          %{
@@ -634,11 +651,14 @@ defmodule PromptRunner.Session do
   # provider: it is what was handed to the CLI. Provider metadata is populated
   # only by providers that announce a session, and only once they have -- which
   # is after the run has started and the header has already been printed.
-  defp model_from_args(args) when is_list(args), do: args |> Enum.map(&to_string/1) |> model_flag()
+  defp model_from_args(args) when is_list(args),
+    do: args |> Enum.map(&to_string/1) |> model_flag()
+
   defp model_from_args(_args), do: nil
 
-  defp model_flag(["--model", value | _rest]) when value != "" and binary_part(value, 0, 1) != "-",
-    do: value
+  defp model_flag(["--model", value | _rest])
+       when value != "" and binary_part(value, 0, 1) != "-",
+       do: value
 
   defp model_flag(["--model=" <> value | _rest]) when value != "", do: value
   defp model_flag([_arg | rest]), do: model_flag(rest)

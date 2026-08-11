@@ -107,7 +107,7 @@ defmodule PromptRunner.SessionTest do
   # These drive the whole chain the way a real run does: a fixture CLI writes
   # the JSONL `codex exec --json` actually writes, cli_subprocess_core decodes
   # it, and the bridge turns it into the events a renderer consumes.
-  defp codex_stream(lines) do
+  defp codex_stream(lines, extra_llm \\ %{}) do
     tmp_dir =
       Path.join(System.tmp_dir!(), "prompt_runner_session_#{System.unique_integer([:positive])}")
 
@@ -119,14 +119,18 @@ defmodule PromptRunner.SessionTest do
     File.write!(script_path, "#!/usr/bin/env bash\n" <> body <> "\n")
     File.chmod!(script_path, 0o755)
 
-    llm = %{
-      provider: "codex",
-      model: "gpt-5.6-sol",
-      cwd: tmp_dir,
-      permission_mode: :bypass,
-      codex_thread_opts: %{reasoning_effort: :xhigh},
-      sdk_opts: %{cli_path: script_path}
-    }
+    llm =
+      Map.merge(
+        %{
+          provider: "codex",
+          model: "gpt-5.6-sol",
+          cwd: tmp_dir,
+          permission_mode: :bypass,
+          codex_thread_opts: %{reasoning_effort: :xhigh},
+          sdk_opts: %{cli_path: script_path}
+        },
+        extra_llm
+      )
 
     {:ok, stream, close_fun, _meta} = Session.start_stream(llm, "say ok")
     events = Enum.take(stream, 30)
@@ -160,7 +164,7 @@ defmodule PromptRunner.SessionTest do
       ])
 
     assert [started] = visible(events, :tool_call_started)
-    assert started.data.tool_name == "bash"
+    assert started.data.tool_name == "Bash"
     assert started.data.tool_input["command"] == "mix test"
 
     assert [completed] = visible(events, :tool_call_completed)
@@ -169,6 +173,48 @@ defmodule PromptRunner.SessionTest do
 
     assert [message] = visible(events, :message_received)
     assert message.data.content == "the suite is green"
+  end
+
+  # The Codex lane reports a tool as an item that has already completed, so
+  # blocking it prevents nothing and only kills a run that was working. This
+  # killed a live packet's prompt 02 on `TodoWrite` the moment Codex tool
+  # decoding started working.
+  test "a tool outside allowed_tools is recorded on the event, not fatal, on the codex lane" do
+    events =
+      codex_stream(
+        [
+          ~s({"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"mix test"}}),
+          ~s({"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"mix test","aggregated_output":"ok","exit_code":0,"status":"completed"}}),
+          ~s({"type":"turn.completed","stop_reason":"end_turn"})
+        ],
+        %{allowed_tools: ["Read"]}
+      )
+
+    assert [started] = visible(events, :tool_call_started)
+    assert started.data.tool_name == "Bash"
+
+    assert started.data.guardrail.action == :recorded
+    assert started.data.guardrail.rule == :allowed_tools
+    assert started.data.guardrail.tool_name == "Bash"
+    assert started.data.guardrail.allowed_tools == ["Read"]
+
+    assert visible(events, :error_occurred) == []
+    assert visible(events, :run_failed) == []
+    assert [_completed] = visible(events, :run_completed)
+  end
+
+  test "a tool inside allowed_tools carries no guardrail record" do
+    events =
+      codex_stream(
+        [
+          ~s({"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"mix test"}}),
+          ~s({"type":"turn.completed","stop_reason":"end_turn"})
+        ],
+        %{allowed_tools: ["Bash"]}
+      )
+
+    assert [started] = visible(events, :tool_call_started)
+    refute Map.has_key?(started.data, :guardrail)
   end
 
   test "a failing codex command renders as a failed tool call" do

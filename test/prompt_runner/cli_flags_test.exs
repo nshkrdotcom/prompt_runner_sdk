@@ -112,6 +112,49 @@ defmodule PromptRunner.CLIFlagsTest do
     refute File.exists?(Path.join([packet_root, ".prompt_runner", "logs"]))
   end
 
+  # `run PACKET --remaining` used to be `--remaining` reaching nothing: with no
+  # prompt ids the CLI set `all: true`, and `build_targets/3` reached `:all`
+  # before it ever looked at `:remaining`.
+  test "run --remaining selects only unfinished prompts", %{packet_root: packet_root} do
+    progress = Path.join([packet_root, ".prompt_runner", "progress.log"])
+    File.mkdir_p!(Path.dirname(progress))
+    File.write!(progress, "01:completed:2026-08-10T00:00:00Z:abc1234\n")
+
+    output =
+      capture_io(fn ->
+        assert :ok =
+                 CLI.main([
+                   "run",
+                   packet_root,
+                   "--remaining",
+                   "--dry-run",
+                   "--provider",
+                   "simulated"
+                 ])
+      end)
+
+    refute output =~ "[DRY RUN] Prompt 01"
+  end
+
+  test "run --remaining still selects a prompt that has not completed", %{
+    packet_root: packet_root
+  } do
+    output =
+      capture_io(fn ->
+        assert :ok =
+                 CLI.main([
+                   "run",
+                   packet_root,
+                   "--remaining",
+                   "--dry-run",
+                   "--provider",
+                   "simulated"
+                 ])
+      end)
+
+    assert output =~ "[DRY RUN] Prompt 01"
+  end
+
   test "run --dry-run honours --no-commit in the plan preview", %{packet_root: packet_root} do
     output =
       capture_io(fn ->

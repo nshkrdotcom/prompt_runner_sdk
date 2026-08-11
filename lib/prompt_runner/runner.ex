@@ -33,7 +33,7 @@ defmodule PromptRunner.Runner do
       |> Keyword.put_new(:run, true)
       |> ensure_default_target()
 
-    case do_run(plan, opts, []) do
+    case do_run(plan, opts, explicit_prompt_ids(opts)) do
       :ok ->
         emit_observer(plan, %{type: :run_completed, plan: plan})
         {:ok, %Run{plan: plan, status: :ok, result: :ok}}
@@ -100,7 +100,8 @@ defmodule PromptRunner.Runner do
       opts[:run] ->
         with {:ok, _report} <- maybe_preflight_plan(plan, opts),
              {:ok, targets} <- build_targets(plan, opts, remaining) do
-          run_supervised(plan, targets, opts[:no_commit] || false)
+          announce_empty_selection(targets, opts)
+          run_supervised(plan, targets, opts[:no_commit] || false, run_context(opts, remaining))
         end
 
       true ->
@@ -108,8 +109,34 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  defp run_supervised(plan, targets, skip_commit) do
-    with_pid_file(plan, fn -> run_targets(plan, targets, skip_commit) end)
+  # A resume that runs nothing has to say so. It exits zero either way, and an
+  # operator reading a silent success cannot tell "everything is finished" from
+  # "the selection was wrong".
+  defp announce_empty_selection([], opts) do
+    if opts[:remaining] do
+      IO.puts("")
+      IO.puts(UI.green("Nothing remaining — every prompt in this packet is completed."))
+      IO.puts(UI.dim("Re-run finished work by naming its prompt ids, or with --all."))
+    end
+  end
+
+  defp announce_empty_selection(_targets, _opts), do: :ok
+
+  # Naming a prompt explicitly is a request to run it, so pre-flight verification
+  # is off for explicit ids and on for `--remaining`, where the whole point is to
+  # not redo finished work. `--verify-first` states it either way.
+  defp run_context(opts, remaining) do
+    %{
+      verify_first?:
+        case opts[:verify_first] do
+          value when is_boolean(value) -> value
+          _ -> remaining == [] and opts[:remaining] == true
+        end
+    }
+  end
+
+  defp run_supervised(plan, targets, skip_commit, context) do
+    with_pid_file(plan, fn -> run_targets(plan, targets, skip_commit, context) end)
   end
 
   # Liveness has to be checkable from outside the run, and a process-name match
@@ -141,16 +168,27 @@ defmodule PromptRunner.Runner do
   end
 
   defp ensure_default_target(opts) do
-    if opts[:all] || opts[:phase] || opts[:continue] || opts[:run] == false do
+    if opts[:all] || opts[:phase] || opts[:continue] || opts[:remaining] || opts[:prompts] ||
+         opts[:run] == false do
       opts
     else
       Keyword.put(opts, :all, true)
     end
   end
 
-  defp run_targets(plan, targets, skip_commit) do
+  # The CLI passes explicit ids positionally. An embedded caller has no argv, so
+  # without this the only way to run a named subset was `execute_plan/3`, a
+  # function on a module carrying `@moduledoc false`.
+  defp explicit_prompt_ids(opts) do
+    opts
+    |> Keyword.get(:prompts)
+    |> List.wrap()
+    |> Enum.map(&normalize_prompt_id/1)
+  end
+
+  defp run_targets(plan, targets, skip_commit, context) do
     Enum.reduce_while(targets, :ok, fn num, _acc ->
-      case run_prompt(plan, num, skip_commit) do
+      case run_prompt(plan, num, skip_commit, context) do
         :ok -> {:cont, :ok}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -171,6 +209,9 @@ defmodule PromptRunner.Runner do
       opts[:phase] ->
         {:ok, Prompts.phase_nums(plan, opts[:phase])}
 
+      opts[:remaining] ->
+        {:ok, Progress.remaining(plan, Prompts.nums(plan))}
+
       opts[:continue] ->
         targets =
           case Progress.last_completed(plan) do
@@ -188,6 +229,7 @@ defmodule PromptRunner.Runner do
               Prompts.nums(plan) |> Enum.filter(&(&1 >= next))
           end
 
+        warn_continue_skips(plan, targets)
         {:ok, targets}
 
       opts[:all] ->
@@ -209,6 +251,29 @@ defmodule PromptRunner.Runner do
   #
   # An id naming no prompt is an error rather than a silent no-op, for the same
   # reason: a typo in a resume list should stop the run, not shorten it.
+  # `--continue` resumes from the last *completed* prompt, so anything earlier
+  # that failed or never ran is stepped over. That is a reasonable thing to ask
+  # for and a terrible thing to get by accident, so say which prompts are being
+  # left behind rather than leaving it to be discovered later.
+  defp warn_continue_skips(plan, targets) do
+    case Progress.remaining(plan, Prompts.nums(plan)) -- targets do
+      [] ->
+        :ok
+
+      skipped ->
+        IO.puts(
+          UI.yellow(
+            "--continue resumes after the last completed prompt and is skipping " <>
+              "#{Enum.join(skipped, ", ")}, which #{skip_verb(skipped)} not completed. " <>
+              "Use --remaining to run every unfinished prompt."
+          )
+        )
+    end
+  end
+
+  defp skip_verb([_one]), do: "is"
+  defp skip_verb(_many), do: "are"
+
   defp explicit_targets(plan, remaining) do
     known = Prompts.nums(plan)
 
@@ -460,14 +525,81 @@ defmodule PromptRunner.Runner do
     end
   end
 
-  defp run_prompt(plan, num, skip_commit) do
+  defp run_prompt(plan, num, skip_commit, context) do
     case Prompts.get(plan, num) do
       nil ->
         {:error, {:prompt_not_found, num}}
 
       prompt ->
-        run_prompt_attempts(plan, prompt, skip_commit, :run, 1)
+        case preflight_verify(plan, prompt, context) do
+          :run -> run_prompt_attempts(plan, prompt, skip_commit, :run, 1)
+          {:satisfied, report} -> complete_without_session(plan, prompt, report)
+          {:fault, report} -> halt_on_verifier_fault(plan, prompt, report, :preflight)
+        end
     end
+  end
+
+  # A prompt whose contract already passes has nothing for a provider to do.
+  # Evaluating the contract first costs seconds and makes a prompt idempotent:
+  # a resume re-verifies finished work instead of re-doing it.
+  #
+  # Two things are never pre-flighted. A contract with no evaluable clause
+  # passes vacuously, and marking a prompt complete on that would report work
+  # that nothing ever checked. `changed_paths_only` reads `git status`, so it is
+  # only meaningful against uncommitted work and passes vacuously the moment a
+  # session has committed — including before any session has run at all.
+  defp preflight_verify(_plan, _prompt, %{verify_first?: false}), do: :run
+
+  defp preflight_verify(plan, prompt, _context) do
+    if changed_paths_only?(prompt.verify) do
+      :run
+    else
+      classify_preflight(Verifier.verify_prompt(plan, prompt))
+    end
+  end
+
+  # Sources normalize contract keys to strings; a caller assembling a
+  # `%PromptRunner.Prompt{}` by hand is under no such obligation.
+  defp changed_paths_only?(contract) when is_map(contract) do
+    Map.has_key?(contract, "changed_paths_only") or Map.has_key?(contract, :changed_paths_only)
+  end
+
+  defp classify_preflight(report) do
+    cond do
+      Verifier.fault?(report) -> {:fault, report}
+      report.pass? and report.items != [] -> {:satisfied, report}
+      true -> :run
+    end
+  end
+
+  defp complete_without_session(plan, prompt, report) do
+    commit_info = {:skip, :no_session}
+
+    Progress.mark_completed(plan, prompt.num, commit_info)
+
+    Runtime.mark_status(plan, prompt.num, "completed", %{
+      "commit_info" => commit_info,
+      "last_verifier" => report,
+      "source" => "preflight_verify",
+      "session_ran" => false
+    })
+
+    emit_observer(plan, %{
+      type: :prompt_completed,
+      prompt: prompt,
+      commit_info: commit_info,
+      source: :preflight_verify
+    })
+
+    IO.puts("")
+
+    IO.puts(
+      UI.green(
+        "  ✓ Prompt #{prompt.num} already satisfies its verify contract — no session was run"
+      )
+    )
+
+    :ok
   end
 
   defp run_prompt_attempts(plan, prompt, skip_commit, mode, attempt) do
@@ -629,6 +761,10 @@ defmodule PromptRunner.Runner do
   defp stream_reason(:ok), do: nil
   defp stream_reason({:error, reason}), do: summarize_reason(reason)
 
+  defp summarize_reason({:verifier_fault, faults}) when is_list(faults) do
+    "verifier could not run: " <> Enum.map_join(faults, "; ", &Verifier.fault_line/1)
+  end
+
   defp summarize_reason(reason) do
     provider_error = extract_provider_error(reason)
 
@@ -668,18 +804,17 @@ defmodule PromptRunner.Runner do
     is_list(items) and items != []
   end
 
+  # The failures block used to be `inspect/1` of an Elixir map, so a model
+  # repairing a prompt received `%{"command" => "mix test", "details" => "...\n..."}`
+  # with the output's newlines escaped into one unreadable line. Render the
+  # fields it actually needs — the clause, where it ran, and what it printed.
   defp build_repair_prompt(prompt, prompt_state) do
     verifier = prompt_state["last_verifier"] || prompt_state["verifier"] || %{}
 
     failures =
       verifier
       |> Map.get("failures", verifier[:failures] || [])
-      |> Enum.map_join("\n- ", fn failure ->
-        failure
-        |> Enum.into(%{})
-        |> Map.take(["kind", "repo", "path", "command", "details"])
-        |> inspect()
-      end)
+      |> render_failure_blocks()
 
     last_error = prompt_state["last_error"] || prompt_state["reason"] || prompt_state[:reason]
     body = prompt.body || ""
@@ -699,9 +834,75 @@ defmodule PromptRunner.Runner do
         #{last_error || "n/a"}
 
         Remaining verifier failures:
-        - #{failures}
+
+        #{failures}
         """
     }
+  end
+
+  @failure_output_lines 40
+
+  defp render_failure_blocks([]), do: "(none recorded)"
+
+  defp render_failure_blocks(failures) when is_list(failures) do
+    Enum.map_join(failures, "\n", &render_failure_block/1)
+  end
+
+  defp render_failure_blocks(other), do: inspect(other)
+
+  defp render_failure_block(failure) do
+    failure = Enum.into(failure, %{})
+
+    header =
+      [
+        {"kind", failure_field(failure, "kind")},
+        {"repo", failure_field(failure, "repo")},
+        {"path", failure_field(failure, "path")},
+        {"command", failure_field(failure, "command")},
+        {"cwd", failure_field(failure, "cwd")}
+      ]
+      |> Enum.reject(fn {_label, value} -> value in [nil, ""] end)
+      |> Enum.map_join("\n", fn {label, value} -> "  #{label}: #{value}" end)
+
+    "- failure\n" <> header <> render_failure_output(failure_field(failure, "details"))
+  end
+
+  defp render_failure_output(details) when is_binary(details) and details != "" do
+    lines = details |> String.trim() |> String.split("\n")
+    kept = Enum.take(lines, @failure_output_lines)
+    dropped = length(lines) - length(kept)
+
+    body = Enum.map_join(kept, "\n", &("      " <> &1))
+
+    marker =
+      if dropped > 0 do
+        "\n      [truncated: #{dropped} more #{if dropped == 1, do: "line", else: "lines"}]"
+      else
+        ""
+      end
+
+    "\n  output:\n" <> body <> marker
+  end
+
+  defp render_failure_output(_details), do: ""
+
+  # A verifier report is read back from JSON state on a repair and held as a
+  # map with atom keys within one run, so both spellings have to work.
+  @failure_field_atoms %{
+    "kind" => :kind,
+    "repo" => :repo,
+    "path" => :path,
+    "command" => :command,
+    "cwd" => :cwd,
+    "details" => :details
+  }
+
+  defp failure_field(failure, key) when is_map(failure) do
+    case Map.get(failure, key) || Map.get(failure, Map.fetch!(@failure_field_atoms, key)) do
+      value when is_binary(value) -> value
+      nil -> nil
+      value -> inspect(value)
+    end
   end
 
   defp handle_attempt_outcome({:retry, reason, failure, delay_ms}, ctx),
@@ -806,6 +1007,9 @@ defmodule PromptRunner.Runner do
     |> String.pad_leading(2, "0")
   end
 
+  defp normalize_prompt_id(value) when is_integer(value),
+    do: value |> Integer.to_string() |> normalize_prompt_id()
+
   defp safe_render_stream(stream, renderer, sinks) do
     Rendering.stream(stream, renderer: renderer, sinks: sinks)
   rescue
@@ -886,8 +1090,34 @@ defmodule PromptRunner.Runner do
     emit_observer(plan, Map.put(event, :raw?, true))
     maybe_print_cli_confirmation(event, llm, log_io)
     maybe_log_recovery_metadata(event, log_io)
+    maybe_log_guardrail(event, log_io)
     error_tracking_callback(event)
   end
+
+  # On a lane that reports tools after they have already run, a tool outside
+  # `allowed_tools` is recorded rather than raised — killing the run at that
+  # point prevents nothing and discards the work. The record is what makes the
+  # allowlist miss reviewable afterwards.
+  defp maybe_log_guardrail(%{type: :tool_call_started, data: data}, log_io) when is_map(data) do
+    case map_get(data, :guardrail) do
+      guardrail when is_map(guardrail) ->
+        # Leading newline: the renderer writes to this same device and is
+        # mid-line whenever a tool starts, so without it the record lands
+        # spliced into a token and stops being greppable.
+        IO.binwrite(
+          log_io,
+          "\nGUARDRAIL action=#{map_get(guardrail, :action)} rule=#{map_get(guardrail, :rule)} " <>
+            "tool=#{map_get(guardrail, :tool_name)} " <>
+            "allowed_tools=#{Enum.join(map_get(guardrail, :allowed_tools) || [], ",")} " <>
+            "reason=#{map_get(guardrail, :reason)}\n"
+        )
+
+      _other ->
+        :ok
+    end
+  end
+
+  defp maybe_log_guardrail(_event, _log_io), do: :ok
 
   defp error_tracking_callback(event) do
     case event.type do
@@ -1058,6 +1288,11 @@ defmodule PromptRunner.Runner do
 
   defp format_error_reason({:verification_failed, report}, _config) do
     {"verification failed: #{verifier_failure_summary(report)}", nil, false}
+  end
+
+  defp format_error_reason({:verifier_fault, faults}, _config) when is_list(faults) do
+    {"verifier could not run: " <> Enum.map_join(faults, "; ", &Verifier.fault_line/1), nil,
+     false}
   end
 
   defp format_error_reason(reason, config) do
@@ -1546,6 +1781,63 @@ defmodule PromptRunner.Runner do
   defp finalize_stream_result(stream_result, ctx) do
     report = Verifier.verify_prompt(ctx.plan, ctx.prompt)
 
+    if Verifier.fault?(report) do
+      record_verifier_fault_attempt(ctx, report)
+      halt_on_verifier_fault(ctx.plan, ctx.prompt, report, :post_session)
+    else
+      record_verified_attempt(stream_result, ctx, report)
+    end
+  end
+
+  defp record_verifier_fault_attempt(ctx, report) do
+    Runtime.record_attempt_result(ctx.plan, ctx.prompt.num, ctx.attempt, %{
+      "status" => "verifier_fault",
+      "verifier" => report,
+      "reason" => verifier_fault_summary(report)
+    })
+  end
+
+  # A fault is not evidence about the work, so nothing here marks the prompt
+  # failed and nothing schedules a repair: a repair attempt spent on a contract
+  # that cannot execute buys a second identical fault and one more provider
+  # invocation. The run halts and names what could not run.
+  defp halt_on_verifier_fault(plan, prompt, report, stage) do
+    faults = Verifier.faults(report)
+
+    Runtime.mark_status(plan, prompt.num, "verifier_fault", %{
+      "last_verifier" => report,
+      "stage" => to_string(stage),
+      "reason" => verifier_fault_summary(report)
+    })
+
+    emit_observer(plan, %{
+      type: :verifier_fault,
+      prompt: prompt,
+      stage: stage,
+      faults: faults
+    })
+
+    IO.puts("")
+    IO.puts(UI.red("Verifier could not run for prompt #{prompt.num}:"))
+    Enum.each(faults, &IO.puts("  " <> UI.red(Verifier.fault_line(&1))))
+
+    IO.puts(
+      UI.yellow(
+        "  This is an infrastructure fault, not a verification failure. " <>
+          "No repair attempt was spent. Fix the contract or the command and re-run."
+      )
+    )
+
+    return_error(plan, prompt.num, {:verifier_fault, faults}, false)
+  end
+
+  defp verifier_fault_summary(report) do
+    report
+    |> Verifier.faults()
+    |> Enum.map_join("; ", &Verifier.fault_line/1)
+  end
+
+  defp record_verified_attempt(stream_result, ctx, report) do
     Runtime.record_attempt_result(ctx.plan, ctx.prompt.num, ctx.attempt, %{
       "status" => attempt_status(stream_result, report),
       "verifier" => report,
@@ -1691,6 +1983,7 @@ defmodule PromptRunner.Runner do
   defp format_commit_suffix(nil), do: ""
   defp format_commit_suffix("no_commit"), do: " (no_commit)"
   defp format_commit_suffix("no_changes"), do: " (no_changes)"
+  defp format_commit_suffix("no_session"), do: " (no_session)"
 
   defp format_commit_suffix(commit) when is_binary(commit) do
     if String.contains?(commit, "=") do

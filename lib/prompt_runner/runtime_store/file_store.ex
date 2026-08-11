@@ -85,7 +85,7 @@ defmodule PromptRunner.RuntimeStore.FileStore do
     last_segment = rest |> String.split(":") |> List.last()
 
     cond do
-      last_segment in ["no_commit", "no_changes", "noop"] ->
+      last_segment in ["no_commit", "no_changes", "noop", "no_session"] ->
         {String.trim_trailing(rest, ":" <> last_segment), last_segment}
 
       last_segment =~ ~r/^[0-9a-fA-F]{7,40}$/ ->

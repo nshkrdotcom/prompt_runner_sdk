@@ -507,6 +507,168 @@ defmodule PromptRunner.PacketLintTest do
     assert report.pass?
   end
 
+  describe "verify command paths" do
+    test "a script that does not exist under the prompt's repo is an error", %{
+      repo: repo,
+      docs: docs
+    } do
+      report =
+        lint(repo, docs, [
+          {"01_write.prompt.md",
+           """
+           ---
+           id: "01"
+           phase: 1
+           name: "Write notes"
+           targets:
+             - "app"
+           verify:
+             commands:
+               - "timeout 60 bin/check_doc.sh"
+           ---
+           # Write notes
+           """}
+        ])
+
+      found = finding(report, "verify_command_missing_path")
+      assert found.severity == "error"
+      assert found.message =~ "bin/check_doc.sh"
+      assert found.message =~ repo
+      refute report.pass?
+    end
+
+    test "a script that exists under the prompt's repo is fine", %{repo: repo, docs: docs} do
+      File.mkdir_p!(Path.join(repo, "bin"))
+      File.write!(Path.join([repo, "bin", "check_doc.sh"]), "#!/bin/sh\nexit 0\n")
+
+      report =
+        lint(repo, docs, [
+          {"01_write.prompt.md",
+           """
+           ---
+           id: "01"
+           phase: 1
+           name: "Write notes"
+           targets:
+             - "app"
+           verify:
+             commands:
+               - "timeout 60 bin/check_doc.sh"
+           ---
+           # Write notes
+           """}
+        ])
+
+      refute "verify_command_missing_path" in kinds(report)
+    end
+
+    test "the cwd is the entry's repo, not the prompt's target", %{repo: repo, docs: docs} do
+      File.mkdir_p!(Path.join(docs, "bin"))
+      File.write!(Path.join([docs, "bin", "check_doc.sh"]), "#!/bin/sh\nexit 0\n")
+
+      report =
+        lint(repo, docs, [
+          {"01_write.prompt.md",
+           """
+           ---
+           id: "01"
+           phase: 1
+           name: "Write notes"
+           targets:
+             - "app"
+           verify:
+             commands:
+               - repo: "docs"
+                 run: "timeout 60 bin/check_doc.sh"
+           ---
+           # Write notes
+           """}
+        ])
+
+      refute "verify_command_missing_path" in kinds(report)
+    end
+
+    # A check that guesses produces false errors on correct packets and gets
+    # turned off, so anything it cannot resolve is left alone.
+    test "tokens that are not resolvable paths are left alone", %{repo: repo, docs: docs} do
+      report =
+        lint(repo, docs, [
+          {"01_write.prompt.md",
+           """
+           ---
+           id: "01"
+           phase: 1
+           name: "Write notes"
+           targets:
+             - "app"
+           verify:
+             commands:
+               - "timeout 60 mix test"
+               - "timeout 60 curl -sf https://example.com/x/y.sh"
+               - "timeout 60 bash $HOME/bin/thing.sh"
+               - "timeout 60 ls docs/*/bin/thing.sh"
+               - "timeout 60 grep -R foo/bar lib"
+           ---
+           # Write notes
+           """}
+        ])
+
+      refute "verify_command_missing_path" in kinds(report)
+    end
+
+    test "a relative path prefix is checked even with no script suffix", %{
+      repo: repo,
+      docs: docs
+    } do
+      report =
+        lint(repo, docs, [
+          {"01_write.prompt.md",
+           """
+           ---
+           id: "01"
+           phase: 1
+           name: "Write notes"
+           targets:
+             - "app"
+           verify:
+             commands:
+               - "timeout 60 ./bin/verify"
+           ---
+           # Write notes
+           """}
+        ])
+
+      assert "verify_command_missing_path" in kinds(report)
+    end
+
+    test "an unresolvable repo yields the repo finding only, not a path finding", %{
+      repo: repo,
+      docs: docs
+    } do
+      report =
+        lint(repo, docs, [
+          {"01_write.prompt.md",
+           """
+           ---
+           id: "01"
+           phase: 1
+           name: "Write notes"
+           targets:
+             - "app"
+           verify:
+             commands:
+               - repo: "nowhere"
+                 run: "timeout 60 bin/check_doc.sh"
+           ---
+           # Write notes
+           """}
+        ])
+
+      assert "unknown_verify_repo" in kinds(report)
+      refute "verify_command_missing_path" in kinds(report)
+    end
+  end
+
   test "lint reports a packet that cannot be loaded" do
     root = FSHelpers.tmp_dir("prompt_runner_lint_missing")
     on_exit(fn -> File.rm_rf!(root) end)

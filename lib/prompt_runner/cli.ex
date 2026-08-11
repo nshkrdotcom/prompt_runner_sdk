@@ -18,8 +18,14 @@ defmodule PromptRunner.CLI do
   # `plan` parsed nothing and passed nothing to `PromptRunner.plan/2`, so
   # `prompt_runner plan --provider X` reported the packet's provider regardless
   # and could not be used to check what an override would actually do.
+  # `--continue` is deliberately absent: it resumes after the last *completed*
+  # prompt and therefore steps over an earlier one that failed, which is a
+  # documented behaviour rather than a CLI affordance. `--remaining` is the one
+  # a resume actually wants.
   @run_switches [
     all: :boolean,
+    remaining: :boolean,
+    verify_first: :boolean,
     phase: :integer,
     no_commit: :boolean,
     dry_run: :boolean,
@@ -414,7 +420,9 @@ defmodule PromptRunner.CLI do
           opts
           |> cli_opts()
           |> Keyword.put(:run, true)
-          |> maybe_put(:all, opts[:all] || prompt_ids == [])
+          |> maybe_put(:all, opts[:all] || (prompt_ids == [] and not truthy?(opts[:remaining])))
+          |> maybe_put(:remaining, opts[:remaining])
+          |> maybe_put(:verify_first, opts[:verify_first])
           |> maybe_put(:phase, opts[:phase])
           |> maybe_put(:no_commit, opts[:no_commit])
           |> maybe_put(:dry_run, opts[:dry_run])
@@ -586,6 +594,9 @@ defmodule PromptRunner.CLI do
   defp maybe_put(map, key, value) when is_map(map), do: Map.put(map, key, value)
   defp maybe_put(opts, key, value) when is_list(opts), do: Keyword.put(opts, key, value)
 
+  defp truthy?(true), do: true
+  defp truthy?(_value), do: false
+
   defp recovery_attrs(opts) do
     RecoveryConfig.default()
     |> put_path(["resume_attempts"], opts[:resume_attempts])
@@ -676,12 +687,18 @@ defmodule PromptRunner.CLI do
       prompt_runner list [PACKET_DIR]
       prompt_runner plan [PACKET_DIR] [--provider PROVIDER] [--model MODEL]
       prompt_runner run [PACKET_DIR] [PROMPT_ID...] [--skip-preflight] [--dry-run]
+      prompt_runner run [PACKET_DIR] --remaining [--verify-first | --no-verify-first]
       prompt_runner repair [--packet PACKET_DIR] PROMPT_ID
       prompt_runner status [PACKET_DIR]
       prompt_runner watch [PACKET_DIR] [--interval SECONDS] [--once] [--json]
 
     `plan` and `run` accept the same override flags, so `plan` shows exactly
     what `run` would resolve.
+
+    `--remaining` runs every prompt whose recorded status is not `completed`,
+    in order, including ones earlier than the furthest one that finished. It
+    pre-verifies each prompt first and skips any whose contract already passes;
+    `--no-verify-first` turns that off.
 
     """)
   end

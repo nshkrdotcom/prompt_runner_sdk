@@ -29,6 +29,10 @@ defmodule PromptRunner.PacketLint do
     the target expands to nothing.
   - `unknown_verify_clause` — an unrecognized key under `verify:` is parsed,
     stored, and never evaluated, so the contract is weaker than it reads.
+  - `verify_command_missing_path` — a `commands:` entry names a script that
+    does not exist under the directory the verifier will run it in. `bash -lc`
+    exits 127 for that, which the runner reports as a verifier fault and which,
+    before that classification existed, was read as failed work.
 
   ## Warnings
 
@@ -50,6 +54,15 @@ defmodule PromptRunner.PacketLint do
   - `inert_front_matter_key` — `references`, `required_reading`,
     `context_files`, and `depends_on` are parsed and stored and then never read
     at runtime.
+
+  ## Command path detection
+
+  A token in a `commands:` entry is checked for existence only when it is
+  unambiguously a path this lint can resolve: it contains `/`, carries a script
+  suffix (`.sh`, `.exs`, `.ex`, `.py`, `.rb`, `.pl`, `.js`, `.ts`) or begins
+  with `./` or `../`, is not a URL, and contains no shell expansion. Everything
+  else is left alone, because a check that guesses produces false errors on
+  correct packets and gets turned off.
 
   ## Timeout detection
 
@@ -107,11 +120,11 @@ defmodule PromptRunner.PacketLint do
 
   defp build_report(packet, prompts, opts) do
     strict? = opts[:strict] == true
-    repo_names = Enum.map(packet.repos, & &1.name)
+    scope = packet_scope(packet)
 
     findings =
       duplicate_id_findings(prompts)
-      |> Kernel.++(Enum.flat_map(prompts, &prompt_findings(&1, repo_names)))
+      |> Kernel.++(Enum.flat_map(prompts, &prompt_findings(&1, scope)))
       |> Enum.map(&promote(&1, strict?))
       |> Enum.sort_by(&{&1.file || "", &1.kind, &1.message})
 
@@ -131,10 +144,28 @@ defmodule PromptRunner.PacketLint do
   defp promote(finding, true), do: %{finding | severity: "error"}
   defp promote(finding, false), do: finding
 
-  defp prompt_findings(prompt, repo_names) do
+  # Everything the lint needs to answer "where would the runner have run this",
+  # mirroring `PromptRunner.Config.llm_for_prompt/2`: a prompt's working
+  # directory is its first target repo, or the default repo, or the packet root.
+  defp packet_scope(packet) do
+    %{
+      repo_names: Enum.map(packet.repos, & &1.name),
+      repo_paths:
+        packet.repos
+        |> Map.new(&{&1.name, &1.path})
+        |> Map.put(@packet_repo_alias, packet.root),
+      default_path:
+        case Enum.find(packet.repos, & &1.default) do
+          %{path: path} -> path
+          _ -> packet.root
+        end
+    }
+  end
+
+  defp prompt_findings(prompt, scope) do
     filename_findings(prompt) ++
-      target_findings(prompt, repo_names) ++
-      contract_findings(prompt, repo_names) ++
+      target_findings(prompt, scope.repo_names) ++
+      contract_findings(prompt, scope) ++
       inert_key_findings(prompt)
   end
 
@@ -250,13 +281,13 @@ defmodule PromptRunner.PacketLint do
 
   # -- contract
 
-  defp contract_findings(prompt, repo_names) do
+  defp contract_findings(prompt, scope) do
     contract = prompt.verify || %{}
 
     empty_contract_findings(prompt, contract) ++
       unknown_clause_findings(prompt, contract) ++
-      command_findings(prompt, contract) ++
-      verify_repo_findings(prompt, contract, repo_names) ++
+      command_findings(prompt, contract, scope) ++
+      verify_repo_findings(prompt, contract, scope.repo_names) ++
       changed_paths_findings(prompt, contract)
   end
 
@@ -292,11 +323,86 @@ defmodule PromptRunner.PacketLint do
     end)
   end
 
-  defp command_findings(prompt, contract) do
+  defp command_findings(prompt, contract, scope) do
     case clause_entries(contract, "commands") do
-      [] -> missing_commands_finding(prompt, contract)
-      entries -> Enum.flat_map(entries, &command_timeout_finding(&1, prompt))
+      [] ->
+        missing_commands_finding(prompt, contract)
+
+      entries ->
+        Enum.flat_map(entries, fn entry ->
+          command_timeout_finding(entry, prompt) ++
+            command_path_findings(entry, prompt, scope)
+        end)
     end
+  end
+
+  # The class of failure this catches is not hypothetical: on 2026-08-10 a
+  # contract kept pointing at `docs/20260809/bin/check_doc.sh` after the scripts
+  # moved one directory down. Every clause exited 127 and a finished prompt was
+  # discarded. The runner now calls that a verifier fault rather than failed
+  # work; this catches it at authoring time instead of at 04:06.
+  defp command_path_findings(entry, prompt, scope) do
+    case command_cwd(entry, prompt, scope) do
+      nil ->
+        []
+
+      cwd ->
+        entry
+        |> command_string()
+        |> candidate_paths()
+        |> Enum.reject(&File.exists?(Path.expand(&1, cwd)))
+        |> Enum.map(&missing_command_path_finding(&1, cwd, prompt))
+    end
+  end
+
+  defp missing_command_path_finding(path, cwd, prompt) do
+    finding(
+      "error",
+      "verify_command_missing_path",
+      prompt,
+      "verify command references #{inspect(path)}, which does not exist relative to the " <>
+        "directory the verifier runs it in (#{cwd}); bash exits 127 for that, and an exit " <>
+        "code is all the verifier gets back"
+    )
+  end
+
+  # An unresolvable repo yields no cwd and therefore no path check: it already
+  # has its own finding, and guessing a directory here would report the same
+  # mistake twice with a second, wrong explanation.
+  defp command_cwd(%{"repo" => repo}, _prompt, scope) when is_binary(repo) do
+    Map.get(scope.repo_paths, repo)
+  end
+
+  defp command_cwd(_entry, %{target_repos: [target | _rest]}, scope) when is_binary(target) do
+    Map.get(scope.repo_paths, target)
+  end
+
+  defp command_cwd(_entry, _prompt, scope), do: scope.default_path
+
+  @script_suffixes ~w(.sh .exs .ex .py .rb .pl .js .ts)
+
+  defp candidate_paths(nil), do: []
+
+  defp candidate_paths(command) when is_binary(command) do
+    command
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.filter(&candidate_path?/1)
+    |> Enum.uniq()
+  end
+
+  # A URL, a shell expansion, a glob, or a quoted fragment cannot be resolved to
+  # a filesystem path without guessing, and a lint that guesses gets turned off.
+  @unresolvable ["://", "$", "*", "?", "~", "\"", "'"]
+
+  defp candidate_path?(token) do
+    String.contains?(token, "/") and
+      not String.starts_with?(token, "-") and
+      not String.contains?(token, @unresolvable) and
+      path_shaped?(token)
+  end
+
+  defp path_shaped?(token) do
+    String.starts_with?(token, ["./", "../"]) or String.ends_with?(token, @script_suffixes)
   end
 
   defp missing_commands_finding(prompt, contract) do

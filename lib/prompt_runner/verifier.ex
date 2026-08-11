@@ -9,12 +9,30 @@ defmodule PromptRunner.Verifier do
   alias PromptRunner.Verifier.Doc
   alias PromptRunner.Verifier.ReposClean
 
+  @type fault :: :verifier_fault | :verifier_timeout
+
   @type report :: %{
           pass?: boolean(),
           items: [map()],
           failures: [map()],
+          faults: [map()],
           prompt_id: String.t() | nil
         }
+
+  # Exit codes that say the check never ran, as opposed to ran and disagreed.
+  # `bash -lc` reports 127 for a command it could not find and 126 for one it
+  # found and could not execute; `timeout` reports 124 when it killed its child.
+  # None of these is evidence about the work in either direction, and reading
+  # them as a verification failure discards finished attempts — which is exactly
+  # what happened on 2026-08-10 when a contract kept referencing scripts after
+  # they moved.
+  @fault_exit_codes %{126 => :verifier_fault, 127 => :verifier_fault, 124 => :verifier_timeout}
+
+  @fault_reasons %{
+    126 => "command found but not executable",
+    127 => "command not found",
+    124 => "killed by timeout"
+  }
 
   @contract_keys ~w(
     files_exist
@@ -72,8 +90,56 @@ defmodule PromptRunner.Verifier do
       pass?: failures == [],
       items: items,
       failures: failures,
+      faults: Enum.filter(items, &fault_item?/1),
       prompt_id: prompt.num
     }
+  end
+
+  @doc """
+  The items in `report` whose check could not run.
+
+  A fault is not a verification failure. The contract said nothing about the
+  work because it never got to look, so a caller must neither pass the prompt
+  nor spend an attempt trying to repair it — it has to stop and say what could
+  not run.
+  """
+  @spec faults(report() | map()) :: [map()]
+  def faults(report) when is_map(report) do
+    case Map.get(report, :faults, Map.get(report, "faults")) do
+      faults when is_list(faults) ->
+        faults
+
+      _ ->
+        report
+        |> Map.get(:items, Map.get(report, "items", []))
+        |> List.wrap()
+        |> Enum.filter(&fault_item?/1)
+    end
+  end
+
+  @doc """
+  Whether `report` contains any item whose check could not run.
+  """
+  @spec fault?(report() | map()) :: boolean()
+  def fault?(report) when is_map(report), do: faults(report) != []
+
+  @doc """
+  A one-line description of a faulted item, naming the command and its cwd.
+  """
+  @spec fault_line(map()) :: String.t()
+  def fault_line(item) when is_map(item) do
+    exit_code = item_field(item, :exit_code)
+    reason = Map.get(@fault_reasons, exit_code, "check could not run")
+
+    "#{item_field(item, :fault) || "verifier_fault"} exit=#{exit_code} (#{reason}) " <>
+      "cwd=#{item_field(item, :cwd) || "?"} command=#{inspect(item_field(item, :command))}"
+  end
+
+  defp fault_item?(item) when is_map(item), do: item_field(item, :fault) != nil
+  defp fault_item?(_item), do: false
+
+  defp item_field(item, key) when is_map(item) do
+    Map.get(item, key) || Map.get(item, Atom.to_string(key))
   end
 
   @spec contract_items(map()) :: [map()]
@@ -226,16 +292,25 @@ defmodule PromptRunner.Verifier do
         resolve_command_entry(entry, repo_index, default_scope)
 
       {output, code} = System.cmd("bash", ["-lc", command], cd: cwd, stderr_to_stdout: true)
+      fault = Map.get(@fault_exit_codes, code)
 
       %{
         kind: "command",
         repo: repo,
         command: command,
         cwd: cwd,
+        exit_code: code,
+        fault: fault,
         pass?: code == 0,
-        details: String.trim(output)
+        details: command_details(fault, code, output)
       }
     end)
+  end
+
+  defp command_details(nil, _code, output), do: String.trim(output)
+
+  defp command_details(fault, code, output) do
+    "#{fault}: #{Map.fetch!(@fault_reasons, code)} (exit #{code})\n" <> String.trim(output)
   end
 
   defp verify_changed_paths_only(contract, repo_index, default_scope) do

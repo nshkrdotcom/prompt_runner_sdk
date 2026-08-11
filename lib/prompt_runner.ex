@@ -52,6 +52,35 @@ defmodule PromptRunner do
     end
   end
 
+  @doc """
+  Builds a plan from `input` and runs it.
+
+  ## Selecting what runs
+
+  Exactly one of these decides the targets; the first that applies wins.
+
+  - `prompts: ["02", "03"]` — run exactly these, in this order. An id naming no
+    prompt is an error rather than a shorter run.
+  - `phase: 2` — run one phase
+  - `remaining: true` — run every prompt whose recorded status is not
+    `completed`, in order, including prompts *earlier* than the furthest one
+    that finished. A prompt with no record is remaining, and an unreadable
+    progress store makes every prompt remaining.
+  - `continue: true` — resume from `last_completed + 1`. This steps over an
+    earlier prompt that failed or never ran; when it does, the skipped prompts
+    are named.
+  - `all: true` — run everything
+
+  ## Pre-flight verification
+
+  `verify_first: true` evaluates a prompt's verify contract before invoking the
+  provider and, if it already passes, marks the prompt completed with no
+  session and records that no session ran. It defaults on under
+  `remaining: true` and off for explicitly named prompts, since naming a prompt
+  is a request to run it. A contract with no evaluable clause, and one
+  containing `changed_paths_only`, are never pre-flighted — both would pass
+  vacuously.
+  """
   @spec run(term(), keyword()) :: {:ok, Run.t()} | {:error, term()}
   def run(input, opts \\ []) do
     with {:ok, %Plan{} = plan} <- plan(input, opts) do

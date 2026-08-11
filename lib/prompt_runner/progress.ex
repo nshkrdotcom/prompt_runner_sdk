@@ -31,6 +31,24 @@ defmodule PromptRunner.Progress do
     status(statuses, num).status == "completed"
   end
 
+  @doc """
+  The prompts in `nums` whose recorded status is not `completed`, in order.
+
+  This is the question a resume actually asks. `last_completed/1` answers a
+  different one — where the run got to — and resuming from there steps over any
+  earlier prompt that failed or never ran.
+
+  A prompt with no recorded status is remaining: absence of a record is not
+  evidence of success. If the progress store cannot be read at all, every
+  prompt is remaining, because a resume that silently runs nothing is worse
+  than one that re-verifies finished work.
+  """
+  @spec remaining(source(), [String.t()]) :: [String.t()]
+  def remaining(source, nums) when is_list(nums) do
+    statuses = statuses(source)
+    Enum.reject(nums, &completed?(statuses, &1))
+  end
+
   @spec last_completed(source()) :: String.t() | nil
   def last_completed(%Plan{runtime_store: {module, state}}) do
     module.last_completed(state)
@@ -92,7 +110,7 @@ defmodule PromptRunner.Progress do
     last_segment = rest |> String.split(":") |> List.last()
 
     cond do
-      last_segment in ["no_commit", "no_changes"] ->
+      last_segment in ["no_commit", "no_changes", "no_session"] ->
         {String.trim_trailing(rest, ":" <> last_segment), last_segment}
 
       last_segment =~ ~r/^[0-9a-fA-F]{7,40}$/ ->

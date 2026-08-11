@@ -122,6 +122,25 @@ Useful plan fields:
 - `plan.state_dir`
 - `plan.config`
 
+### Selecting what runs
+
+```elixir
+# exactly these, in this order
+PromptRunner.run(packet.root, interface: :cli, prompts: ["02", "03"])
+
+# every prompt whose recorded status is not `completed`, in order —
+# including ones earlier than the furthest one that finished
+PromptRunner.run(packet.root, interface: :cli, remaining: true)
+
+# resume from last_completed + 1; steps over an earlier failure and names it
+PromptRunner.run(packet.root, interface: :cli, continue: true)
+```
+
+Under `remaining: true`, each prompt's verify contract is evaluated before the
+provider is invoked; one that already passes is marked completed with no
+session and records `session_ran: false`. `verify_first: true | false` states
+it explicitly. See `PromptRunner.run/2`.
+
 ## Embedded Use
 
 API calls default to an in-memory runtime store plus a no-op committer:

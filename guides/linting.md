@@ -69,6 +69,22 @@ contract with `file_exists:` (singular) reads like a gate and is not one. The
 known clause list comes from `PromptRunner.Verifier.contract_keys/0`, so lint
 and the verifier cannot drift.
 
+### `verify_command_missing_path`
+
+A `commands:` entry names a script that does not exist under the directory the
+verifier will run it in — the entry's `repo:`, or the prompt's first target, or
+the packet root. `bash -lc` exits 127 for that, which the runner classifies as a
+verifier fault and halts on. A contract kept pointing at `bin/check_doc.sh`
+after those scripts moved one directory down; every clause exited 127 and a
+finished prompt was discarded before that classification existed.
+
+Detection is deliberately narrow. A token is checked only when it is
+unambiguously a path this lint can resolve: it contains `/`, carries a script
+suffix (`.sh`, `.exs`, `.ex`, `.py`, `.rb`, `.pl`, `.js`, `.ts`) or begins with
+`./` or `../`, is not a URL, and contains no shell expansion, glob, or quote.
+Everything else is left alone, because a check that guesses produces false
+errors on correct packets and gets turned off.
+
 ## Warnings
 
 A warning is usually wrong and occasionally deliberate. Warnings exit zero

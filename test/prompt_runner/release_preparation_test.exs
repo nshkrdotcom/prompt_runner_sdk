@@ -15,18 +15,30 @@ defmodule PromptRunner.ReleasePreparationTest do
   test "release metadata follows the ASM 0.12 and Elixir 1.19 boundary" do
     project = Mix.Project.config()
 
-    assert project[:version] == "0.9.0"
     assert project[:elixir] == "~> 1.19"
 
     # The dependency tuple's shape varies by resolved source (path/github/hex),
     # so the committed constraint is asserted at its source of truth instead.
+    # The assertion is on the *line*, not the patch: a patch bump in a sibling
+    # is an ordinary event, and pinning the digit here turned every one of them
+    # into a failing suite in this repository.
     config = DependencySources.config!(Path.expand("../..", __DIR__))
 
-    assert config[:deps][:agent_session_manager][:hex] == "~> 0.12.1"
-    assert config[:deps][:cli_subprocess_core][:hex] == "~> 0.4.1"
+    assert config[:deps][:agent_session_manager][:hex] =~ ~r/^~> 0\.12\./
+    assert config[:deps][:cli_subprocess_core][:hex] =~ ~r/^~> 0\.5\./
 
     assert List.keymember?(project[:deps], :agent_session_manager, 0)
     assert List.keymember?(project[:deps], :cli_subprocess_core, 0)
+  end
+
+  test "mix.exs version matches the newest CHANGELOG entry" do
+    # The release checklist requires both a bump and a CHANGELOG entry. Asserting
+    # a version literal in this file only proves someone edited this file;
+    # asserting the two agree proves the entry was actually written.
+    changelog = File.read!(Path.expand("../../CHANGELOG.md", __DIR__))
+
+    assert [_, newest] = Regex.run(~r/^## \[(\d+\.\d+\.\d+)\]/m, changelog)
+    assert Mix.Project.config()[:version] == newest
   end
 
   test "publish preflight accepts the committed hex constraints" do

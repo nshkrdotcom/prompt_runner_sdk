@@ -56,6 +56,61 @@ verify:
 
 This is not a style preference. A contract without it can cost a whole session.
 
+## A Broken Verifier Is Not Failed Work
+
+`bash -lc` distinguishes "the check ran and disagreed" from "the check never
+ran", and so does the verifier:
+
+| exit | means | classified as |
+|------|-------|---------------|
+| 0 | the check passed | pass |
+| 1 (and most others) | the check ran, the work failed | verification failure |
+| 126 | found, not executable | `verifier_fault` |
+| 127 | command not found | `verifier_fault` |
+| 124 | `timeout` killed it | `verifier_timeout` |
+
+A fault says nothing about the work in either direction, so the runner does not
+treat it as evidence. It **halts the run**, names the command and the directory
+it could not run in, and records `status: "verifier_fault"` in the prompt's
+state. It does not mark the prompt failed and it does not spend a repair
+attempt — a repair against a contract that cannot execute buys a second
+identical fault and one more provider invocation.
+
+This is not hypothetical. A contract kept referencing `bin/check_doc.sh` after
+those scripts moved one directory down. Every clause exited 127, the runner read
+it as failed work, and a finished attempt was discarded.
+
+`mix prompt_runner packet lint` reports a `commands:` entry whose script does
+not exist relative to the directory the verifier will run it in
+(`verify_command_missing_path`), so the mistake surfaces at authoring time
+rather than at 04:06 in an unattended run.
+
+## Pre-flight Verification
+
+Under `mix prompt_runner run PACKET --remaining`, each prompt's contract is
+evaluated before the provider is invoked. A prompt whose contract already
+passes is marked completed with no session and records that no session ran.
+See the [CLI Guide](cli.md#resuming).
+
+## What A Repair Attempt Is Told
+
+A repair prompt appends the unmet verifier items to the prompt body as a
+structured block — clause kind, repo, path, command, working directory, and the
+command's own output, indented and capped at a line budget with an explicit
+truncation marker:
+
+```text
+Remaining verifier failures:
+
+- failure
+  kind: command
+  repo: app
+  command: timeout 900 mix test
+  output:
+      1) test the thing (AppTest)
+         Assertion with == failed
+```
+
 ## `doc` — Artifact Quality
 
 `files_exist` is satisfied by a three-line stub. When the deliverable is a

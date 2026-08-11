@@ -124,6 +124,50 @@ mix prompt_runner run demo 01 02
 mix prompt_runner run demo --phase 2
 ```
 
+## Resuming
+
+```bash
+mix prompt_runner run demo --remaining
+```
+
+`--remaining` runs every prompt whose recorded status is not `completed`, in
+order. That includes prompts *earlier* than the furthest one that finished: if
+03 failed while 04 succeeded, `--remaining` runs 03 and 05, and says so.
+
+A prompt with no recorded status is remaining — the absence of a record is not
+evidence of success. If the progress store cannot be read at all, every prompt
+is remaining, because a resume that silently runs nothing is worse than one
+that re-verifies finished work.
+
+When `--remaining` selects nothing, the run says so rather than exiting zero in
+silence.
+
+### Pre-flight verification
+
+Under `--remaining`, each prompt's verify contract is evaluated *before* the
+provider is invoked. If it already passes, the prompt is marked completed with
+no session, and its state records `session_ran: false` and
+`source: "preflight_verify"`. This is what makes a prompt idempotent and a
+resume cheap: finished work re-verifies in seconds instead of being re-done.
+
+Two contracts are never pre-flighted:
+
+- one with no evaluable clause, which would pass vacuously
+- one containing `changed_paths_only`, which reads `git status --porcelain` and
+  so passes vacuously against a clean tree — including the clean tree that
+  exists before any session has run
+
+`--verify-first` and `--no-verify-first` state it explicitly either way. Naming
+a prompt id is a request to run it, so pre-flight is off for explicit ids
+unless `--verify-first` is given.
+
+### `--continue`
+
+`--continue` is an API option, not a CLI switch. It resumes from
+`last_completed + 1`, so it steps over any earlier prompt that failed or never
+ran. When it does, the runner names the prompts being skipped and points at
+`--remaining`. Its behaviour is unchanged — some callers want exactly that.
+
 Let each session own its commits:
 
 ```bash
@@ -177,6 +221,8 @@ duration of a run, and quiet time comes from file mtimes. See
 - `--no-commit`
 - `--dry-run`
 - `--all`
+- `--remaining`
+- `--verify-first` / `--no-verify-first`
 - `--phase N`
 
 `watch` accepts:
