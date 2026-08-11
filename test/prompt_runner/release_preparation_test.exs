@@ -25,7 +25,7 @@ defmodule PromptRunner.ReleasePreparationTest do
     config = DependencySources.config!(Path.expand("../..", __DIR__))
 
     assert config[:deps][:agent_session_manager][:hex] =~ ~r/^~> 0\.14\./
-    assert config[:deps][:cli_subprocess_core][:hex] =~ ~r/^~> 0\.6\./
+    assert config[:deps][:cli_subprocess_core][:hex] =~ ~r/^~> 0\.7\./
     assert config[:deps][:execution_plane_process][:hex] =~ ~r/^~> 0\.3\./
 
     assert List.keymember?(project[:deps], :agent_session_manager, 0)

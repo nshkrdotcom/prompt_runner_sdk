@@ -78,7 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `agent_session_manager` now requires `~> 0.14.0` and
-  `execution_plane_process` requires `~> 0.3.0`.
+  `execution_plane_process` requires `~> 0.3.0`. `cli_subprocess_core` now
+  requires `~> 0.7.0`, whose embedded model catalogs make the installed
+  Prompt Runner escript independent of source-checkout `priv` paths.
 - The packaged capability file is now the compile-time source of the runtime
   capability API, eliminating the two lists' drift.
 

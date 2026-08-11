@@ -49,7 +49,7 @@ defmodule PromptRunner.MixProject do
   defp deps do
     [
       workspace_dep(:agent_session_manager, "~> 0.14.0"),
-      workspace_dep(:cli_subprocess_core, "~> 0.6.0"),
+      workspace_dep(:cli_subprocess_core, "~> 0.7.0"),
       workspace_dep(:execution_plane_process, "~> 0.3.0"),
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.12"},

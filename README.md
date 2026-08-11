@@ -447,7 +447,7 @@ they exist next to this repository, then GitHub, then Hex:
 mix deps.sources
 # dependency sources:
 #   agent_session_manager -> path (../agent_session_manager) -> 0.14.0
-#   cli_subprocess_core -> path (../cli_subprocess_core) -> 0.6.0
+#   cli_subprocess_core -> path (../cli_subprocess_core) -> 0.7.0
 ```
 
 To resolve against the published releases instead — which is what you want
