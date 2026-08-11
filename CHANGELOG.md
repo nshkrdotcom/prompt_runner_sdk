@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Workspace acceptance samples and reports now encode violations as structured
+  JSON objects. A required-running watch previously discovered a stopped or
+  failed service correctly, then crashed while encoding the tuple
+  `{:not_running, state}` instead of persisting the failure evidence.
 - Run locks now bind PID plus `/proc` start identity and reject zombie holders.
 - Runtime updates target only the newest running attempt, JSONL sinks always
   append, and run events never truncate when a run ID is reused.

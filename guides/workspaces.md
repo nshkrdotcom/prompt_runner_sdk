@@ -40,6 +40,14 @@ complete. Use `--source PROGRESS_FILE` when the old state is elsewhere.
 inherited without placing their values in argv. `stop` succeeds only after the
 unit is inactive and its cgroup is unpopulated.
 
+`watch` writes an append-only JSONL sample stream and a final JSON report under
+the operator runtime's `acceptance/` directory. Violations are structured
+objects with stable `code` fields such as `runtime_unhealthy`, `not_running`,
+and `progress_stale`; a stopped service is therefore durable failure evidence,
+not an exception in the monitoring process. A failed sample ends that watch,
+and a continuous acceptance interval must start again after the underlying
+failure is repaired.
+
 The escript embeds erlexec's compiled native port and materializes it once into
 a version-, architecture-, and digest-addressed directory under the current
 operator's XDG cache. The cached file is never shared across users, and a

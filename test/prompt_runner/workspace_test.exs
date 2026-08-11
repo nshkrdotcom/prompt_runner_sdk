@@ -3,7 +3,7 @@ defmodule PromptRunner.WorkspaceTest do
 
   alias PromptRunner.Test.FSHelpers
   alias PromptRunner.Workspace
-  alias PromptRunner.Workspace.Manifest
+  alias PromptRunner.Workspace.{Manifest, Watch}
 
   setup do
     root = FSHelpers.tmp_dir("prompt_runner_workspace_test")
@@ -203,6 +203,44 @@ defmodule PromptRunner.WorkspaceTest do
     assert [[:dirty_resumable_workspace, paths]] = report.repositories["app"].warnings
     assert paths =~ "DIRTY.txt"
     assert is_binary(Jason.encode!(report))
+  end
+
+  test "watch persists a structured failure report when running state is required", %{
+    manifest: manifest
+  } do
+    assert {:ok, _prepared} = Workspace.prepare(manifest)
+
+    assert {:error, {:workspace_watch_unhealthy, report}} =
+             Watch.run(manifest,
+               duration_seconds: 1,
+               interval_seconds: 1,
+               require_running: true,
+               require_progress: false,
+               json: false
+             )
+
+    assert %{state: state} =
+             Enum.find(report.violations, fn violation -> violation.code == "not_running" end)
+
+    assert state in ["not_started", "stopped", "failed"]
+    assert %{code: "runtime_unhealthy"} in report.violations
+    assert File.regular?(report.evidence_jsonl)
+    assert File.regular?(report.report_path)
+
+    [sample_json] =
+      report.evidence_jsonl
+      |> File.read!()
+      |> String.split("\n", trim: true)
+
+    assert %{"healthy?" => false, "violations" => violations} = Jason.decode!(sample_json)
+
+    assert %{"code" => "not_running", "state" => state} in violations
+    assert %{"code" => "runtime_unhealthy"} in violations
+
+    assert %{"passed?" => false} =
+             report.report_path
+             |> File.read!()
+             |> Jason.decode!()
   end
 
   test "prepare builds declared contract escripts once and doctor verifies the installed artifact",

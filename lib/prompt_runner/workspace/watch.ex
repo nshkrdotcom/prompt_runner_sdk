@@ -47,15 +47,19 @@ defmodule PromptRunner.Workspace.Watch do
 
     violations =
       []
-      |> maybe_violation(not status.healthy?, :runtime_unhealthy)
+      |> maybe_violation(not status.healthy?, %{code: "runtime_unhealthy"})
       |> maybe_violation(
         Keyword.get(opts, :require_running, false) and status.state != "running",
-        {:not_running, status.state}
+        %{code: "not_running", state: status.state}
       )
       |> maybe_violation(
         Keyword.get(opts, :require_progress, false) and
           (is_nil(progress_age) or progress_age > progress_limit),
-        {:progress_stale, progress_age, progress_limit}
+        %{
+          code: "progress_stale",
+          progress_age_seconds: progress_age,
+          progress_limit_seconds: progress_limit
+        }
       )
 
     %{
