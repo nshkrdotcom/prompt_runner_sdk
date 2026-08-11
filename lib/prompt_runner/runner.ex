@@ -2189,6 +2189,28 @@ defmodule PromptRunner.Runner do
   end
 
   defp apply_cli_confirmation_policy(result, status, cli_confirmation, details, audit, log_io) do
+    if match?({:error, _reason}, result) do
+      result
+    else
+      apply_successful_cli_confirmation_policy(
+        result,
+        status,
+        cli_confirmation,
+        details,
+        audit,
+        log_io
+      )
+    end
+  end
+
+  defp apply_successful_cli_confirmation_policy(
+         result,
+         status,
+         cli_confirmation,
+         details,
+         audit,
+         log_io
+       ) do
     case {status, cli_confirmation} do
       {:mismatch, :require} ->
         {:error, {:cli_confirmation_mismatch, details}}

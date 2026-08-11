@@ -155,7 +155,10 @@ defmodule PromptRunner.RunnerTest do
         progress_file: ".progress",
         log_dir: "logs",
         model: "gpt-5.3-codex",
-        llm: %{provider: "codex"}
+        llm: %{
+          provider: "codex",
+          codex_thread_opts: %{reasoning_effort: :xhigh}
+        }
       }
       """
     )
@@ -195,7 +198,13 @@ defmodule PromptRunner.RunnerTest do
     end)
 
     assert {:error, %{message: message, provider_error: provider_error}} =
-             run_quiet(fn -> Runner.execute_plan(plan, [run: true, no_commit: true], ["01"]) end)
+             run_quiet(fn ->
+               Runner.execute_plan(
+                 plan,
+                 [run: true, no_commit: true, cli_confirmation: "require"],
+                 ["01"]
+               )
+             end)
 
     assert message == "codex executable exited with status 2"
     assert provider_error.provider == :codex
