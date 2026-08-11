@@ -129,7 +129,7 @@ defmodule PromptRunner.RunLock do
 
   defp alive?(%{pid: pid, start_time: expected_start}) do
     if File.dir?("/proc") do
-      File.dir?("/proc/#{pid}") and start_time_matches?(pid, expected_start)
+      process_live?(pid) and start_time_matches?(pid, expected_start)
     else
       match?(
         {_output, 0},
@@ -143,14 +143,39 @@ defmodule PromptRunner.RunLock do
   defp start_time_matches?(_pid, nil), do: true
   defp start_time_matches?(pid, expected), do: process_start_time(pid) == expected
 
+  defp process_live?(pid) do
+    case process_identity(pid) do
+      {state, _start_time} when state in ["Z", "X", "x"] -> false
+      {_state, _start_time} -> true
+      nil -> false
+    end
+  end
+
   # `/proc/<pid>/stat` field 22 is the process start time. Splitting after the
   # final `) ` keeps spaces and parentheses inside the command name harmless.
   defp process_start_time(pid) do
-    with {:ok, stat} <- File.read("/proc/#{pid}/stat"),
-         [suffix, _command_and_pid] <-
+    case process_identity(pid) do
+      {_state, start_time} -> start_time
+      nil -> nil
+    end
+  end
+
+  defp process_identity(pid) do
+    case File.read("/proc/#{pid}/stat") do
+      {:ok, stat} -> parse_process_stat(stat)
+      _other -> nil
+    end
+  end
+
+  @doc false
+  @spec parse_process_stat(String.t()) :: {String.t(), String.t()} | nil
+  def parse_process_stat(stat) when is_binary(stat) do
+    with [suffix, _command_and_pid] <-
            stat |> String.split(") ") |> Enum.reverse() |> Enum.take(2),
-         start_time when is_binary(start_time) <- suffix |> String.split() |> Enum.at(19) do
-      start_time
+         fields when length(fields) > 19 <- String.split(suffix),
+         state when is_binary(state) <- Enum.at(fields, 0),
+         start_time when is_binary(start_time) <- Enum.at(fields, 19) do
+      {state, start_time}
     else
       _other -> nil
     end

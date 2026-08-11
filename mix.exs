@@ -12,7 +12,7 @@ defmodule PromptRunner.MixProject do
 
   @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
 
-  @version "0.10.0"
+  @version "0.11.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
   @homepage_url "https://hex.pm/packages/prompt_runner_sdk"
   @docs_url "https://hexdocs.pm/prompt_runner_sdk"
@@ -48,8 +48,9 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      workspace_dep(:agent_session_manager, "~> 0.13.0"),
+      workspace_dep(:agent_session_manager, "~> 0.14.0"),
       workspace_dep(:cli_subprocess_core, "~> 0.6.0"),
+      workspace_dep(:execution_plane_process, "~> 0.3.0"),
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.12"},
       {:mox, "~> 1.2", only: :test},
@@ -81,8 +82,10 @@ defmodule PromptRunner.MixProject do
 
   defp escript do
     [
-      main_module: PromptRunner.CLI,
-      name: "prompt_runner"
+      main_module: PromptRunner.Escript,
+      name: "prompt_runner",
+      app: nil,
+      include_priv_for: [:erlexec]
     ]
   end
 
@@ -115,6 +118,7 @@ defmodule PromptRunner.MixProject do
          filename: "verification-and-repair", title: "Verification And Repair"},
         {"guides/linting.md", filename: "linting", title: "Packet Linting"},
         {"guides/supervision.md", filename: "supervision", title: "Supervising A Long Run"},
+        {"guides/workspaces.md", filename: "workspaces", title: "Operator Workspaces"},
         {"guides/rendering.md", filename: "rendering", title: "Rendering Modes"},
         {"guides/control.md", filename: "control", title: "Watching And Steering A Live Run"},
         {"guides/multi-repo.md", filename: "multi-repo", title: "Multi-Repository Packets"},
@@ -148,7 +152,7 @@ defmodule PromptRunner.MixProject do
           "verification-and-repair",
           "rendering"
         ],
-        Operations: ["supervision", "control"],
+        Operations: ["supervision", "workspaces", "control"],
         Embedding: ["api"],
         Architecture: ["architecture"],
         Examples: [

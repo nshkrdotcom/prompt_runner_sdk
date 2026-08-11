@@ -75,7 +75,9 @@ defmodule PromptRunner.PacketLintTest do
        files_exist:
          - "NOTES.md"
        commands:
-         - "timeout 60 test -f NOTES.md"
+         - exec: test
+           args: ["-f", "NOTES.md"]
+           timeout_ms: 60000
      ---
      # Write notes
 
@@ -122,6 +124,43 @@ defmodule PromptRunner.PacketLintTest do
     assert found.message =~ "no timeout"
     refute found.message =~ "dialyzer"
     assert report.pass?
+  end
+
+  test "a bounded structured command avoids legacy-shell and timeout findings", %{
+    repo: repo,
+    docs: docs
+  } do
+    report = lint(repo, docs, [clean_prompt()])
+
+    refute "legacy_shell_command" in kinds(report)
+    refute "verify_command_without_timeout" in kinds(report)
+  end
+
+  test "strict lint rejects a legacy shell command", %{repo: repo, docs: docs} do
+    report =
+      lint(
+        repo,
+        docs,
+        [
+          {"01_write.prompt.md",
+           """
+           ---
+           id: "01"
+           phase: 1
+           name: "Legacy"
+           targets: ["app"]
+           verify:
+             commands:
+               - "timeout 60 mix test"
+           ---
+           # Legacy
+           """}
+        ],
+        strict: true
+      )
+
+    refute report.pass?
+    assert finding(report, "legacy_shell_command").severity == "error"
   end
 
   test "an id that does not match the filename prefix is an error", %{repo: repo, docs: docs} do
@@ -440,14 +479,13 @@ defmodule PromptRunner.PacketLintTest do
     inert = Enum.filter(report.findings, &(&1.kind == "inert_front_matter_key"))
     keys = Enum.map(inert, & &1.key)
 
-    assert Enum.sort(keys) == ["context_files", "depends_on", "references", "required_reading"]
+    assert Enum.sort(keys) == ["context_files", "references", "required_reading"]
     assert Enum.all?(inert, &(&1.severity == "warning"))
 
     references = Enum.find(inert, &(&1.key == "references"))
     assert references.message =~ "never sent to the provider"
 
-    depends_on = Enum.find(inert, &(&1.key == "depends_on"))
-    assert depends_on.message =~ "ordering"
+    refute "depends_on" in keys
   end
 
   test "strict promotes warnings to errors", %{repo: repo, docs: docs} do
@@ -508,7 +546,7 @@ defmodule PromptRunner.PacketLintTest do
   end
 
   describe "verify command paths" do
-    test "a script that does not exist under the prompt's repo is an error", %{
+    test "a future script is not rejected before the prompt can create it", %{
       repo: repo,
       docs: docs
     } do
@@ -530,11 +568,8 @@ defmodule PromptRunner.PacketLintTest do
            """}
         ])
 
-      found = finding(report, "verify_command_missing_path")
-      assert found.severity == "error"
-      assert found.message =~ "bin/check_doc.sh"
-      assert found.message =~ repo
-      refute report.pass?
+      refute "verify_command_missing_path" in kinds(report)
+      assert report.pass?
     end
 
     test "a script that exists under the prompt's repo is fine", %{repo: repo, docs: docs} do
@@ -616,7 +651,7 @@ defmodule PromptRunner.PacketLintTest do
       refute "verify_command_missing_path" in kinds(report)
     end
 
-    test "a relative path prefix is checked even with no script suffix", %{
+    test "a future relative executable is left to post-session verification", %{
       repo: repo,
       docs: docs
     } do
@@ -638,7 +673,7 @@ defmodule PromptRunner.PacketLintTest do
            """}
         ])
 
-      assert "verify_command_missing_path" in kinds(report)
+      refute "verify_command_missing_path" in kinds(report)
     end
 
     test "an unresolvable repo yields the repo finding only, not a path finding", %{

@@ -77,6 +77,20 @@ defmodule PromptRunner.CLIFlagsTest do
 
     assert output =~ "Provider: claude"
     assert output =~ "Model: opus"
+    assert output =~ "Selected: 1 (01)"
+  end
+
+  test "verify runs contracts without opening a provider or mutating progress", %{
+    packet_root: packet_root
+  } do
+    output = capture_io(fn -> assert :ok = CLI.main(["verify", packet_root, "01", "--json"]) end)
+    report = Jason.decode!(output)
+
+    assert report["pass?"]
+    assert report["prompts"] == 1
+    assert report["failures"] == 0
+    assert report["faults"] == 0
+    refute File.exists?(Path.join(packet_root, ".prompt_runner/progress.log"))
   end
 
   test "plan applies the same overrides run does", %{packet_root: packet_root} do
@@ -182,5 +196,13 @@ defmodule PromptRunner.CLIFlagsTest do
   test "keep-going is a declared run switch" do
     assert {:ok, opts, ["packet"]} = CLI.parse_run_options(["packet", "--keep-going"])
     assert opts[:keep_going]
+  end
+
+  test "from and through are strict declared run switches" do
+    assert {:ok, opts, ["packet"]} =
+             CLI.parse_run_options(["packet", "--from", "2", "--through", "17"])
+
+    assert opts[:from] == "2"
+    assert opts[:through] == "17"
   end
 end

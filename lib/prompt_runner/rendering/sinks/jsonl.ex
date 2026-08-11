@@ -25,7 +25,7 @@ defmodule PromptRunner.Rendering.Sinks.JSONLSink do
       {:ok, path} ->
         mode = Keyword.get(opts, :mode, :full)
 
-        case File.open(path, [:write, :utf8]) do
+        case File.open(path, [:append, :utf8]) do
           {:ok, io} -> {:ok, %{path: path, io: io, mode: mode}}
           {:error, reason} -> {:error, "Failed to open #{path}: #{inspect(reason)}"}
         end

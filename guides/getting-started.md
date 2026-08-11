@@ -1,13 +1,13 @@
 # Getting Started
 
-This guide targets `prompt_runner_sdk ~> 0.10.0`.
+This guide targets `prompt_runner_sdk ~> 0.11.0`.
 
 ## Install
 
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.10.0"}
+    {:prompt_runner_sdk, "~> 0.11.0"}
   ]
 end
 ```
@@ -126,7 +126,9 @@ verify:
     - path: "RUNTIME_BOUNDARIES.md"
       text: "Prompt Runner owns packet orchestration."
   commands:
-    - "timeout 60 test -s RUNTIME_BOUNDARIES.md"
+    - exec: "test"
+      args: ["-s", "RUNTIME_BOUNDARIES.md"]
+      timeout_ms: 60000
   changed_paths_only:
     - "RUNTIME_BOUNDARIES.md"
 ---
@@ -154,9 +156,9 @@ Two things to notice, because both are easy to get wrong:
 - Required reading goes in the **body**. Only the markdown after the front
   matter reaches the model; the `required_reading:` front-matter key is parsed,
   stored, and never sent anywhere.
-- Every `commands:` entry is wrapped in `timeout`. The verifier runs commands
-  through `bash -c` with no timeout of its own, so a hung command hangs the
-  whole run after the model work is already spent.
+- Every `commands:` entry is structured argv with a positive `timeout_ms`.
+  The verifier invokes `exec` plus `args` directly, without a login shell, and
+  owns the subprocess deadline.
 
 `mix prompt_runner packet lint` reports both mistakes.
 

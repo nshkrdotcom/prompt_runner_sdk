@@ -94,11 +94,13 @@ Put every path a mission must read into the prompt body, under
 Use absolute paths when the prompt spans repositories — the session's working
 directory is the first entry in `targets:`.
 
-Front-matter `references`, `required_reading`, `context_files`, and
-`depends_on` look like the natural home for this and are not. They are parsed,
-stored on `PromptRunner.Prompt`, and never read: never sent to the provider,
-never used for ordering. Only the markdown body reaches the model, and
-scheduling comes from the numeric filename prefix.
+Front-matter `references`, `required_reading`, and `context_files` look like the
+natural home for this and are not. They are parsed and stored but never sent to
+the provider. Only the markdown body reaches the model.
+
+`depends_on` is real scheduler input and controls ordering/blocking, but it does
+not explain the dependency to the model. Put that explanation and any required
+reading in the body.
 
 `mix prompt_runner packet lint` reports any prompt still carrying them.
 

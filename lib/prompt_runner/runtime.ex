@@ -98,7 +98,7 @@ defmodule PromptRunner.Runtime do
   end
 
   defp merge_attempt_result(entry, attempt, attrs) do
-    if entry["attempt"] == attempt do
+    if entry["attempt"] == attempt and entry["status"] == "running" do
       entry
       |> Map.merge(stringify_keys(attrs))
       |> Map.put("completed_at", timestamp())
@@ -122,7 +122,18 @@ defmodule PromptRunner.Runtime do
       |> Map.put("prompts", updated_prompts)
       |> Map.put("updated_at", timestamp())
 
-    File.write!(path, Jason.encode!(updated_state, pretty: true))
+    atomic_write!(path, Jason.encode!(updated_state, pretty: true))
+  end
+
+  defp atomic_write!(path, contents) do
+    temp = path <> ".tmp.#{System.unique_integer([:positive, :monotonic])}"
+
+    try do
+      File.write!(temp, contents, [:binary, :sync])
+      File.rename!(temp, path)
+    after
+      _ = File.rm(temp)
+    end
   end
 
   defp read_state(path) do

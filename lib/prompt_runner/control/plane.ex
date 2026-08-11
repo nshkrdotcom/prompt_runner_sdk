@@ -21,6 +21,7 @@ defmodule PromptRunner.Control.Plane do
 
   @type t :: %__MODULE__{
           packet_dir: String.t() | nil,
+          store_root: Store.root() | nil,
           snapshot: Snapshot.t(),
           run_started_mono: integer() | nil,
           prompt_started_mono: integer() | nil,
@@ -28,6 +29,7 @@ defmodule PromptRunner.Control.Plane do
         }
 
   defstruct packet_dir: nil,
+            store_root: nil,
             snapshot: %Snapshot{},
             run_started_mono: nil,
             prompt_started_mono: nil,
@@ -37,15 +39,25 @@ defmodule PromptRunner.Control.Plane do
   Opens the control plane for a run and writes its first snapshot.
 
   `packet_dir` of `nil` disables the plane.
+
+  `:state_root` moves all mutable control state under that runtime directory.
+  Omitting it retains the legacy packet-local `.prompt_runner/control` layout.
   """
   @spec open(String.t() | nil, keyword()) :: t()
   def open(nil, _opts), do: %__MODULE__{}
 
   def open(packet_dir, opts) when is_binary(packet_dir) do
     now = DateTime.utc_now()
+    run_id = Keyword.get_lazy(opts, :run_id, &generate_run_id/0)
+
+    store_root =
+      case Keyword.get(opts, :state_root) do
+        nil -> packet_dir
+        state_root when is_binary(state_root) -> Store.state_root(state_root)
+      end
 
     snapshot = %Snapshot{
-      run_id: Keyword.get_lazy(opts, :run_id, &generate_run_id/0),
+      run_id: run_id,
       packet_dir: packet_dir,
       packet: Keyword.get(opts, :packet),
       status: :running,
@@ -54,11 +66,12 @@ defmodule PromptRunner.Control.Plane do
       view: Keyword.get(opts, :view, %Snapshot{}.view)
     }
 
-    Store.init(packet_dir)
-    Store.reset_events(packet_dir)
+    :ok = Store.init(store_root)
+    :ok = Store.prepare_event_stream(store_root, run_id)
 
     %__MODULE__{
       packet_dir: packet_dir,
+      store_root: store_root,
       snapshot: snapshot,
       run_started_mono: monotonic_ms(),
       max_steers: Keyword.get(opts, :max_steers, 0)
@@ -70,13 +83,17 @@ defmodule PromptRunner.Control.Plane do
   def run_id(%__MODULE__{snapshot: %Snapshot{run_id: run_id}}), do: run_id
 
   @spec enabled?(t()) :: boolean()
-  def enabled?(%__MODULE__{packet_dir: packet_dir}), do: is_binary(packet_dir)
+  def enabled?(%__MODULE__{store_root: store_root}), do: not is_nil(store_root)
 
   @spec steer_count(t()) :: non_neg_integer()
   def steer_count(%__MODULE__{snapshot: %Snapshot{steer_count: count}}), do: count
 
   @spec packet_dir(t()) :: String.t() | nil
   def packet_dir(%__MODULE__{packet_dir: packet_dir}), do: packet_dir
+
+  @doc "The legacy packet root or explicit runtime root used by the store."
+  @spec store_root(t()) :: Store.root() | nil
+  def store_root(%__MODULE__{store_root: store_root}), do: store_root
 
   @spec view(t()) :: Snapshot.view()
   def view(%__MODULE__{snapshot: %Snapshot{view: view}}), do: view
@@ -118,7 +135,7 @@ defmodule PromptRunner.Control.Plane do
   def observe(%__MODULE__{packet_dir: nil} = plane, _event), do: plane
 
   def observe(%__MODULE__{} = plane, event) when is_map(event) do
-    Store.append_event(plane.packet_dir, serialisable(event))
+    Store.append_event(plane.store_root, serialisable(event))
     %{plane | snapshot: fold_event(plane.snapshot, event)}
   end
 
@@ -134,14 +151,28 @@ defmodule PromptRunner.Control.Plane do
 
   def boundary(%__MODULE__{} = plane) do
     {plane, commands} =
-      plane.packet_dir
-      |> Store.take_requests()
-      |> Enum.reduce({plane, []}, fn {name, result}, {acc, commands} ->
-        {acc, new_commands} = apply_request(acc, name, result)
-        {acc, commands ++ new_commands}
-      end)
+      plane.store_root
+      |> Store.pending_requests()
+      |> Enum.reduce({plane, []}, &apply_pending_request/2)
 
     {persist(plane), commands}
+  end
+
+  defp apply_pending_request({name, result}, {plane, commands}) do
+    case apply_request(plane, name, result) do
+      {:ok, next, new_commands, outcome} ->
+        complete_pending_request(plane, next, name, outcome, commands, new_commands)
+
+      {:error, _reason} ->
+        {plane, commands}
+    end
+  end
+
+  defp complete_pending_request(plane, next, name, outcome, commands, new_commands) do
+    case Store.complete_request(plane.store_root, name, outcome) do
+      :ok -> {next, commands ++ new_commands}
+      {:error, _reason} -> {plane, commands}
+    end
   end
 
   @doc """
@@ -163,7 +194,14 @@ defmodule PromptRunner.Control.Plane do
   def record(%__MODULE__{packet_dir: nil} = plane, _command, _params, _opts), do: plane
 
   def record(%__MODULE__{} = plane, command, params, opts) do
-    Store.append_log(plane.packet_dir, %Entry{
+    case record_checked(plane, command, params, opts) do
+      {:ok, plane} -> plane
+      {:error, _reason} -> plane
+    end
+  end
+
+  defp record_checked(%__MODULE__{} = plane, command, params, opts) do
+    entry = %Entry{
       at: DateTime.utc_now(),
       run_id: plane.snapshot.run_id,
       command: command,
@@ -173,15 +211,18 @@ defmodule PromptRunner.Control.Plane do
       reason: Keyword.get(opts, :reason),
       prompt_id: plane.snapshot.prompt_id,
       attempt: plane.snapshot.attempt
-    })
+    }
 
-    plane
+    case Store.append_log(plane.store_root, entry) do
+      :ok -> {:ok, plane}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # -- requests
 
   defp apply_request(plane, name, {:error, reason}) do
-    {reject(plane, "unparseable", %{"file" => name}, nil, inspect(reason)), []}
+    reject_request(plane, "unparseable", %{"file" => name}, nil, inspect(reason))
   end
 
   defp apply_request(plane, name, {:ok, request}) do
@@ -191,10 +232,16 @@ defmodule PromptRunner.Control.Plane do
 
     cond do
       not is_binary(command) ->
-        {reject(plane, "unknown", %{"file" => name}, author, "request has no command"), []}
+        reject_request(plane, "unknown", %{"file" => name}, author, "request has no command")
 
       request["run_id"] not in [nil, plane.snapshot.run_id] ->
-        {reject(plane, command, params, author, "request targets run #{request["run_id"]}"), []}
+        reject_request(
+          plane,
+          command,
+          params,
+          author,
+          "request targets run #{request["run_id"]}"
+        )
 
       true ->
         dispatch(plane, command, params, author)
@@ -206,17 +253,22 @@ defmodule PromptRunner.Control.Plane do
       {:ok, updates} when map_size(updates) > 0 ->
         snapshot = %{plane.snapshot | view: Map.merge(plane.snapshot.view, updates)}
 
-        plane =
-          %{plane | snapshot: snapshot}
-          |> record(command, params, author: author, outcome: :applied)
+        case record_checked(%{plane | snapshot: snapshot}, command, params,
+               author: author,
+               outcome: :applied
+             ) do
+          {:ok, plane} ->
+            {:ok, plane, [{:set_view, updates}], outcome(plane, command, :applied)}
 
-        {plane, [{:set_view, updates}]}
+          {:error, reason} ->
+            {:error, reason}
+        end
 
       {:ok, _empty} ->
-        {reject(plane, command, params, author, "no view settings given"), []}
+        reject_request(plane, command, params, author, "no view settings given")
 
       {:error, reason} ->
-        {reject(plane, command, params, author, reason_text(reason)), []}
+        reject_request(plane, command, params, author, reason_text(reason))
     end
   end
 
@@ -233,28 +285,28 @@ defmodule PromptRunner.Control.Plane do
 
     cond do
       not (is_binary(text) and String.trim(text) != "") ->
-        {reject(plane, command, params, author, "steer has no text"), []}
+        reject_request(plane, command, params, author, "steer has no text")
 
       plane.snapshot.prompt_id == nil ->
-        {reject(plane, command, params, author, "no prompt is running"), []}
+        reject_request(plane, command, params, author, "no prompt is running")
 
       plane.snapshot.steer_count >= plane.max_steers ->
-        {reject(
-           plane,
-           command,
-           params,
-           author,
-           "steer budget spent (#{plane.snapshot.steer_count}/#{plane.max_steers} for this " <>
-             "prompt); raise recovery.max_steers to allow more"
-         ), []}
+        reject_request(
+          plane,
+          command,
+          params,
+          author,
+          "steer budget spent (#{plane.snapshot.steer_count}/#{plane.max_steers} for this " <>
+            "prompt); raise recovery.max_steers to allow more"
+        )
 
       true ->
-        {plane, [{:steer, String.trim(text), author}]}
+        {:ok, plane, [{:steer, String.trim(text), author}], outcome(plane, command, :accepted)}
     end
   end
 
   defp dispatch(plane, command, params, author) do
-    {reject(plane, command, params, author, "unknown command"), []}
+    reject_request(plane, command, params, author, "unknown command")
   end
 
   @doc """
@@ -313,7 +365,37 @@ defmodule PromptRunner.Control.Plane do
   end
 
   defp reject(plane, command, params, author, reason) do
-    record(plane, command, params, author: author, outcome: :rejected, reason: reason)
+    case record_checked(plane, command, params,
+           author: author,
+           outcome: :rejected,
+           reason: reason
+         ) do
+      {:ok, plane} -> plane
+      {:error, _reason} -> plane
+    end
+  end
+
+  defp reject_request(plane, command, params, author, reason) do
+    case record_checked(plane, command, params,
+           author: author,
+           outcome: :rejected,
+           reason: reason
+         ) do
+      {:ok, plane} ->
+        {:ok, plane, [], outcome(plane, command, :rejected, reason)}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp outcome(plane, command, status, reason \\ nil) do
+    %{
+      "run_id" => plane.snapshot.run_id,
+      "command" => command,
+      "outcome" => to_string(status),
+      "reason" => reason
+    }
   end
 
   defp reason_text({:unknown_view_key, key}) do
@@ -354,7 +436,7 @@ defmodule PromptRunner.Control.Plane do
         prompt_elapsed_ms: elapsed(plane.prompt_started_mono, now_mono)
     }
 
-    Store.write_snapshot(plane.packet_dir, snapshot)
+    Store.write_snapshot(plane.store_root, snapshot)
     %{plane | snapshot: snapshot}
   end
 

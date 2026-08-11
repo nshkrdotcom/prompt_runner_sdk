@@ -1,6 +1,6 @@
 # Packet Manifest Reference
 
-Prompt Runner 0.10.0 uses two primary authoring files:
+Prompt Runner 0.11.0 uses two primary authoring files:
 
 - `prompt_runner_packet.md`
 - `*.prompt.md`
@@ -163,7 +163,9 @@ verify:
     - path: "hello.txt"
       text: "Hello from Prompt Runner"
   commands:
-    - "timeout 60 test -s hello.txt"
+    - exec: "test"
+      args: ["-s", "hello.txt"]
+      timeout_ms: 60000
   changed_paths_only:
     - "hello.txt"
 ---
@@ -193,20 +195,22 @@ Scheduling and identity:
 - `targets`
 - `commit`
 
-### Parsed But Never Read
+### Parsed But Never Sent to the Provider
 
 - `references`
 - `required_reading`
 - `context_files`
-- `depends_on`
 
-These four are accepted, normalized, and stored on `PromptRunner.Prompt`, and
+These three are accepted, normalized, and stored on `PromptRunner.Prompt`, and
 then never read at runtime. They are **not** sent to the provider — only the
-markdown body after the front matter is — and `depends_on` does **not**
-influence ordering, which comes from the numeric filename prefix.
+markdown body after the front matter is.
+
+`depends_on` is different: the scheduler validates it, orders selected prompts
+topologically, and blocks descendants of a failed dependency. It still is not
+provider context, so describe the dependency's substance in the prompt body.
 
 Write required reading into the prompt body, where the model will see it.
-`mix prompt_runner packet lint` warns when a prompt carries any of them, and
+`mix prompt_runner packet lint` warns when a prompt carries any of the inert keys, and
 since 0.9.0 the scaffolding templates no longer emit them.
 
 Prompt-local execution overrides:
@@ -251,13 +255,17 @@ recovery:
 
 ## Completion Contract Keys
 
-Prompt Runner 0.10.0 supports:
+Prompt Runner 0.11.0 supports:
 
 - `files_exist`
 - `files_absent`
 - `contains`
 - `matches`
 - `doc`
+- `yaml`
+- `json`
+- `glob`
+- `source_absent`
 - `commands`
 - `changed_paths_only`
 - `repos_clean`
@@ -286,11 +294,21 @@ verify:
       pushed: true
 ```
 
-Wrap every `commands:` entry in `timeout`. The verifier runs commands through
-`bash -c` with no timeout of its own, so a hung command hangs the run after
-the model work is already spent.
+Use structured `commands:` entries with `exec`, `args`, and a positive
+`timeout_ms`. Prompt Runner executes that argv directly, without a login shell
+or shell interpolation. Optional `cwd`, `env`, `fault_exit_codes`,
+`stdout_contains`, and `stdout_matches` fields make the execution environment
+and verdict explicit. String and `run:` entries exist only for legacy packet
+compatibility and fail strict lint.
 
-Anything else under `verify:` is parsed, stored, and never evaluated.
+Anything else under `verify:` is rejected by packet lint as an unknown clause.
+
+Structured command entries may declare `regenerates: [relative/path]`. Prompt
+Runner moves any prior output to a recoverable adjacent backup, runs the argv
+without a shell, requires every declared output to be a newly created non-empty
+regular file, and restores the prior outputs if the command fails. A successful
+check removes the backups. This prevents a stale generated artifact from making
+a no-op generator look successful.
 `mix prompt_runner packet lint` reports an unrecognized clause as an error.
 See [Verification And Repair](verification-and-repair.md) for the full clause
 reference.

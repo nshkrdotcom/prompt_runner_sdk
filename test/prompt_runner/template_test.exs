@@ -68,7 +68,8 @@ defmodule PromptRunner.TemplateTest do
       )
 
     # The scaffold no longer emits `references`, `required_reading`,
-    # `context_files`, or `depends_on`: they are parsed, stored, and never read
+    # `context_files`: they are parsed, stored, and never sent to the provider.
+    # `depends_on` is scheduler input but is deliberately opt-in.
     # at runtime, and `packet lint` reports them as inert. Scaffolding a key
     # the runtime ignores teaches the wrong thing on the first prompt someone
     # writes.

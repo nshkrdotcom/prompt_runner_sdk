@@ -1,6 +1,6 @@
 # Templates
 
-Prompt Runner 0.10.0 uses template-based prompt scaffolding.
+Prompt Runner 0.11.0 uses template-based prompt scaffolding.
 
 Templates are markdown files with YAML front matter. They define:
 
@@ -132,11 +132,10 @@ before provider execution.
 ## Keys Templates Deliberately Omit
 
 Before 0.9.0 both built-in templates scaffolded `references`,
-`required_reading`, `context_files`, and `depends_on`. They no longer do,
-because none of them is read at runtime: they are parsed, stored on
-`PromptRunner.Prompt`, and never sent to the provider or used for ordering.
-Scaffolding a key the runtime ignores teaches the wrong habit on the first
-prompt someone writes.
+`required_reading`, `context_files`, and `depends_on`. The context keys were
+removed because they are never sent to the provider. `depends_on` is now
+validated scheduler input, but remains opt-in because most generated prompts
+do not need a dependency edge.
 
 Put required reading in the body, under `## Required Reading`, where the model
 will actually see it. `mix prompt_runner packet lint` warns about any prompt

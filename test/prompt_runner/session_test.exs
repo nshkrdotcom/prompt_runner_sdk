@@ -102,6 +102,7 @@ defmodule PromptRunner.SessionTest do
     assert hidden_run_started.data.provider_session_id == "thr_probe"
     assert hidden_run_started.data.metadata["labels"] == %{"topic" => "demo"}
     assert meta.session_opts[:lane] == :core
+    assert meta.session_opts[:owner] == self()
   end
 
   # These drive the whole chain the way a real run does: a fixture CLI writes

@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-10
+
+### Added
+
+- Operator workspaces described by a strict versioned manifest. `workspace
+  prepare` materializes full independent clones with ordinary operator-owned
+  build/dependency trees; `workspace doctor` verifies ownership, remotes,
+  toolchain pins, containment, capabilities, and installed contract artifacts
+  without invoking Mix or a login shell.
+- Installed, operator-owned escript execution and transient `systemd --user`
+  service containment. `start`, `stop`, workspace `status`, and workspace
+  `watch` use a deterministic service identity and prove the cgroup empty on
+  stop instead of matching process names.
+- Self-contained escript startup embeds erlexec's native port and materializes
+  it into a version-, architecture-, and digest-addressed operator cache before
+  OTP application startup; corrupt or non-regular cache entries fail closed.
+- Immutable per-run state, packet fingerprints, persisted lower/upper selection
+  fences, append-only sequenced journals, torn-tail quarantine, and widening
+  rejection on resume.
+- Durable control storage outside the packet checkout: atomic synced snapshots
+  and requests, append-and-sync event/log streams, per-request outcome receipts,
+  and non-destructive request handling when persistence fails.
+- Dependency-aware prompt scheduling through `depends_on`. Independent work can
+  continue under `continue_independent`; descendants of a failed dependency are
+  recorded as blocked.
+- Strict structured verifier argv with per-command cwd, environment, timeout,
+  stdout assertions, typed fault exit codes, logical `@repo:` argv paths, and
+  logical installed `@artifact:` executables.
+- Native `doc`, YAML, JSON, glob, forbidden-source, and scoped repository-clean
+  contracts. `regenerates` proves a command freshly produced non-empty outputs
+  and restores prior artifacts when generation fails.
+- `prompt_runner verify`, a read-only, no-provider contract execution command.
+- Capability and version discovery, `--from`/`--through` selection bounds, and
+  a contract migration task that rejects shell operators instead of translating
+  them ambiguously.
+- Workspace path rebinding across prompt and system text, preventing an
+  operator session from following author-machine absolute paths into another
+  user's checkout.
+- Explicit one-time legacy completion import into an empty operator runtime,
+  with prompt-id validation, active-run/existing-state refusal, and a
+  digest-bearing import receipt. Failed or running legacy work is never
+  promoted to completed.
+
+### Fixed
+
+- Run locks now bind PID plus `/proc` start identity and reject zombie holders.
+- Runtime updates target only the newest running attempt, JSONL sinks always
+  append, and run events never truncate when a run ID is reused.
+- A failed prompt can no longer corrupt independent packet progress; verifier
+  infrastructure faults remain distinct from failed work and spend no repair
+  attempt.
+- Document line counts are advisory rather than invented acceptance thresholds,
+  while blank files and genuinely unresolved markers still fail.
+- Repository push checks use the cached upstream by default and perform network
+  access only when the contract explicitly requests it.
+- Packet lint no longer rejects relative executables before the prompt that
+  owns them has run. A missing relative executable after a session is failed
+  work; a missing PATH command, absolute prerequisite, or installed artifact
+  remains a verifier infrastructure fault.
+- `plan` now resolves and prints the exact selector/dependency-ordered target
+  set instead of always listing the whole packet, and `--from`/`--through`
+  alone select their inclusive packet range without requiring `--all`.
+- Provider sessions are owned by the caller, and terminal completion is no
+  longer delayed behind backend teardown.
+- Dirty operator clones are reported as resumable work rather than preventing a
+  crashed run from restarting. Explicit workspace preparation still refuses to
+  overwrite dirty clones.
+
+### Changed
+
+- `agent_session_manager` now requires `~> 0.14.0` and
+  `execution_plane_process` requires `~> 0.3.0`.
+- The packaged capability file is now the compile-time source of the runtime
+  capability API, eliminating the two lists' drift.
+
 ## [0.10.0] - 2026-08-10
 
 ### Added
@@ -806,7 +881,8 @@ paid in provider tokens for as long as nobody is watching.
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
-[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.8.1...v0.9.0

@@ -24,12 +24,10 @@ defmodule PromptRunner.Verifier.ReposClean do
   - `pushed: true` additionally requires an upstream. A missing upstream is a
     failure, not a pass: the clause was asked to assert publication and cannot.
 
-  The upstream comparison asks the remote directly with `git ls-remote`, under a
-  bounded timeout (`remote_timeout_ms`, default 90s). `ls-remote` is a pure
-  query: unlike `git fetch` it does not create or move remote-tracking refs, so
-  this clause writes nothing at all into the repository it is judging. A gate
-  that mutates any part of its subject is a gate that can change the thing it
-  measures.
+  The default upstream comparison is local and bounded: it compares `HEAD` to
+  the cached upstream ref that a successful `git push` updates. Verification
+  therefore never turns a transient network outage into a failed prompt.
+  `network: true` explicitly opts into a bounded `git ls-remote` query.
 
   The bound matters because a verify clause runs after the model work is
   already spent and an unreachable remote must not hang the run. When the
@@ -51,7 +49,7 @@ defmodule PromptRunner.Verifier.ReposClean do
 
   def report(repo, root, entry) do
     if Git.worktree?(root) do
-      clean_report(repo, root, pushed?(entry), remote_timeout_ms(entry))
+      clean_report(repo, root, pushed?(entry), network?(entry), remote_timeout_ms(entry))
     else
       repo
       |> base(root, pushed?(entry))
@@ -77,6 +75,9 @@ defmodule PromptRunner.Verifier.ReposClean do
 
   defp pushed?(entry) when is_map(entry), do: Map.get(entry, "pushed") == true
   defp pushed?(_entry), do: false
+
+  defp network?(entry) when is_map(entry), do: Map.get(entry, "network") == true
+  defp network?(_entry), do: false
 
   defp remote_timeout_ms(entry) when is_map(entry) do
     case Map.get(entry, "remote_timeout_ms") || Map.get(entry, "fetch_timeout_ms") do
@@ -106,7 +107,7 @@ defmodule PromptRunner.Verifier.ReposClean do
     }
   end
 
-  defp clean_report(repo, root, pushed?, timeout_ms) do
+  defp clean_report(repo, root, pushed?, network?, timeout_ms) do
     branch = Git.value(root, ["rev-parse", "--abbrev-ref", "HEAD"])
     head = Git.value(root, ["rev-parse", "--short", "HEAD"])
 
@@ -120,7 +121,7 @@ defmodule PromptRunner.Verifier.ReposClean do
         Map.merge(base, %{pass?: false, details: "git status failed: #{output}"})
 
       {:ok, []} ->
-        Map.merge(base, upstream_result(root, branch, head, pushed?, timeout_ms))
+        Map.merge(base, upstream_result(root, branch, head, pushed?, network?, timeout_ms))
 
       {:ok, dirty} ->
         Map.merge(base, %{
@@ -139,22 +140,22 @@ defmodule PromptRunner.Verifier.ReposClean do
     "uncommitted changes (#{length(dirty)}): #{Enum.join(shown, ", ")}#{suffix}"
   end
 
-  defp upstream_result(root, branch, head, pushed?, timeout_ms) do
-    upstream_verdict(root, branch, head, Git.upstream_ref(root), pushed?, timeout_ms)
+  defp upstream_result(root, branch, head, pushed?, network?, timeout_ms) do
+    upstream_verdict(root, branch, head, Git.upstream_ref(root), pushed?, network?, timeout_ms)
   end
 
-  defp upstream_verdict(_root, branch, head, nil, true, _timeout_ms) do
+  defp upstream_verdict(_root, branch, head, nil, true, _network?, _timeout_ms) do
     %{
       pass?: false,
       details: "no upstream for branch #{branch} at #{head}; pushed: true requires one"
     }
   end
 
-  defp upstream_verdict(_root, branch, head, nil, _pushed?, _timeout_ms) do
+  defp upstream_verdict(_root, branch, head, nil, _pushed?, _network?, _timeout_ms) do
     %{pass?: true, details: "ok: #{branch} at #{head} (local only, no upstream)"}
   end
 
-  defp upstream_verdict(_root, branch, head, upstream, false, _timeout_ms) do
+  defp upstream_verdict(_root, branch, head, upstream, false, _network?, _timeout_ms) do
     %{
       upstream: upstream,
       pass?: true,
@@ -162,14 +163,22 @@ defmodule PromptRunner.Verifier.ReposClean do
     }
   end
 
-  defp upstream_verdict(root, branch, head, upstream, true, timeout_ms) do
+  defp upstream_verdict(root, branch, head, upstream, true, network?, timeout_ms) do
     local_sha = Git.value(root, ["rev-parse", "HEAD"])
-    {upstream_sha, note} = remote_head(root, upstream, timeout_ms)
+    {upstream_sha, note} = upstream_head(root, upstream, network?, timeout_ms)
 
     upstream
     |> pushed_verdict(branch, head, local_sha, upstream_sha)
     |> Map.update!(:details, &(&1 <> note))
   end
+
+  defp upstream_head(root, upstream, false, _timeout_ms) do
+    {Git.value(root, ["rev-parse", upstream]),
+     " [compared with cached upstream; network disabled]"}
+  end
+
+  defp upstream_head(root, upstream, true, timeout_ms),
+    do: remote_head(root, upstream, timeout_ms)
 
   # Ask the remote. Falling back to the cached remote-tracking ref keeps a
   # transient network failure from being reported as a verdict nobody

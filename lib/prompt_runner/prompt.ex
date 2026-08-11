@@ -18,7 +18,7 @@ defmodule PromptRunner.Prompt do
           required_reading: [String.t()],
           context_files: [String.t()],
           depends_on: [String.t()],
-          validation_commands: [String.t()],
+          validation_commands: [String.t() | map()],
           verify: map(),
           metadata: map()
         }

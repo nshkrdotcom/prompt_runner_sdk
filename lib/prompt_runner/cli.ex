@@ -3,7 +3,9 @@ defmodule PromptRunner.CLI do
   Command-line entrypoint for the Prompt Runner packet workflow.
   """
 
+  alias ExecutionPlane.Process.Containment.SystemdUser
   alias PromptRunner
+  alias PromptRunner.Capabilities
   alias PromptRunner.CLI.Control, as: CLIControl
   alias PromptRunner.Packet
   alias PromptRunner.PacketLint
@@ -13,7 +15,19 @@ defmodule PromptRunner.CLI do
   alias PromptRunner.Runner
   alias PromptRunner.Template
   alias PromptRunner.UI
+  alias PromptRunner.Verifier
   alias PromptRunner.Watch
+  alias PromptRunner.Workspace
+  alias PromptRunner.Workspace.Manifest, as: WorkspaceManifest
+  alias PromptRunner.Workspace.Plan, as: WorkspacePlan
+  alias PromptRunner.Workspace.Watch, as: WorkspaceWatch
+
+  @service_env_names ~w(
+    HOME USER LOGNAME PATH SHELL LANG LC_ALL TERM SSH_AUTH_SOCK
+    XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_RUNTIME_DIR
+    MIX_HOME HEX_HOME REBAR_CACHE_DIR ASDF_DIR ASDF_DATA_DIR CODEX_HOME
+    ANTHROPIC_API_KEY OPENAI_API_KEY
+  )
 
   # `plan` and `run` share one switch surface deliberately. When they did not,
   # `plan` parsed nothing and passed nothing to `PromptRunner.plan/2`, so
@@ -29,6 +43,11 @@ defmodule PromptRunner.CLI do
     verify_first: :boolean,
     keep_going: :boolean,
     phase: :integer,
+    from: :string,
+    through: :string,
+    workspace: :string,
+    packet: :string,
+    detach: :boolean,
     no_commit: :boolean,
     dry_run: :boolean,
     provider: :string,
@@ -402,12 +421,11 @@ defmodule PromptRunner.CLI do
   defp run_plan(rest) do
     case parse_run_options(rest) do
       {:ok, opts, remaining} ->
-        packet_dir = packet_dir(remaining)
+        {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining, opts[:packet])
 
-        case PromptRunner.plan(packet_dir, cli_opts(opts)) do
+        case cli_plan(packet_dir, opts) do
           {:ok, plan} ->
-            print_plan_summary(plan)
-            :ok
+            print_selected_plan(plan, opts, prompt_ids)
 
           {:error, reason} ->
             handle_error(reason)
@@ -418,14 +436,104 @@ defmodule PromptRunner.CLI do
     end
   end
 
+  defp print_selected_plan(plan, opts, prompt_ids) do
+    selection =
+      if selection_requested?(opts, prompt_ids),
+        do: Runner.select_targets(plan, opts, prompt_ids),
+        else: {:ok, Enum.map(plan.prompts, & &1.num)}
+
+    case selection do
+      {:ok, targets} ->
+        print_plan_summary(plan, targets)
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
+  end
+
+  defp selection_requested?(opts, prompt_ids) do
+    prompt_ids != [] or
+      Enum.any?(~w(all remaining phase from through)a, &(not is_nil(opts[&1])))
+  end
+
   defp run_run(rest) do
     with {:ok, opts, remaining} <- parse_run_options(rest),
-         {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining),
-         {:ok, plan} <- PromptRunner.plan(packet_dir, cli_opts(opts)) do
+         {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining, opts[:packet]),
+         {:ok, plan} <- cli_plan(packet_dir, opts) do
       execute_cli_run(plan, opts, prompt_ids)
     else
       {:error, reason} ->
         handle_error(reason)
+    end
+  end
+
+  defp run_verify(rest) do
+    {opts, remaining, invalid} =
+      OptionParser.parse(rest, strict: [workspace: :string, packet: :string, json: :boolean])
+
+    with true <- invalid == [] || {:error, {:invalid_options, invalid}},
+         {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining, opts[:packet]),
+         {:ok, plan} <- cli_plan(packet_dir, opts),
+         :ok <- validate_verify_prompt_ids(plan, prompt_ids),
+         {:ok, reports} <-
+           Verifier.verify(plan, if(prompt_ids == [], do: [], else: [prompts: prompt_ids])) do
+      result = verify_result(reports)
+      print_verify_result(result, opts[:json] == true)
+
+      cond do
+        result.faults > 0 -> handle_error({:verification_faults, result.faults})
+        result.failures > 0 -> handle_error({:verification_failures, result.failures})
+        true -> :ok
+      end
+    else
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp validate_verify_prompt_ids(_plan, []), do: :ok
+
+  defp validate_verify_prompt_ids(plan, prompt_ids) do
+    known = Enum.map(plan.prompts, & &1.num)
+
+    case prompt_ids -- known do
+      [] -> :ok
+      unknown -> {:error, {:unknown_prompts, unknown, known}}
+    end
+  end
+
+  defp verify_result(reports) do
+    failures = Enum.count(reports, &(not &1.pass? and not Verifier.fault?(&1)))
+    faults = Enum.count(reports, &Verifier.fault?/1)
+
+    %{
+      schema: "prompt_runner.verify/v1",
+      pass?: failures == 0 and faults == 0,
+      prompts: length(reports),
+      failures: failures,
+      faults: faults,
+      reports: reports
+    }
+  end
+
+  defp print_verify_result(result, true), do: IO.puts(Jason.encode!(result, pretty: true))
+
+  defp print_verify_result(result, false) do
+    IO.puts(
+      "Verified #{result.prompts} prompt(s): #{result.failures} failures, #{result.faults} faults"
+    )
+  end
+
+  defp cli_plan(packet_dir, opts) do
+    case opts[:workspace] do
+      nil ->
+        PromptRunner.plan(packet_dir, cli_opts(opts))
+
+      manifest_path ->
+        case Workspace.plan(manifest_path, packet_dir, cli_opts(opts)) do
+          {:ok, %{runner: plan}} -> {:ok, plan}
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 
@@ -442,6 +550,8 @@ defmodule PromptRunner.CLI do
       |> maybe_put(:verify_first, opts[:verify_first])
       |> maybe_put(:keep_going, opts[:keep_going])
       |> maybe_put(:phase, opts[:phase])
+      |> maybe_put(:from, normalize_optional_id(opts[:from]))
+      |> maybe_put(:through, normalize_optional_id(opts[:through]))
       |> maybe_put(:no_commit, opts[:no_commit])
       |> maybe_put(:dry_run, opts[:dry_run])
 
@@ -486,24 +596,91 @@ defmodule PromptRunner.CLI do
   end
 
   defp run_status(rest) do
-    packet_dir = packet_dir(rest)
+    {opts, remaining, invalid} =
+      OptionParser.parse(rest, strict: [workspace: :string, packet: :string, json: :boolean])
 
-    {:ok, status} = PromptRunner.status(packet_dir)
-    IO.puts(Jason.encode!(status, pretty: true))
-    :ok
+    if invalid != [], do: handle_error({:invalid_options, invalid})
+
+    result =
+      case opts[:workspace] do
+        nil -> PromptRunner.status(packet_dir(remaining, opts[:packet]))
+        manifest_path -> Workspace.status(manifest_path)
+      end
+
+    case result do
+      {:ok, status} ->
+        IO.puts(Jason.encode!(status, pretty: opts[:json] != true))
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
   end
 
   defp run_watch(rest) do
-    {opts, remaining, _invalid} =
+    {opts, remaining, invalid} =
       OptionParser.parse(rest,
-        switches: [interval: :integer, once: :boolean, json: :boolean]
+        strict: [
+          workspace: :string,
+          packet: :string,
+          interval: :integer,
+          every: :string,
+          for: :string,
+          once: :boolean,
+          json: :boolean,
+          require_progress: :boolean,
+          require_running: :boolean,
+          progress_timeout: :string
+        ]
       )
 
-    packet_dir = packet_dir(remaining)
+    if invalid != [], do: handle_error({:invalid_options, invalid})
 
-    case Watch.run(packet_dir, opts) do
+    case opts[:workspace] do
+      nil -> run_packet_watch(remaining, opts)
+      manifest_path -> run_workspace_watch(manifest_path, opts)
+    end
+  end
+
+  defp run_packet_watch(remaining, opts) do
+    case Watch.run(packet_dir(remaining, opts[:packet]), opts) do
       :ok -> :ok
       {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp run_workspace_watch(manifest_path, opts) do
+    watch_opts = workspace_watch_options(opts)
+
+    case WorkspaceWatch.run(manifest_path, watch_opts) do
+      {:ok, report} ->
+        IO.puts(Jason.encode!(report, pretty: true))
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
+  end
+
+  defp workspace_watch_options(opts) do
+    once? = opts[:once] == true
+
+    [
+      duration_seconds: if(once?, do: 1, else: parse_duration!(opts[:for] || "240m")),
+      interval_seconds: if(once?, do: 1, else: parse_duration!(opts[:every] || "10m")),
+      require_progress: opts[:require_progress] == true,
+      require_running: opts[:require_running] == true,
+      progress_timeout_seconds: parse_duration!(opts[:progress_timeout] || "60m"),
+      json: opts[:json] == true
+    ]
+  end
+
+  defp parse_duration!(value) when is_binary(value) do
+    case Regex.run(~r/\A(\d+)(s|m|h)\z/, String.trim(value), capture: :all_but_first) do
+      [amount, "s"] -> String.to_integer(amount)
+      [amount, "m"] -> String.to_integer(amount) * 60
+      [amount, "h"] -> String.to_integer(amount) * 3_600
+      _other -> handle_error({:invalid_duration, value})
     end
   end
 
@@ -625,9 +802,16 @@ defmodule PromptRunner.CLI do
 
   defp packet_dir(remaining), do: packet_dir(remaining, nil)
 
-  defp packet_and_prompt_ids([]), do: {File.cwd!(), []}
+  defp packet_and_prompt_ids(remaining, explicit_packet)
 
-  defp packet_and_prompt_ids([first | rest]) do
+  defp packet_and_prompt_ids(remaining, explicit_packet) when is_binary(explicit_packet) do
+    prompt_ids = Enum.reject(remaining, &String.starts_with?(&1, "-"))
+    {explicit_packet, normalize_prompt_ids(prompt_ids)}
+  end
+
+  defp packet_and_prompt_ids([], nil), do: {File.cwd!(), []}
+
+  defp packet_and_prompt_ids([first | rest], nil) do
     if String.starts_with?(first, "-") do
       {File.cwd!(), []}
     else
@@ -642,6 +826,12 @@ defmodule PromptRunner.CLI do
   end
 
   defp parse_command(["init" | rest]), do: {:init, rest}
+  defp parse_command(["version" | rest]), do: {:version, rest}
+  defp parse_command(["capabilities" | rest]), do: {:capabilities, rest}
+  defp parse_command(["workspace", "plan" | rest]), do: {:workspace_plan, rest}
+  defp parse_command(["workspace", "prepare" | rest]), do: {:workspace_prepare, rest}
+  defp parse_command(["workspace", "doctor" | rest]), do: {:workspace_doctor, rest}
+  defp parse_command(["workspace", "import-state" | rest]), do: {:workspace_import_state, rest}
   defp parse_command(["profile", "new", name | rest]), do: {:profile_new, name, rest}
   defp parse_command(["profile", "list" | rest]), do: {:profile_list, rest}
   defp parse_command(["template", "list" | rest]), do: {:template_list, rest}
@@ -656,6 +846,9 @@ defmodule PromptRunner.CLI do
   defp parse_command(["list" | rest]), do: {:list, rest}
   defp parse_command(["plan" | rest]), do: {:plan, rest}
   defp parse_command(["run" | rest]), do: {:run, rest}
+  defp parse_command(["verify" | rest]), do: {:verify, rest}
+  defp parse_command(["start" | rest]), do: {:start, rest}
+  defp parse_command(["stop" | rest]), do: {:stop, rest}
   defp parse_command(["repair" | rest]), do: {:repair, rest}
   defp parse_command(["status" | rest]), do: {:status, rest}
   defp parse_command(["watch" | rest]), do: {:watch, rest}
@@ -667,6 +860,12 @@ defmodule PromptRunner.CLI do
   defp parse_command(_args), do: :unknown
 
   defp dispatch_command({:init, rest}), do: run_init(rest)
+  defp dispatch_command({:version, rest}), do: run_version(rest)
+  defp dispatch_command({:capabilities, rest}), do: run_capabilities(rest)
+  defp dispatch_command({:workspace_plan, rest}), do: run_workspace_plan(rest)
+  defp dispatch_command({:workspace_prepare, rest}), do: run_workspace_prepare(rest)
+  defp dispatch_command({:workspace_doctor, rest}), do: run_workspace_doctor(rest)
+  defp dispatch_command({:workspace_import_state, rest}), do: run_workspace_import_state(rest)
   defp dispatch_command({:profile_new, name, rest}), do: run_profile_new(name, rest)
   defp dispatch_command({:profile_list, rest}), do: run_profile_list(rest)
   defp dispatch_command({:template_list, rest}), do: run_template_list(rest)
@@ -681,12 +880,223 @@ defmodule PromptRunner.CLI do
   defp dispatch_command({:list, rest}), do: run_list(rest)
   defp dispatch_command({:plan, rest}), do: run_plan(rest)
   defp dispatch_command({:run, rest}), do: run_run(rest)
+  defp dispatch_command({:verify, rest}), do: run_verify(rest)
+  defp dispatch_command({:start, rest}), do: run_start(rest)
+  defp dispatch_command({:stop, rest}), do: run_stop(rest)
   defp dispatch_command({:repair, rest}), do: run_repair(rest)
   defp dispatch_command({:status, rest}), do: run_status(rest)
   defp dispatch_command({:watch, rest}), do: run_watch(rest)
   defp dispatch_command({:control, rest}), do: run_control(rest)
   defp dispatch_command(:help), do: show_help()
   defp dispatch_command(:unknown), do: handle_error(:unknown_command)
+
+  defp run_version(rest) do
+    {opts, _remaining, invalid} = OptionParser.parse(rest, strict: [json: :boolean])
+    if invalid != [], do: handle_error({:invalid_options, invalid})
+
+    if opts[:json],
+      do: IO.puts(Jason.encode!(%{version: PromptRunner.version()})),
+      else: IO.puts(PromptRunner.version())
+
+    :ok
+  end
+
+  defp run_capabilities(rest) do
+    {opts, _remaining, invalid} = OptionParser.parse(rest, strict: [json: :boolean])
+    if invalid != [], do: handle_error({:invalid_options, invalid})
+
+    if opts[:json],
+      do: IO.puts(Jason.encode!(Capabilities.document())),
+      else: Enum.each(Capabilities.list(), &IO.puts/1)
+
+    :ok
+  end
+
+  defp run_workspace_plan(rest) do
+    with {:ok, manifest_path} <- one_argument(rest, :workspace_manifest),
+         {:ok, manifest} <- WorkspaceManifest.load(manifest_path) do
+      plan = WorkspacePlan.build(manifest)
+
+      IO.puts(
+        Jason.encode!(
+          %{
+            schema: "prompt_runner.workspace.plan/v1",
+            workspace: manifest.id,
+            workspace_root: manifest.workspace_root,
+            runtime_root: manifest.runtime_root,
+            repositories: plan.repositories
+          },
+          pretty: true
+        )
+      )
+
+      :ok
+    else
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp run_workspace_prepare(rest) do
+    with {:ok, manifest_path} <- one_argument(rest, :workspace_manifest),
+         {:ok, result} <- Workspace.prepare(manifest_path) do
+      IO.puts(Jason.encode!(result, pretty: true))
+      :ok
+    else
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp run_workspace_doctor(rest) do
+    with {:ok, manifest_path} <- one_argument(rest, :workspace_manifest),
+         {:ok, report} <- Workspace.doctor(manifest_path) do
+      IO.puts(Jason.encode!(report, pretty: true))
+      if report.ready?, do: :ok, else: handle_error(:workspace_not_ready)
+    else
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp run_workspace_import_state(rest) do
+    {opts, arguments, invalid} = OptionParser.parse(rest, strict: [source: :string])
+
+    if invalid != [] do
+      handle_error({:invalid_options, invalid})
+    else
+      import_workspace_state(arguments, opts)
+    end
+  end
+
+  defp import_workspace_state([manifest_path, packet_path], opts) do
+    import_opts = maybe_put([], :source, opts[:source])
+
+    case Workspace.import_state(manifest_path, packet_path, import_opts) do
+      {:ok, result} ->
+        IO.puts(Jason.encode!(result, pretty: true))
+        :ok
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
+  end
+
+  defp import_workspace_state(arguments, _opts) do
+    handle_error({:expected_workspace_manifest_and_packet, arguments})
+  end
+
+  defp run_start(rest) do
+    with {:ok, opts, remaining} <- parse_run_options(rest),
+         {:ok, manifest_path} <- required_option(opts, :workspace),
+         {:ok, packet_path} <- required_option(opts, :packet),
+         true <- remaining == [] || {:error, {:unexpected_arguments, remaining}},
+         {:ok, report} <- Workspace.doctor(manifest_path),
+         true <- report.ready? || {:error, {:workspace_not_ready, report}},
+         {:ok, %{workspace: workspace_plan}} <-
+           Workspace.plan(manifest_path, packet_path, cli_opts(opts)),
+         {:ok, executable} <- installed_executable(),
+         unit = Workspace.service_unit(workspace_plan.manifest.id),
+         {:ok, containment} <-
+           SystemdUser.start(
+             unit,
+             executable,
+             detached_run_argv(manifest_path, packet_path, opts),
+             cwd: Path.expand(packet_path),
+             inherit_env: inherited_service_env()
+           ) do
+      IO.puts(
+        Jason.encode!(
+          %{
+            schema: "prompt_runner.service/v1",
+            workspace: workspace_plan.manifest.id,
+            unit: unit,
+            control_group: containment.control_group,
+            state: "started"
+          },
+          pretty: true
+        )
+      )
+
+      :ok
+    else
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp run_stop(rest) do
+    {opts, remaining, invalid} = OptionParser.parse(rest, strict: [workspace: :string])
+
+    with true <- invalid == [] || {:error, {:invalid_options, invalid}},
+         true <- remaining == [] || {:error, {:unexpected_arguments, remaining}},
+         {:ok, manifest_path} <- required_option(opts, :workspace),
+         {:ok, manifest} <- WorkspaceManifest.load(manifest_path),
+         unit = Workspace.service_unit(manifest.id),
+         :ok <- SystemdUser.stop(unit),
+         {:ok, true} <- SystemdUser.empty?(unit) do
+      IO.puts(
+        Jason.encode!(
+          %{
+            schema: "prompt_runner.service/v1",
+            workspace: manifest.id,
+            unit: unit,
+            state: "stopped"
+          },
+          pretty: true
+        )
+      )
+
+      :ok
+    else
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp one_argument([argument], _name), do: {:ok, Path.expand(argument)}
+  defp one_argument(arguments, name), do: {:error, {:expected_one_argument, name, arguments}}
+
+  defp required_option(opts, key) do
+    case opts[key] do
+      value when is_binary(value) and value != "" -> {:ok, Path.expand(value)}
+      _other -> {:error, {:missing_option, key}}
+    end
+  end
+
+  defp installed_executable do
+    case :escript.script_name() do
+      name when is_list(name) and name != [] ->
+        {:ok, Path.expand(List.to_string(name))}
+
+      _other ->
+        case System.find_executable("prompt_runner") do
+          nil -> {:error, :installed_prompt_runner_not_found}
+          executable -> {:ok, executable}
+        end
+    end
+  end
+
+  defp detached_run_argv(manifest_path, packet_path, opts) do
+    ["run", "--workspace", Path.expand(manifest_path), "--packet", Path.expand(packet_path)] ++
+      boolean_run_argv(opts) ++ value_run_argv(opts)
+  end
+
+  defp boolean_run_argv(opts) do
+    ~w(all remaining verify_first keep_going no_commit dry_run skip_preflight)a
+    |> Enum.flat_map(fn key ->
+      if opts[key], do: ["--#{String.replace(to_string(key), "_", "-")}"], else: []
+    end)
+  end
+
+  defp value_run_argv(opts) do
+    ~w(phase from through provider model log_mode log_meta events_mode tool_output thinking diff cli_confirmation runtime_store committer)a
+    |> Enum.flat_map(fn key ->
+      case opts[key] do
+        nil -> []
+        value -> ["--#{String.replace(to_string(key), "_", "-")}", to_string(value)]
+      end
+    end)
+  end
+
+  defp inherited_service_env do
+    Enum.filter(@service_env_names, &(System.get_env(&1) not in [nil, ""]))
+  end
 
   defp cli_opts(opts) do
     []
@@ -769,15 +1179,23 @@ defmodule PromptRunner.CLI do
     end)
   end
 
-  defp print_plan_summary(plan) do
+  defp normalize_optional_id(nil), do: nil
+  defp normalize_optional_id(id), do: id |> String.trim() |> String.pad_leading(2, "0")
+
+  defp print_plan_summary(plan, targets) do
     IO.puts("")
     IO.puts(UI.bold("PromptRunner Plan"))
     IO.puts("Packet: #{plan.source_root || inspect(plan.source)}")
     IO.puts("Prompts: #{length(plan.prompts)}")
+    IO.puts("Selected: #{length(targets)} (#{Enum.join(targets, ", ")})")
     IO.puts("Provider: #{plan.config.llm_sdk}")
     IO.puts("Model: #{plan.config.model}")
 
-    Enum.each(plan.prompts, fn prompt ->
+    selected = MapSet.new(targets)
+
+    plan.prompts
+    |> Enum.filter(&MapSet.member?(selected, &1.num))
+    |> Enum.each(fn prompt ->
       IO.puts("  #{prompt.num} - #{prompt.name}")
     end)
 
@@ -870,11 +1288,22 @@ defmodule PromptRunner.CLI do
       prompt_runner prompt new ID [--packet PACKET_DIR] --phase N --name "..." [--template TEMPLATE]
       prompt_runner checklist sync [PACKET_DIR]
 
+    Operator workspaces:
+      prompt_runner workspace plan MANIFEST
+      prompt_runner workspace prepare MANIFEST
+      prompt_runner workspace doctor MANIFEST
+      prompt_runner workspace import-state MANIFEST PACKET_DIR [--source PROGRESS_FILE]
+      prompt_runner start --workspace MANIFEST --packet PACKET_DIR --remaining [--from ID] [--through ID]
+      prompt_runner status --workspace MANIFEST [--json]
+      prompt_runner watch --workspace MANIFEST [--interval SECONDS] [--json]
+      prompt_runner stop --workspace MANIFEST
+
     Execution:
       prompt_runner list [PACKET_DIR]
       prompt_runner plan [PACKET_DIR] [--provider PROVIDER] [--model MODEL]
       prompt_runner run [PACKET_DIR] [PROMPT_ID...] [--skip-preflight] [--dry-run]
       prompt_runner run [PACKET_DIR] --remaining [--verify-first | --no-verify-first] [--keep-going]
+      prompt_runner verify [PACKET_DIR] [PROMPT_ID...] [--workspace MANIFEST] [--json]
       prompt_runner repair [--packet PACKET_DIR] PROMPT_ID
       prompt_runner status [PACKET_DIR]
       prompt_runner watch [PACKET_DIR] [--interval SECONDS] [--once] [--json]

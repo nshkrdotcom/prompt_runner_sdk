@@ -74,7 +74,7 @@ defmodule PromptRunner.PacketLintCLITest do
 
     assert output =~ "WARNING"
     assert output =~ "inert_front_matter_key"
-    assert output =~ "1 warning"
+    assert output =~ "2 warnings"
   end
 
   test "packet lint --json prints a machine-readable report", %{root: root} do
@@ -84,8 +84,12 @@ defmodule PromptRunner.PacketLintCLITest do
 
     assert report["packet"] == "lint-cli"
     assert report["pass?"] == true
-    assert report["warnings"] == 1
-    assert [%{"kind" => "inert_front_matter_key"}] = report["findings"]
+    assert report["warnings"] == 2
+
+    assert Enum.map(report["findings"], & &1["kind"]) == [
+             "inert_front_matter_key",
+             "legacy_shell_command"
+           ]
   end
 
   test "packet lint is listed in the help output" do

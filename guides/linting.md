@@ -1,7 +1,7 @@
 # Packet Linting
 
 `mix prompt_runner packet lint` is the static authoring gate added in Prompt
-Runner 0.10.0. It is the sibling of `packet doctor`, and the difference between
+Runner 0.11.0. It is the sibling of `packet doctor`, and the difference between
 them is worth stating precisely:
 
 - **`packet doctor` reports gaps.** A packet with no prompts, a packet with no
@@ -69,45 +69,30 @@ contract with `file_exists:` (singular) reads like a gate and is not one. The
 known clause list comes from `PromptRunner.Verifier.contract_keys/0`, so lint
 and the verifier cannot drift.
 
-### `verify_command_missing_path`
-
-A `commands:` entry names a script that does not exist under the directory the
-verifier will run it in — the entry's `repo:`, or the prompt's first target, or
-the packet root. `bash -c` exits 127 for that, which the runner classifies as a
-verifier fault and halts on. A contract kept pointing at `bin/check_doc.sh`
-after those scripts moved one directory down; every clause exited 127 and a
-finished prompt was discarded before that classification existed.
-
-Detection is deliberately narrow. A token is checked only when it is
-unambiguously a path this lint can resolve: it contains `/`, carries a script
-suffix (`.sh`, `.exs`, `.ex`, `.py`, `.rb`, `.pl`, `.js`, `.ts`) or begins with
-`./` or `../`, is not a URL, and contains no shell expansion, glob, or quote.
-Everything else is left alone, because a check that guesses produces false
-errors on correct packets and gets turned off.
-
 ## Warnings
 
 A warning is usually wrong and occasionally deliberate. Warnings exit zero
 unless `--strict` is given.
 
-### `verify_command_without_timeout`
+### `legacy_shell_command` and `verify_command_without_timeout`
 
-The verifier runs every command through `bash -c` with **no timeout**. A
-command that hangs hangs the whole run, after the model work is already spent
-and often after the session has already committed. Wrap commands:
+New contracts use structured argv and a verifier-owned timeout:
 
 ```yaml
 verify:
   commands:
-    - "timeout 900 mix test"
     - repo: "app"
-      run: "timeout 300 mix credo --strict"
+      exec: "mix"
+      args: ["credo", "--strict"]
+      timeout_ms: 300000
 ```
 
-Detection is deliberately shallow: a command counts as bounded when any of its
-segments — split on `&&`, `||`, `;`, and `|` — begins with a `timeout` token.
-Lint asserts that `timeout` is invoked, not that every branch of a compound
-command is bounded. Deciding the latter needs a shell parser.
+The argv is executed directly; there is no shell expansion and no login
+profile reload. A structured command without a positive `timeout_ms` warns.
+String and `run:` commands warn as `legacy_shell_command`; their compatibility
+path also warns unless it carries an explicit GNU `timeout` wrapper. Strict
+lint promotes either warning to an error, which is the migration gate for
+production packets.
 
 ### `prompt_without_verify`
 
@@ -155,11 +140,11 @@ warning and exits zero.
 
 ### `inert_front_matter_key`
 
-`references`, `required_reading`, `context_files`, and `depends_on` are parsed
+`references`, `required_reading`, and `context_files` are parsed
 by `PromptRunner.Source.DirectorySource`, stored on `PromptRunner.Prompt`, and
-then never read. They are never sent to the provider and never used for
-ordering — only the markdown body after the front matter reaches the model, and
-scheduling comes from the filename.
+then never read. They are never sent to the provider; only the markdown body
+after the front matter reaches the model. `depends_on` is not in this category:
+the scheduler validates and executes it.
 
 Write the paths into the prompt body:
 

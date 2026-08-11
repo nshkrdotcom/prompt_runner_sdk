@@ -117,6 +117,17 @@ mix prompt_runner run demo --dry-run
 directory, permission mode, target repos, and the commit message that would be
 used. It starts nothing.
 
+Run only deterministic contracts, without opening a provider or changing
+packet progress:
+
+```bash
+prompt_runner verify demo 01 02
+prompt_runner verify --packet demo --workspace workspace.yml --json
+```
+
+The workspace form binds logical repositories and installed contract artifacts
+to the current operator's independent workspace.
+
 Run specific prompts:
 
 ```bash

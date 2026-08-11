@@ -29,19 +29,16 @@ defmodule PromptRunner.PacketLint do
     the target expands to nothing.
   - `unknown_verify_clause` — an unrecognized key under `verify:` is parsed,
     stored, and never evaluated, so the contract is weaker than it reads.
-  - `verify_command_missing_path` — a `commands:` entry names a script that
-    does not exist under the directory the verifier will run it in. `bash -c`
-    exits 127 for that, which the runner reports as a verifier fault and which,
-    before that classification existed, was read as failed work.
 
   ## Warnings
 
   Findings that are usually wrong but legitimately intentional sometimes. They
   exit zero unless `strict: true` promotes them.
 
-  - `verify_command_without_timeout` — the verifier runs commands with
-    `System.cmd("bash", ["-lc", command])` and no timeout, so a hung command
-    hangs the whole run after the model work is already spent.
+  - `legacy_shell_command` — a string/`run:` command still asks the legacy
+    compatibility path to interpret shell syntax. Strict packets reject it.
+  - `verify_command_without_timeout` — a legacy command has no explicit GNU
+    timeout wrapper, or a structured command omits `timeout_ms`.
   - `prompt_without_verify` — completion falls back to the provider's own claim
     of success.
   - `contract_without_commands` — the contract has neither a `commands:` entry
@@ -51,20 +48,15 @@ defmodule PromptRunner.PacketLint do
     `git status --porcelain`, so it can only see work that is still
     uncommitted. It passes vacuously in any packet where the session commits
     its own work.
-  - `inert_front_matter_key` — `references`, `required_reading`,
-    `context_files`, and `depends_on` are parsed and stored and then never read
-    at runtime.
+  - `inert_front_matter_key` — `references`, `required_reading`, and
+    `context_files` are parsed and stored and then never read at runtime.
 
-  ## Command path detection
+  Packet lint is intentionally independent of the current checkout state. A
+  relative verifier executable may be an output of this prompt or an earlier
+  dependency, so existence and executability are evaluated only by the
+  post-session verifier.
 
-  A token in a `commands:` entry is checked for existence only when it is
-  unambiguously a path this lint can resolve: it contains `/`, carries a script
-  suffix (`.sh`, `.exs`, `.ex`, `.py`, `.rb`, `.pl`, `.js`, `.ts`) or begins
-  with `./` or `../`, is not a URL, and contains no shell expansion. Everything
-  else is left alone, because a check that guesses produces false errors on
-  correct packets and gets turned off.
-
-  ## Timeout detection
+  ## Legacy timeout detection
 
   A command counts as bounded when any of its segments — split on `&&`, `||`,
   `;`, and `|` — begins with a `timeout` token. Lint checks that `timeout` is
@@ -76,7 +68,7 @@ defmodule PromptRunner.PacketLint do
   alias PromptRunner.Source.PacketSource
   alias PromptRunner.Verifier
 
-  @inert_keys ~w(references required_reading context_files depends_on)
+  @inert_keys ~w(references required_reading context_files)
   @packet_repo_alias "packet"
 
   # Clauses that assert something about a file's *content*. A contract holding
@@ -323,86 +315,17 @@ defmodule PromptRunner.PacketLint do
     end)
   end
 
-  defp command_findings(prompt, contract, scope) do
+  defp command_findings(prompt, contract, _scope) do
     case clause_entries(contract, "commands") do
       [] ->
         missing_commands_finding(prompt, contract)
 
       entries ->
         Enum.flat_map(entries, fn entry ->
-          command_timeout_finding(entry, prompt) ++
-            command_path_findings(entry, prompt, scope)
+          legacy_shell_finding(entry, prompt) ++
+            command_timeout_finding(entry, prompt)
         end)
     end
-  end
-
-  # The class of failure this catches is not hypothetical: on 2026-08-10 a
-  # contract kept pointing at `docs/20260809/bin/check_doc.sh` after the scripts
-  # moved one directory down. Every clause exited 127 and a finished prompt was
-  # discarded. The runner now calls that a verifier fault rather than failed
-  # work; this catches it at authoring time instead of at 04:06.
-  defp command_path_findings(entry, prompt, scope) do
-    case command_cwd(entry, prompt, scope) do
-      nil ->
-        []
-
-      cwd ->
-        entry
-        |> command_string()
-        |> candidate_paths()
-        |> Enum.reject(&File.exists?(Path.expand(&1, cwd)))
-        |> Enum.map(&missing_command_path_finding(&1, cwd, prompt))
-    end
-  end
-
-  defp missing_command_path_finding(path, cwd, prompt) do
-    finding(
-      "error",
-      "verify_command_missing_path",
-      prompt,
-      "verify command references #{inspect(path)}, which does not exist relative to the " <>
-        "directory the verifier runs it in (#{cwd}); bash exits 127 for that, and an exit " <>
-        "code is all the verifier gets back"
-    )
-  end
-
-  # An unresolvable repo yields no cwd and therefore no path check: it already
-  # has its own finding, and guessing a directory here would report the same
-  # mistake twice with a second, wrong explanation.
-  defp command_cwd(%{"repo" => repo}, _prompt, scope) when is_binary(repo) do
-    Map.get(scope.repo_paths, repo)
-  end
-
-  defp command_cwd(_entry, %{target_repos: [target | _rest]}, scope) when is_binary(target) do
-    Map.get(scope.repo_paths, target)
-  end
-
-  defp command_cwd(_entry, _prompt, scope), do: scope.default_path
-
-  @script_suffixes ~w(.sh .exs .ex .py .rb .pl .js .ts)
-
-  defp candidate_paths(nil), do: []
-
-  defp candidate_paths(command) when is_binary(command) do
-    command
-    |> String.split(~r/\s+/, trim: true)
-    |> Enum.filter(&candidate_path?/1)
-    |> Enum.uniq()
-  end
-
-  # A URL, a shell expansion, a glob, or a quoted fragment cannot be resolved to
-  # a filesystem path without guessing, and a lint that guesses gets turned off.
-  @unresolvable ["://", "$", "*", "?", "~", "\"", "'"]
-
-  defp candidate_path?(token) do
-    String.contains?(token, "/") and
-      not String.starts_with?(token, "-") and
-      not String.contains?(token, @unresolvable) and
-      path_shaped?(token)
-  end
-
-  defp path_shaped?(token) do
-    String.starts_with?(token, ["./", "../"]) or String.ends_with?(token, @script_suffixes)
   end
 
   defp missing_commands_finding(prompt, contract) do
@@ -427,10 +350,29 @@ defmodule PromptRunner.PacketLint do
   end
 
   defp command_timeout_finding(entry, prompt) do
+    case structured_command(entry) do
+      %{timeout_ms: timeout} when is_integer(timeout) and timeout > 0 -> []
+      %{} -> structured_timeout_finding(entry, prompt)
+      nil -> legacy_command_timeout_finding(entry, prompt)
+    end
+  end
+
+  defp legacy_command_timeout_finding(entry, prompt) do
     case command_string(entry) do
       nil -> []
       command -> unwrapped_command_finding(command, prompt)
     end
+  end
+
+  defp structured_timeout_finding(entry, prompt) do
+    [
+      finding(
+        "warning",
+        "verify_command_without_timeout",
+        prompt,
+        "structured verify command has no positive timeout_ms: #{inspect(entry)}"
+      )
+    ]
   end
 
   defp unwrapped_command_finding(command, prompt) do
@@ -442,9 +384,7 @@ defmodule PromptRunner.PacketLint do
           "warning",
           "verify_command_without_timeout",
           prompt,
-          "verify command is not wrapped in timeout: #{inspect(command)} — the verifier runs " <>
-            "every command through bash -c with no timeout, so a hung command hangs the " <>
-            "whole run after the model work is already spent"
+          "legacy verify command has no timeout wrapper: #{inspect(command)}"
         )
       ]
     end
@@ -454,6 +394,33 @@ defmodule PromptRunner.PacketLint do
   defp command_string(%{"command" => command}) when is_binary(command), do: command
   defp command_string(entry) when is_binary(entry), do: entry
   defp command_string(_entry), do: nil
+
+  defp structured_command(%{} = entry) do
+    case entry["exec"] || entry["program"] do
+      program when is_binary(program) and program != "" ->
+        %{program: program, timeout_ms: entry["timeout_ms"]}
+
+      _other ->
+        nil
+    end
+  end
+
+  defp structured_command(_entry), do: nil
+
+  defp legacy_shell_finding(entry, prompt) do
+    if is_binary(command_string(entry)) and is_nil(structured_command(entry)) do
+      [
+        finding(
+          "warning",
+          "legacy_shell_command",
+          prompt,
+          "verify command uses the legacy shell compatibility path; use exec/program plus args/argv"
+        )
+      ]
+    else
+      []
+    end
+  end
 
   defp timeout_wrapped?(command) do
     command
@@ -539,11 +506,6 @@ defmodule PromptRunner.PacketLint do
       |> finding("inert_front_matter_key", prompt, inert_message(key))
       |> Map.put(:key, key)
     end)
-  end
-
-  defp inert_message("depends_on") do
-    "`depends_on` is parsed and stored on the prompt and then never read; it does not " <>
-      "influence ordering. Prompts run in filename order and a failure halts the whole run"
   end
 
   defp inert_message(key) do

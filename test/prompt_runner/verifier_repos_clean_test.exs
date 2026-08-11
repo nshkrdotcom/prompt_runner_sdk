@@ -217,7 +217,8 @@ defmodule PromptRunner.VerifierReposCleanTest do
     # The assertion above cannot bite while the cached ref already matches the
     # remote. Move the remote ahead from a second clone, so a `git fetch` would
     # visibly rewrite `refs/remotes/origin/*`, and prove it does not happen.
-    # `git ls-remote` answers the same question without writing anything.
+    # An explicitly networked `git ls-remote` answers the same question without
+    # writing anything.
     remote = FSHelpers.bare_repo!("prompt_runner_clean_remote")
     on_exit(fn -> File.rm_rf!(remote) end)
     branch = FSHelpers.push_to_origin!(repo, remote)
@@ -236,6 +237,7 @@ defmodule PromptRunner.VerifierReposCleanTest do
         repos_clean:
           - repo: "app"
             pushed: true
+            network: true
       """)
 
     assert FSHelpers.git!(repo, ["rev-parse", "origin/#{branch}"]) == cached_before

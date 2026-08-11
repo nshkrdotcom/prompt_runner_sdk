@@ -117,4 +117,39 @@ defmodule PromptRunner.RunnerKeepGoingTest do
     assert get_in(state, ["prompts", "01", "status"]) == "verifier_fault"
     assert get_in(state, ["prompts", "02"]) == nil
   end
+
+  test "keep-going blocks descendants but still attempts independent prompts", %{root: root} do
+    second = Path.join(root, "prompts/02_failure.prompt.md")
+
+    second
+    |> File.read!()
+    |> String.replace("targets: [\"app\"]", "targets: [\"app\"]\ndepends_on: [\"01\"]")
+    |> then(&File.write!(second, &1))
+
+    third = Path.join(root, "prompts/03_independent.prompt.md")
+
+    File.write!(third, """
+    ---
+    id: "03"
+    phase: 1
+    name: "Independent failure"
+    targets: ["app"]
+    verify:
+      files_exist:
+        - "never-03.txt"
+    ---
+    # Independent
+    """)
+
+    capture_io(fn ->
+      assert {:error, {:prompts_failed, failures}} =
+               PromptRunner.run(root, interface: :cli, no_commit: true, keep_going: true)
+
+      assert Enum.map(failures, & &1.prompt) == ~w(01 02 03)
+    end)
+
+    {:ok, state} = PromptRunner.status(root)
+    assert get_in(state, ["prompts", "02", "status"]) == "blocked_by_dependency"
+    assert get_in(state, ["prompts", "03", "status"]) == "verification_failed"
+  end
 end

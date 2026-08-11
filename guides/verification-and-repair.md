@@ -1,6 +1,6 @@
 # Verification And Repair
 
-Prompt Runner 0.10.0 treats deterministic verification as the source of truth
+Prompt Runner 0.11.0 treats deterministic verification as the source of truth
 for prompt completion. A provider reporting success is evidence, not a verdict.
 
 ## Contract Keys
@@ -13,8 +13,12 @@ Supported checks:
 | `files_absent` | the path does not exist |
 | `contains` | the file contains a literal substring |
 | `matches` | the file matches a regular expression |
-| `doc` | the document is substantive: line floor, required sections, no unresolved markers |
-| `commands` | a shell command exits zero |
+| `doc` | the document is non-blank, contains required sections, and has no unresolved markers |
+| `yaml` | YAML parses and selected paths have the required shape or value |
+| `json` | JSON parses and selected paths have the required shape or value |
+| `glob` | a glob has the required count and optional file properties |
+| `source_absent` | forbidden source patterns are absent from selected files |
+| `commands` | a bounded, structured argv exits zero and satisfies output assertions |
 | `changed_paths_only` | `git status --porcelain` shows nothing outside an allowed set |
 | `repos_clean` | the repository is committed, and optionally pushed |
 
@@ -28,7 +32,9 @@ verify:
     - path: "hello.txt"
       text: "Hello from Prompt Runner"
   commands:
-    - "timeout 60 test -s hello.txt"
+    - exec: "test"
+      args: ["-s", "hello.txt"]
+      timeout_ms: 60000
 ```
 
 Every clause supports repo scoping, either with a `repo:` key or by defaulting
@@ -37,38 +43,46 @@ packet directory itself. See
 [Multi-Repository Packets](multi-repo.md).
 
 `mix prompt_runner packet lint` reports contracts whose shape makes them weaker
-than they read — a command with no `timeout`, a contract with no `commands:`
-entry, a typo'd clause name. See [Packet Linting](linting.md).
+than they read — a structured command with no `timeout_ms`, a contract with no
+executable or content assertion, a legacy shell command, or a typo'd clause
+name. See [Packet Linting](linting.md).
 
-## `commands` Has No Timeout
+## Structured, Bounded Commands
 
-The verifier runs every command through `bash -c` with no timeout of its own.
-It inherits the runner's environment and does not re-run login profiles.
-A command that hangs hangs the whole run, after the model work is already spent.
-Wrap every command:
+Use `exec` plus `args`; Prompt Runner resolves the executable once and invokes
+it directly through `CliSubprocessCore`. It inherits the runner environment,
+does not start a login shell, and enforces `timeout_ms` itself:
 
 ```yaml
 verify:
   commands:
-    - "timeout 900 mix test"
     - repo: "app"
-      run: "timeout 300 mix credo --strict"
+      exec: "mix"
+      args: ["test"]
+      timeout_ms: 900000
+      fault_exit_codes: [2]
+      stdout_matches: "[0-9]+ tests?, 0 failures"
 ```
 
-This is not a style preference. A contract without it can cost a whole session.
+`cwd` is resolved within the selected repo, `env` is an explicit string map,
+and `stdout_contains` is the literal alternative to `stdout_matches`.
+`regenerates` makes generated outputs transactional: prior outputs are staged,
+the argv must create new non-empty regular files, and failure restores the
+prior versions. String and `run:` commands remain a compatibility path only;
+strict packet lint rejects them.
 
 ## A Broken Verifier Is Not Failed Work
 
-`bash -c` distinguishes "the check ran and disagreed" from "the check never
-ran", and so does the verifier:
+The verifier distinguishes "the check ran and disagreed" from "the check never
+ran":
 
 | exit | means | classified as |
 |------|-------|---------------|
 | 0 | the check passed | pass |
 | 1 (and most others) | the check ran, the work failed | verification failure |
-| 126 | found, not executable | `verifier_fault` |
-| 127 | command not found | `verifier_fault` |
-| 124 | `timeout` killed it | `verifier_timeout` |
+| configured in `fault_exit_codes` | contract-defined infrastructure exit | `verifier_fault` |
+| executable absent from `PATH` or an absolute prerequisite absent | could not start | `verifier_fault` |
+| verifier-owned deadline expires | subprocess exceeded `timeout_ms` | `verifier_timeout` |
 
 A fault says nothing about the work in either direction, so the runner does not
 treat it as evidence. It **halts the run**, names the command and the directory
@@ -81,10 +95,10 @@ This is not hypothetical. A contract kept referencing `bin/check_doc.sh` after
 those scripts moved one directory down. Every clause exited 127, the runner read
 it as failed work, and a finished attempt was discarded.
 
-`mix prompt_runner packet lint` reports a `commands:` entry whose script does
-not exist relative to the directory the verifier will run it in
-(`verify_command_missing_path`), so the mistake surfaces at authoring time
-rather than at 04:06 in an unattended run.
+A missing relative executable such as `bin/generated-check` may be output the
+prompt was required to create, so its post-session absence is an ordinary
+verification failure and can be repaired. A missing bare PATH command or
+absolute executable is operator infrastructure and halts as a verifier fault.
 
 ## Pre-flight Verification
 
@@ -135,7 +149,7 @@ verify:
 |-----|---------|---------|
 | `path` | required | document path, repo-scoped like every other clause |
 | `repo` | prompt's default scope | repository the path resolves against |
-| `min_lines` | `1` | minimum **non-blank** lines |
+| `min_lines` | `1` | advisory non-blank-line target, reported but never a pass/fail threshold |
 | `requires_sections` | `[]` | verbatim substrings that must be present |
 | `forbids_markers` | `["TODO", "TBD", "FIXME", "XXX"]` | substrings that must be absent |
 
@@ -152,10 +166,12 @@ verify:
     - "docs/report.md"     # exists, has at least one non-blank line, no markers
 ```
 
-The `details:` string names what is wrong, because a repair session reads it:
+The `details:` string names correctness failures because a repair session reads
+it. Falling below `min_lines` is exposed as `below_recommendation?: true` but is
+not included in those failures:
 
 ```text
-42 non-blank lines, needs 100; missing sections: ## Verdict; forbidden markers: TODO (line 12)
+missing sections: ## Verdict; forbidden markers: TODO (line 12)
 ```
 
 ## `repos_clean` — Sessions Committed Their Work
@@ -172,6 +188,7 @@ verify:
 |-----|---------|---------|
 | `repo` | prompt's default scope | repository to check |
 | `pushed` | `false` | also require an upstream, and require `HEAD` to match it |
+| `network` | `false` | query the remote instead of using the cached upstream ref |
 | `remote_timeout_ms` | `90000` | bound on the remote query |
 
 `pushed: false` checks only that the working tree is clean. A branch with no
@@ -182,17 +199,12 @@ upstream is not compared.
 `pushed: true` additionally **requires** an upstream. A missing upstream is a
 failure, not a pass: the clause was asked to assert publication and cannot.
 
-The comparison asks the remote directly with `git ls-remote`, under a bounded
-timeout. `ls-remote` is a pure query — unlike `git fetch` it does not create or
-move remote-tracking refs — so this clause writes nothing at all into the
-repository it is judging. A gate that mutates any part of its subject is a gate
-that can change the thing it measures.
-
-When the remote cannot be reached, `details:` says so and the comparison falls
-back to the cached remote-tracking ref. That fallback is biased toward
-reporting *not pushed*, since a cached ref can only be behind the remote and
-never ahead of it, which is the safe direction for a clause whose job is to
-assert publication.
+The default comparison is local and bounded: it compares `HEAD` to the cached
+upstream ref updated by a successful push. Verification therefore does not
+turn a transient network outage into a failed prompt. `network: true` opts into
+a bounded `git ls-remote` query; that query does not fetch or mutate refs. If
+the query fails, the report says so and falls back to the cached ref, biased
+toward reporting *not pushed*.
 
 ### `changed_paths_only` vs `repos_clean`
 

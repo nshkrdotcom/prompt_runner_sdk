@@ -12,7 +12,7 @@ defmodule PromptRunner.ReleasePreparationTest do
     assert "examples/authoring_packet/templates/*.md" in files
   end
 
-  test "release metadata follows the ASM 0.13 and Elixir 1.19 boundary" do
+  test "release metadata follows the ASM 0.14, process 0.3, and Elixir 1.19 boundary" do
     project = Mix.Project.config()
 
     assert project[:elixir] == "~> 1.19"
@@ -24,11 +24,13 @@ defmodule PromptRunner.ReleasePreparationTest do
     # into a failing suite in this repository.
     config = DependencySources.config!(Path.expand("../..", __DIR__))
 
-    assert config[:deps][:agent_session_manager][:hex] =~ ~r/^~> 0\.13\./
+    assert config[:deps][:agent_session_manager][:hex] =~ ~r/^~> 0\.14\./
     assert config[:deps][:cli_subprocess_core][:hex] =~ ~r/^~> 0\.6\./
+    assert config[:deps][:execution_plane_process][:hex] =~ ~r/^~> 0\.3\./
 
     assert List.keymember?(project[:deps], :agent_session_manager, 0)
     assert List.keymember?(project[:deps], :cli_subprocess_core, 0)
+    assert List.keymember?(project[:deps], :execution_plane_process, 0)
   end
 
   test "mix.exs version matches the newest CHANGELOG entry" do
@@ -47,6 +49,14 @@ defmodule PromptRunner.ReleasePreparationTest do
 
   test "the emitted version is derived from mix.exs" do
     assert PromptRunner.version() == Mix.Project.config()[:version]
+  end
+
+  test "the installed escript embeds and bootstraps erlexec's native port" do
+    escript = Mix.Project.config()[:escript]
+
+    assert escript[:main_module] == PromptRunner.Escript
+    assert escript[:app] == nil
+    assert :erlexec in escript[:include_priv_for]
   end
 
   test "no source file hardcodes a release version" do

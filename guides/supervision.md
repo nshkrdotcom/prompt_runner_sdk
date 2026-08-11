@@ -1,7 +1,7 @@
 # Supervising A Long Run
 
 A packet with thirty prompts, each sized for tens of minutes of model work, is
-a run nobody watches continuously. Prompt Runner 0.10.0 adds
+a run nobody watches continuously. Prompt Runner 0.11.0 adds
 `mix prompt_runner watch` for that case.
 
 ```bash

@@ -14,7 +14,13 @@
 </p>
 
 Prompt Runner SDK executes packetized prompt workflows against local
-repositories. This README targets `prompt_runner_sdk ~> 0.10.0`.
+repositories. This README targets `prompt_runner_sdk ~> 0.11.0`.
+
+For unattended or multi-operator packets, use an installed escript plus an
+operator [workspace](guides/workspaces.md). Workspaces replace PID files,
+supervisor shell loops, permission handoffs, shared builds, and verifier shell
+pipelines with independent clones, durable state, structured contracts, and
+systemd-user cgroup containment.
 
 The packet-first design introduced in `0.7.0` carries forward unchanged:
 
@@ -25,7 +31,9 @@ The packet-first design introduced in `0.7.0` carries forward unchanged:
 - a built-in simulated provider can prove recovery behavior without any
   external provider CLI
 
-`0.10.0` is shaped by a thirty-session unattended program run on `0.8.1`. Every
+`0.11.0` is shaped by two real unattended packet programs and removes the shell
+layer that made operator identity, verification, resumption, and containment
+implicit. Every
 addition is something that program had to build for itself, and every fix is
 something it hit:
 
@@ -66,7 +74,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.10.0"}
+    {:prompt_runner_sdk, "~> 0.11.0"}
   ]
 end
 ```
@@ -154,7 +162,9 @@ verify:
     - path: "RUNTIME_BOUNDARIES.md"
       text: "Prompt Runner owns packet orchestration."
   commands:
-    - "timeout 60 test -s RUNTIME_BOUNDARIES.md"
+    - exec: "test"
+      args: ["-s", "RUNTIME_BOUNDARIES.md"]
+      timeout_ms: 60000
   changed_paths_only:
     - "RUNTIME_BOUNDARIES.md"
 ---
@@ -178,9 +188,9 @@ Do not modify any other files. Respond with exactly `ok`.
 ```
 
 Required reading belongs in the body: only the markdown after the front matter
-reaches the model. Commands belong inside `timeout`: the verifier runs them
-through `bash -c` with no timeout of its own. The shell inherits the runner's
-environment and does not re-run login profiles.
+reaches the model. Verification commands use bounded structured argv: the
+verifier executes `exec` plus `args` directly, inherits the runner environment,
+does not reload login profiles, and enforces `timeout_ms`.
 
 Turn the verification contract into a human checklist and check the packet:
 
@@ -294,8 +304,10 @@ Each prompt can declare a deterministic completion contract:
 |--------|---------|
 | `files_exist` / `files_absent` | the path is there, or is not |
 | `contains` / `matches` | file content, literally or by regex |
-| `doc` | the document is substantive: line floor, required sections, no unresolved markers |
-| `commands` | a shell command exits zero |
+| `doc` | the document is non-blank, includes required sections, and has no unresolved markers |
+| `yaml` / `json` | structured data parses and satisfies path assertions |
+| `glob` / `source_absent` | artifact sets and forbidden source patterns |
+| `commands` | a bounded structured argv exits zero and satisfies output assertions |
 | `changed_paths_only` | nothing changed outside an allowed set |
 | `repos_clean` | the repository is committed, and optionally pushed |
 
@@ -342,8 +354,12 @@ load, run, and produce a wrong answer without raising:
   empty file
 - `changed_paths_only`, which only sees uncommitted work and so passes
   vacuously in any packet where the session commits for itself
-- `references`, `required_reading`, `context_files`, and `depends_on`, which
-  are parsed, stored, and never read
+- `references`, `required_reading`, and `context_files`, which are parsed,
+  stored, and never sent to the provider
+
+`depends_on` is executable scheduler input: dependencies are validated and
+topologically ordered, and a failed dependency blocks only its descendants
+under the `continue_independent` workspace policy.
 
 `--strict` promotes warnings to errors; `--json` emits a machine-readable
 report.
@@ -430,7 +446,7 @@ they exist next to this repository, then GitHub, then Hex:
 ```bash
 mix deps.sources
 # dependency sources:
-#   agent_session_manager -> path (../agent_session_manager) -> 0.13.0
+#   agent_session_manager -> path (../agent_session_manager) -> 0.14.0
 #   cli_subprocess_core -> path (../cli_subprocess_core) -> 0.6.0
 ```
 

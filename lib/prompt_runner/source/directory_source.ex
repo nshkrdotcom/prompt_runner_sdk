@@ -148,8 +148,7 @@ defmodule PromptRunner.Source.DirectorySource do
     case metadata["validation"] || get_in(metadata, ["verify", "commands"]) do
       commands when is_list(commands) and commands != [] ->
         Enum.map(commands, fn
-          %{"run" => run} -> run
-          %{"command" => command} -> command
+          %{} = command -> command
           other -> to_string(other)
         end)
 

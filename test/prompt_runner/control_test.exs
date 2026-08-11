@@ -39,6 +39,32 @@ defmodule PromptRunner.ControlTest do
     end
   end
 
+  describe "operator-owned runtime state" do
+    test "an explicit state root keeps mutable control files out of the packet", %{
+      packet_dir: packet_dir
+    } do
+      state_root = FSHelpers.tmp_dir("prompt_runner_control_state")
+      on_exit(fn -> File.rm_rf!(state_root) end)
+
+      plane = Plane.open(packet_dir, packet: "demo", state_root: state_root)
+      plane = Plane.observe(plane, %{type: :run_started, data: %{}})
+      Plane.boundary(plane)
+
+      root = Store.state_root(state_root)
+      assert Plane.store_root(plane) == root
+      assert File.exists?(Store.snapshot_path(root))
+      assert File.exists?(Store.events_path(root))
+      refute File.exists?(Path.join(packet_dir, ".prompt_runner/control"))
+    end
+
+    test "legacy callers retain the packet-local layout", %{packet_dir: packet_dir} do
+      plane = Plane.open(packet_dir, packet: "demo")
+
+      assert Plane.store_root(plane) == packet_dir
+      assert File.exists?(Store.snapshot_path(packet_dir))
+    end
+  end
+
   describe "snapshot/1" do
     test "carries everything a dashboard header needs", %{packet_dir: packet_dir} do
       {plane, run_ref} = open(packet_dir)
@@ -206,6 +232,85 @@ defmodule PromptRunner.ControlTest do
       assert first.params == %{"tool_output" => "full"}
       assert second.params == %{"tool_output" => "none"}
     end
+
+    test "pending reads do not delete a request", %{packet_dir: packet_dir} do
+      {_plane, run_ref} = open(packet_dir)
+      :ok = Control.set_view(run_ref, %{tool_output: "full"})
+
+      [{name, {:ok, _request}}] = Store.pending_requests(packet_dir)
+
+      assert File.exists?(Path.join(Store.requests_dir(packet_dir), name))
+      assert Store.pending_requests(packet_dir) |> length() == 1
+    end
+
+    test "a request is removed only after its durable outcome exists", %{packet_dir: packet_dir} do
+      {plane, run_ref} = open(packet_dir)
+      :ok = Control.set_view(run_ref, %{tool_output: "full"})
+      [{name, {:ok, _request}}] = Store.pending_requests(packet_dir)
+
+      assert {_plane, [{:set_view, %{tool_output: :full}}]} = Plane.boundary(plane)
+
+      refute File.exists?(Path.join(Store.requests_dir(packet_dir), name))
+      outcome_path = Store.request_outcome_path(packet_dir, name)
+      assert File.exists?(outcome_path)
+      assert Jason.decode!(File.read!(outcome_path))["outcome"] == "applied"
+    end
+
+    test "a request remains pending when its audit entry cannot be persisted", %{
+      packet_dir: packet_dir
+    } do
+      {plane, run_ref} = open(packet_dir)
+      :ok = File.mkdir_p(Store.log_path(packet_dir))
+      :ok = Control.set_view(run_ref, %{tool_output: "full"})
+      [{name, {:ok, _request}}] = Store.pending_requests(packet_dir)
+
+      assert {same_plane, []} = Plane.boundary(plane)
+      assert Plane.view(same_plane).tool_output == :summary
+      assert File.exists?(Path.join(Store.requests_dir(packet_dir), name))
+      refute File.exists?(Store.request_outcome_path(packet_dir, name))
+
+      File.rmdir!(Store.log_path(packet_dir))
+      assert {_plane, [{:set_view, %{tool_output: :full}}]} = Plane.boundary(same_plane)
+      assert File.exists?(Store.request_outcome_path(packet_dir, name))
+    end
+
+    test "a command is not emitted when its durable outcome cannot be written", %{
+      packet_dir: packet_dir
+    } do
+      {plane, run_ref} = open(packet_dir)
+      :ok = Control.set_view(run_ref, %{tool_output: "full"})
+      [{name, {:ok, _request}}] = Store.pending_requests(packet_dir)
+
+      File.rm_rf!(Store.outcomes_dir(packet_dir))
+      File.write!(Store.outcomes_dir(packet_dir), "not a directory")
+
+      assert {same_plane, []} = Plane.boundary(plane)
+      assert Plane.view(same_plane).tool_output == :summary
+      assert File.exists?(Path.join(Store.requests_dir(packet_dir), name))
+      refute File.exists?(Store.request_outcome_path(packet_dir, name))
+    end
+
+    test "a steer is accepted durably before its command is emitted", %{packet_dir: packet_dir} do
+      {plane, run_ref} = open(packet_dir, max_steers: 1)
+
+      plane =
+        Plane.prompt_started(
+          plane,
+          %{num: "01", name: "One"},
+          :run,
+          1,
+          %{sdk: :simulated}
+        )
+
+      :ok = Control.steer(run_ref, "look here", author: "ada")
+      [{name, {:ok, _request}}] = Store.pending_requests(packet_dir)
+
+      assert {_plane, [{:steer, "look here", "ada"}]} = Plane.boundary(plane)
+
+      outcome = Store.request_outcome_path(packet_dir, name) |> File.read!() |> Jason.decode!()
+      assert outcome["outcome"] == "accepted"
+      refute File.exists?(Path.join(Store.requests_dir(packet_dir), name))
+    end
   end
 
   describe "subscribe/3" do
@@ -255,14 +360,35 @@ defmodule PromptRunner.ControlTest do
       refute_receive {:prompt_runner_event, ^ref, _event}, 300
     end
 
-    test "a fresh run truncates the stream a subscriber replays", %{packet_dir: packet_dir} do
-      {plane, _ref} = open(packet_dir)
+    test "a fresh run archives rather than truncates the prior stream", %{packet_dir: packet_dir} do
+      {plane, first_ref} = open(packet_dir)
       Plane.observe(plane, %{type: :run_started, data: %{model: "first"}})
+      previous = File.read!(Store.events_path(packet_dir))
 
       {_plane, run_ref} = open(packet_dir)
 
+      assert File.read!(Store.archived_events_path(packet_dir, elem(first_ref, 1))) == previous
+
       assert {:ok, ref} = Control.subscribe(run_ref, self(), interval_ms: 20)
       refute_receive {:prompt_runner_event, ^ref, %{"data" => %{"model" => "first"}}}, 300
+    end
+
+    test "reopening the same run id only appends and preserves the existing prefix", %{
+      packet_dir: packet_dir
+    } do
+      run_id = "20260810T120000Z-resume"
+      plane = Plane.open(packet_dir, packet: "demo", run_id: run_id)
+
+      Plane.observe(plane, %{type: :message_streamed, data: %{delta: String.duplicate("x", 4096)}})
+
+      prefix = File.read!(Store.events_path(packet_dir))
+
+      resumed = Plane.open(packet_dir, packet: "demo", run_id: run_id)
+      Plane.observe(resumed, %{type: :message_streamed, data: %{delta: "later"}})
+      after_resume = File.read!(Store.events_path(packet_dir))
+
+      assert byte_size(after_resume) > byte_size(prefix)
+      assert binary_part(after_resume, 0, byte_size(prefix)) == prefix
     end
   end
 

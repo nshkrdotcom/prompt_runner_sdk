@@ -15,8 +15,9 @@ defmodule PromptRunner.Verifier.Doc do
         forbids_markers: ["TODO", "TBD", "FIXME"]
   ```
 
-  - `min_lines` counts **non-blank** lines and defaults to 1, so a bare
-    `doc: ["docs/report.md"]` still rejects an empty file.
+  - `min_lines` is an advisory size signal, never a correctness threshold. A
+    bare `doc: ["docs/report.md"]` still rejects a blank file, but dense correct
+    work is not rejected for missing an invented line quota.
   - `requires_sections` matches verbatim substrings, so heading level and
     wording are both asserted.
   - `forbids_markers` defaults to `#{inspect(~w(TODO TBD FIXME XXX))}`. An
@@ -27,7 +28,7 @@ defmodule PromptRunner.Verifier.Doc do
   `repo:` key or through the prompt's default repository.
   """
 
-  @default_markers ~w(TODO TBD FIXME XXX)
+  @default_markers ["TODO", "TBD", "FIXME", "XXX", "...placeholder", "<fill in>", "LOREM"]
   @default_min_lines 1
 
   @doc "Returns the default forbidden marker set applied when `forbids_markers` is omitted."
@@ -97,11 +98,12 @@ defmodule PromptRunner.Verifier.Doc do
     lines = non_blank_lines(content)
     missing = Enum.reject(spec.requires_sections, &String.contains?(content, &1))
     markers = markers(content, spec.forbids_markers)
-    problems = problems(lines, spec.min_lines, missing, markers)
+    problems = problems(lines, missing, markers)
 
     base(resolved, spec)
     |> Map.merge(%{
       lines: lines,
+      below_recommendation?: lines < spec.min_lines,
       missing_sections: missing,
       markers: markers,
       pass?: problems == [],
@@ -149,24 +151,24 @@ defmodule PromptRunner.Verifier.Doc do
   end
 
   defp marker_hit(numbered, marker) do
-    case Enum.find(numbered, fn {line, _number} -> String.contains?(line, marker) end) do
+    pattern =
+      ~r/^\s*(?:[-*+]\s+|[#]{1,6}\s+)?#{Regex.escape(marker)}(?:\b|\s|$)/
+
+    case Enum.find(numbered, fn {line, _number} -> Regex.match?(pattern, line) end) do
       {_line, number} -> [%{marker: marker, line: number}]
       nil -> []
     end
   end
 
-  defp problems(lines, min_lines, missing, markers) do
+  defp problems(lines, missing, markers) do
     []
-    |> line_problem(lines, min_lines)
+    |> blank_problem(lines)
     |> section_problem(missing)
     |> marker_problem(markers)
   end
 
-  defp line_problem(problems, lines, min_lines) when lines < min_lines do
-    problems ++ ["#{lines} non-blank lines, needs #{min_lines}"]
-  end
-
-  defp line_problem(problems, _lines, _min_lines), do: problems
+  defp blank_problem(problems, 0), do: problems ++ ["document is blank"]
+  defp blank_problem(problems, _lines), do: problems
 
   defp section_problem(problems, []), do: problems
 

@@ -104,6 +104,52 @@ defmodule PromptRunner.RunnerTargetSelectionTest do
              PromptRunner.Runner.build_targets_for_test(plan, [run: true, all: true], [])
   end
 
+  test "--through is an exact upper bound", %{root: root} do
+    {:ok, plan} = PromptRunner.plan(root, interface: :cli)
+
+    assert {:ok, ["01", "02"]} =
+             PromptRunner.Runner.build_targets_for_test(
+               plan,
+               [run: true, all: true, through: "02"],
+               []
+             )
+  end
+
+  test "bounds select the packet range without requiring a redundant --all", %{root: root} do
+    {:ok, plan} = PromptRunner.plan(root, interface: :cli)
+
+    assert {:ok, ["02", "03"]} =
+             PromptRunner.Runner.build_targets_for_test(
+               plan,
+               [run: true, from: "02", through: "03"],
+               []
+             )
+  end
+
+  test "--from and --through form an inclusive range", %{root: root} do
+    {:ok, plan} = PromptRunner.plan(root, interface: :cli)
+
+    assert {:ok, ["02"]} =
+             PromptRunner.Runner.build_targets_for_test(
+               plan,
+               [run: true, all: true, from: "02", through: "02"],
+               []
+             )
+  end
+
+  test "an unknown range endpoint fails instead of shortening the run", %{root: root} do
+    {:ok, plan} = PromptRunner.plan(root, interface: :cli)
+
+    assert {:error, {:unknown_prompt_bound, :through, "99", known}} =
+             PromptRunner.Runner.build_targets_for_test(
+               plan,
+               [run: true, all: true, through: "99"],
+               []
+             )
+
+    assert "03" in known
+  end
+
   test "no ids and no selector is an error rather than a silent empty run", %{root: root} do
     assert {:error, :no_target} = targets(root, [])
   end

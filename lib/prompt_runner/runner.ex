@@ -19,9 +19,11 @@ defmodule PromptRunner.Runner do
   alias PromptRunner.Rendering.Sinks.{CallbackSink, FileSink, JSONLSink, TTYSink}
   alias PromptRunner.RepoTargets
   alias PromptRunner.Run
+  alias PromptRunner.RunLifecycle
   alias PromptRunner.RunLock
   alias PromptRunner.Runtime
   alias PromptRunner.RuntimeStore.FileStore
+  alias PromptRunner.Scheduler
   alias PromptRunner.UI
   alias PromptRunner.Validator
   alias PromptRunner.Verifier
@@ -104,10 +106,17 @@ defmodule PromptRunner.Runner do
         end
 
       opts[:run] ->
-        with {:ok, _report} <- maybe_preflight_plan(plan, opts),
+        with :ok <- Scheduler.validate(plan),
+             {:ok, _report} <- maybe_preflight_plan(plan, opts),
              {:ok, targets} <- build_targets(plan, opts, remaining) do
           announce_empty_selection(targets, opts)
-          run_supervised(plan, targets, opts[:no_commit] || false, run_context(opts, remaining))
+
+          run_supervised(
+            plan,
+            targets,
+            opts[:no_commit] || false,
+            run_context(plan, opts, remaining)
+          )
         end
 
       true ->
@@ -131,30 +140,62 @@ defmodule PromptRunner.Runner do
   # Naming a prompt explicitly is a request to run it, so pre-flight verification
   # is off for explicit ids and on for `--remaining`, where the whole point is to
   # not redo finished work. `--verify-first` states it either way.
-  defp run_context(opts, remaining) do
+  defp run_context(plan, opts, remaining) do
+    plan_options = plan.options
+    failure_policy = plan_options[:failure_policy] || plan_options["failure_policy"]
+
     %{
-      keep_going?: opts[:keep_going] == true,
+      keep_going?: opts[:keep_going] == true or failure_policy == "continue_independent",
       verify_first?:
         case opts[:verify_first] do
           value when is_boolean(value) -> value
           _ -> remaining == [] and opts[:remaining] == true
-        end
+        end,
+      selection: %{
+        all: opts[:all] == true,
+        remaining: opts[:remaining] == true,
+        phase: opts[:phase],
+        from: opts[:from],
+        through: opts[:through],
+        explicit: remaining
+      }
     }
   end
 
   defp run_supervised(plan, targets, skip_commit, context) do
-    with_pid_file(plan, fn ->
-      with_control_plane(plan, fn -> run_targets(plan, targets, skip_commit, context) end)
-    end)
+    with_pid_file(plan, fn -> open_supervised_run(plan, targets, skip_commit, context) end)
+  end
+
+  defp open_supervised_run(plan, targets, skip_commit, context) do
+    with {:ok, run} <- RunLifecycle.open(plan, targets, context.selection),
+         :ok <- RunLifecycle.transition(run, "running") do
+      finish_supervised_run(plan, run, skip_commit, context)
+    end
+  end
+
+  defp finish_supervised_run(plan, run, skip_commit, context) do
+    result =
+      with_control_plane(plan, run, fn ->
+        run_targets(plan, run.targets, skip_commit, context)
+      end)
+
+    terminal_state = if match?({:error, _reason}, result), do: "failed", else: "completed"
+
+    case RunLifecycle.transition(run, terminal_state, %{result: inspect(result)}) do
+      :ok -> result
+      {:error, reason} -> {:error, {:run_journal_fault, reason, result}}
+    end
   end
 
   # The control plane is run-scoped mutable state on a single-process run, and
   # it is touched from inside the render loop's sink callbacks — the same shape
   # as the stream-result and closer tracking above it. Threading it functionally
   # through the whole attempt/recovery chain would buy nothing.
-  defp with_control_plane(plan, fun) do
+  defp with_control_plane(plan, run, fun) do
     put_plane(
       Plane.open(control_packet_dir(plan),
+        state_root: plan.state_dir,
+        run_id: run.run_id,
         packet: packet_label(plan),
         view: Config.view(plan.config),
         max_steers: RecoveryPolicy.max_steers(plan)
@@ -244,42 +285,49 @@ defmodule PromptRunner.Runner do
   end
 
   defp run_targets_fail_fast(plan, targets, skip_commit, context) do
-    Enum.reduce_while(targets, :ok, fn num, _acc ->
-      case run_prompt(plan, num, skip_commit, context) do
-        :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
+    targets
+    |> Enum.reduce_while({:ok, %{}}, fn num, {:ok, outcomes} ->
+      fail_fast_step(plan, num, outcomes, skip_commit, context)
     end)
+    |> case do
+      {:ok, _outcomes} -> :ok
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp fail_fast_step(plan, num, outcomes, skip_commit, context) do
+    case Scheduler.blocked_dependencies(plan, num, outcomes) do
+      [] -> fail_fast_prompt(plan, num, outcomes, skip_commit, context)
+      blocked_by -> halt_blocked_prompt(plan, num, blocked_by)
+    end
+  end
+
+  defp fail_fast_prompt(plan, num, outcomes, skip_commit, context) do
+    case run_prompt(plan, num, skip_commit, context) do
+      :ok -> {:cont, {:ok, Map.put(outcomes, num, :completed)}}
+      {:error, reason} -> {:halt, {:error, reason}}
+    end
+  end
+
+  defp halt_blocked_prompt(plan, num, blocked_by) do
+    Runtime.mark_status(plan, num, "blocked_by_dependency", %{blocked_by: blocked_by})
+    {:halt, {:error, {:blocked_by_dependency, num, blocked_by}}}
   end
 
   defp run_targets_keep_going(plan, targets, skip_commit, context) do
     result =
-      Enum.reduce_while(targets, [], fn num, failures ->
-        case run_prompt(plan, num, skip_commit, context) do
-          :ok ->
-            {:cont, failures}
-
-          # A verifier fault means the contract did not execute. It is usually
-          # shared infrastructure (toolchain, permissions, missing executable),
-          # so attempting the rest can repeat the same expensive fault across
-          # an entire packet. Keep-going applies to prompt outcomes, not broken
-          # infrastructure.
-          {:error, {:verifier_fault, _faults} = reason} ->
-            {:halt, {:infrastructure_error, reason}}
-
-          {:error, reason} ->
-            {:cont, [%{prompt: num, reason: reason} | failures]}
-        end
+      Enum.reduce_while(targets, {[], %{}}, fn num, {failures, outcomes} ->
+        keep_going_step(plan, num, failures, outcomes, skip_commit, context)
       end)
 
     case result do
       {:infrastructure_error, reason} ->
         {:error, reason}
 
-      [] ->
+      {[], _outcomes} ->
         :ok
 
-      failures ->
+      {failures, _outcomes} ->
         failures = Enum.reverse(failures)
         IO.puts("")
 
@@ -292,32 +340,95 @@ defmodule PromptRunner.Runner do
     end
   end
 
+  defp keep_going_step(plan, num, failures, outcomes, skip_commit, context) do
+    case Scheduler.blocked_dependencies(plan, num, outcomes) do
+      [] -> keep_going_prompt(plan, num, failures, outcomes, skip_commit, context)
+      blocked_by -> continue_blocked_prompt(plan, num, blocked_by, failures, outcomes)
+    end
+  end
+
+  defp keep_going_prompt(plan, num, failures, outcomes, skip_commit, context) do
+    case run_prompt(plan, num, skip_commit, context) do
+      :ok ->
+        {:cont, {failures, Map.put(outcomes, num, :completed)}}
+
+      # A verifier fault means the contract did not execute. It is usually
+      # shared infrastructure, so keep-going must stop rather than repeat it.
+      {:error, {:verifier_fault, _faults} = reason} ->
+        {:halt, {:infrastructure_error, reason}}
+
+      {:error, reason} ->
+        failure = %{prompt: num, reason: reason}
+        {:cont, {[failure | failures], Map.put(outcomes, num, :failed)}}
+    end
+  end
+
+  defp continue_blocked_prompt(plan, num, blocked_by, failures, outcomes) do
+    Runtime.mark_status(plan, num, "blocked_by_dependency", %{blocked_by: blocked_by})
+    failure = %{prompt: num, reason: {:blocked_by_dependency, blocked_by}}
+    {:cont, {[failure | failures], Map.put(outcomes, num, :blocked)}}
+  end
+
   @doc false
   @spec build_targets_for_test(Plan.t(), keyword(), [String.t()]) ::
           {:ok, [String.t()]} | {:error, term()}
   def build_targets_for_test(plan, opts, remaining),
-    do: build_targets(plan, opts, remaining)
+    do: select_targets(plan, opts, remaining)
+
+  @doc false
+  @spec select_targets(Plan.t(), keyword(), [String.t()]) ::
+          {:ok, [String.t()]} | {:error, term()}
+  def select_targets(plan, opts, explicit_ids), do: build_targets(plan, opts, explicit_ids)
 
   defp build_targets(plan, opts, remaining) do
-    cond do
-      remaining != [] ->
-        explicit_targets(plan, remaining)
-
-      opts[:phase] ->
-        {:ok, Prompts.phase_nums(plan, opts[:phase])}
-
-      opts[:remaining] ->
-        Progress.remaining_checked(plan, Prompts.nums(plan))
-
-      opts[:continue] ->
-        continue_targets(plan)
-
-      opts[:all] ->
-        {:ok, Prompts.nums(plan)}
-
-      true ->
-        {:error, :no_target}
+    with {:ok, targets} <- unbounded_targets(plan, opts, remaining),
+         :ok <- validate_bound(plan, :from, opts[:from]),
+         :ok <- validate_bound(plan, :through, opts[:through]),
+         :ok <- validate_bound_order(plan, opts[:from], opts[:through]) do
+      bounded = apply_bounds(plan, targets, opts[:from], opts[:through])
+      Scheduler.order(plan, bounded)
     end
+  end
+
+  defp unbounded_targets(plan, opts, remaining) do
+    cond do
+      remaining != [] -> explicit_targets(plan, remaining)
+      opts[:phase] -> {:ok, Prompts.phase_nums(plan, opts[:phase])}
+      opts[:remaining] -> Progress.remaining_checked(plan, Prompts.nums(plan))
+      opts[:continue] -> continue_targets(plan)
+      opts[:all] -> {:ok, Prompts.nums(plan)}
+      opts[:from] || opts[:through] -> {:ok, Prompts.nums(plan)}
+      true -> {:error, :no_target}
+    end
+  end
+
+  defp validate_bound(_plan, _name, nil), do: :ok
+
+  defp validate_bound(plan, name, id) do
+    known = Prompts.nums(plan)
+    if id in known, do: :ok, else: {:error, {:unknown_prompt_bound, name, id, known}}
+  end
+
+  defp validate_bound_order(_plan, nil, _through), do: :ok
+  defp validate_bound_order(_plan, _from, nil), do: :ok
+
+  defp validate_bound_order(plan, from, through) do
+    positions = plan.prompts |> Enum.map(& &1.num) |> Enum.with_index() |> Map.new()
+
+    if Map.fetch!(positions, from) <= Map.fetch!(positions, through),
+      do: :ok,
+      else: {:error, {:invalid_prompt_bounds, from, through}}
+  end
+
+  defp apply_bounds(plan, targets, from, through) do
+    positions = plan.prompts |> Enum.map(& &1.num) |> Enum.with_index() |> Map.new()
+    lower = if from, do: Map.fetch!(positions, from), else: 0
+    upper = if through, do: Map.fetch!(positions, through), else: map_size(positions) - 1
+
+    Enum.filter(targets, fn id ->
+      position = Map.fetch!(positions, id)
+      position >= lower and position <= upper
+    end)
   end
 
   defp continue_targets(plan) do
@@ -801,7 +912,10 @@ defmodule PromptRunner.Runner do
       IO.puts("")
     end
 
-    prompt_content = prompt_content(ctx.prompt, ctx.prompt_path)
+    prompt_content =
+      ctx.prompt
+      |> prompt_content(ctx.prompt_path)
+      |> rewrite_workspace_paths(ctx.plan)
 
     IO.puts(UI.yellow("Prompt preview (first #{@prompt_preview_lines} lines):"))
 
@@ -1105,7 +1219,9 @@ defmodule PromptRunner.Runner do
       prompt: prompt,
       prompt_path: prompt_path(plan, prompt),
       llm:
-        Config.llm_for_prompt(plan.config, prompt)
+        plan.config
+        |> Config.llm_for_prompt(prompt)
+        |> PromptRunner.PathRewriter.deep(workspace_path_rewrites(plan))
         |> Map.put(:attempt, attempt)
         |> Map.put(:mode, mode)
         |> Map.put(:prompt_id, prompt.num)
@@ -2474,6 +2590,14 @@ defmodule PromptRunner.Runner do
 
   defp prompt_content(%{body: body}, _path) when is_binary(body), do: body
   defp prompt_content(_prompt, path), do: File.read!(path)
+
+  defp rewrite_workspace_paths(text, plan) do
+    PromptRunner.PathRewriter.text(text, workspace_path_rewrites(plan))
+  end
+
+  defp workspace_path_rewrites(%Plan{options: options}) when is_map(options) do
+    Map.get(options, :path_rewrites, %{})
+  end
 
   defp open_log_device(%PromptRunner.Plan{runtime_store: {module, state}}, num, timestamp) do
     paths = module.log_paths(state, num, timestamp)
