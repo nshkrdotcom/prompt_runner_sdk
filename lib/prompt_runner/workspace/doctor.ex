@@ -25,18 +25,19 @@ defmodule PromptRunner.Workspace.Doctor do
         capability_report.ready? and containment.ready? and
         toolchains.ready? and artifacts.ready?
 
-    {:ok,
-     %{
-       schema: "prompt_runner.workspace.doctor/v1",
-       workspace: plan.manifest.id,
-       ready?: ready?,
-       repositories: repo_reports,
-       capabilities: capability_report,
-       containment: containment,
-       toolchains: toolchains,
-       artifacts: artifacts,
-       checked_at: DateTime.utc_now() |> DateTime.to_iso8601()
-     }}
+    report = %{
+      schema: "prompt_runner.workspace.doctor/v1",
+      workspace: plan.manifest.id,
+      ready?: ready?,
+      repositories: repo_reports,
+      capabilities: capability_report,
+      containment: containment,
+      toolchains: toolchains,
+      artifacts: artifacts,
+      checked_at: DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+
+    {:ok, json_safe(report)}
   end
 
   defp check_repo(repo, opts) do
@@ -189,4 +190,16 @@ defmodule PromptRunner.Workspace.Doctor do
       {:error, _reason} -> false
     end
   end
+
+  defp json_safe(value) when is_tuple(value) do
+    value |> Tuple.to_list() |> Enum.map(&json_safe/1)
+  end
+
+  defp json_safe(value) when is_list(value), do: Enum.map(value, &json_safe/1)
+
+  defp json_safe(value) when is_map(value) do
+    Map.new(value, fn {key, item} -> {key, json_safe(item)} end)
+  end
+
+  defp json_safe(value), do: value
 end

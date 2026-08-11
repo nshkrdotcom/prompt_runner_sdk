@@ -200,8 +200,9 @@ defmodule PromptRunner.WorkspaceTest do
     assert report.ready?
     assert report.repositories["app"].ready?
 
-    assert [dirty_resumable_workspace: paths] = report.repositories["app"].warnings
+    assert [[:dirty_resumable_workspace, paths]] = report.repositories["app"].warnings
     assert paths =~ "DIRTY.txt"
+    assert is_binary(Jason.encode!(report))
   end
 
   test "prepare builds declared contract escripts once and doctor verifies the installed artifact",
