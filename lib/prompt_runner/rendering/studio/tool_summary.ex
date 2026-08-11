@@ -128,17 +128,31 @@ defmodule PromptRunner.Rendering.Studio.ToolSummary do
     bash_summary(input, status, Map.get(tool_info, :exit_code), output_size, duration)
   end
 
+  defp summary_line_for("Read", input, _output, :failed, _duration, _output_size, _tool_info) do
+    "Read failed: #{shorten_path(path_from_input(input))}"
+  end
+
   defp summary_line_for("Read", input, output, _status, _duration, _output_size, _tool_info) do
     "Read #{shorten_path(path_from_input(input))} (#{line_count(output)} lines)"
   end
 
-  defp summary_line_for("Write", input, _output, _status, _duration, _output_size, _tool_info) do
-    content = input_value(input, "content") || ""
-    "Wrote #{shorten_path(path_from_input(input))} (#{line_count(content)} lines)"
+  # A failed write is not a write. These ignored `status` entirely, so a tool
+  # call that failed rendered as `✗ Edited lib/thing.ex` — the icon saying
+  # failure and the verb saying success, in the same line.
+  defp summary_line_for("Write", input, _output, status, _duration, _output_size, _tool_info) do
+    path = shorten_path(path_from_input(input))
+
+    if status == :failed do
+      "Write failed: #{path}"
+    else
+      content = input_value(input, "content") || ""
+      "Wrote #{path} (#{line_count(content)} lines)"
+    end
   end
 
-  defp summary_line_for("Edit", input, _output, _status, _duration, _output_size, _tool_info) do
-    "Edited #{shorten_path(path_from_input(input))}"
+  defp summary_line_for("Edit", input, _output, status, _duration, _output_size, _tool_info) do
+    path = shorten_path(path_from_input(input))
+    if status == :failed, do: "Edit failed: #{path}", else: "Edited #{path}"
   end
 
   defp summary_line_for("Glob", input, output, _status, _duration, _output_size, _tool_info) do

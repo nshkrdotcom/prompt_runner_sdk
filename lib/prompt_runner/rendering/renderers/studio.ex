@@ -6,6 +6,7 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
   @behaviour PromptRunner.Rendering.Renderer
 
   alias PromptRunner.Rendering.Studio.ANSI
+  alias PromptRunner.Rendering.Studio.Diff
   alias PromptRunner.Rendering.Studio.ToolSummary
 
   @type state :: %{
@@ -33,6 +34,8 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
        color: Keyword.get(opts, :color, true),
        tool_output: tool_output,
        thinking: Keyword.get(opts, :thinking, :show),
+       diff: normalize_diff(Keyword.get(opts, :diff, :stat)),
+       cwd: Keyword.get(opts, :cwd),
        show_spinner: Keyword.get(opts, :show_spinner, true),
        indent: Keyword.get(opts, :indent, 2),
        is_tty: is_tty,
@@ -82,6 +85,12 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
         _other -> state
       end
 
+    state =
+      case Map.fetch(view, :diff) do
+        {:ok, diff} -> %{state | diff: normalize_diff(diff)}
+        :error -> state
+      end
+
     {:ok, state}
   end
 
@@ -122,12 +131,12 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
 
   defp render(%{type: type, data: data}, state)
        when type in [:tool_call_completed, :tool_call_failed] do
-    tool_info = build_tool_info(state.current_tool, data)
+    tool_info = build_tool_info(state.current_tool, data, type)
     summary = ToolSummary.summary_line(tool_info)
     icon = status_icon(tool_info, state)
     clear = if state.is_tty, do: ANSI.clear_line(), else: []
-    line = [indent(state), icon, " ", summary, "\n"]
-    extras = render_tool_output(tool_info, state)
+    line = [indent(state), icon, " ", summary, diff_stat(tool_info, state), "\n"]
+    extras = [render_tool_output(tool_info, state), render_diff(tool_info, state)]
 
     {[clear, line, extras], %{state | phase: :idle, current_tool: nil}}
   end
@@ -224,6 +233,25 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
   defp close_text_block(%{phase: :text} = state), do: {"\n", %{state | phase: :idle}}
   defp close_text_block(state), do: {[], state}
 
+  # A stat suffix, and only for a change that actually carries one. A tool whose
+  # event names a path and nothing else has no counts to show and must not
+  # imply it does.
+  defp diff_stat(_tool_info, %{diff: :none}), do: []
+  defp diff_stat(tool_info, _state), do: Diff.stat_suffix(tool_info)
+
+  defp render_diff(_tool_info, %{diff: diff}) when diff in [:none, :stat], do: []
+
+  defp render_diff(tool_info, %{diff: :full} = state) do
+    Diff.render(tool_info,
+      color: state.color,
+      indent: state.indent + 2,
+      cwd: state.cwd
+    )
+  end
+
+  defp normalize_diff(diff) when diff in [:none, :stat, :full], do: diff
+  defp normalize_diff(_diff), do: :stat
+
   defp render_tool_output(_tool_info, %{tool_output: :summary}), do: []
 
   defp render_tool_output(tool_info, %{tool_output: :preview} = state) do
@@ -252,13 +280,18 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
     end)
   end
 
-  defp build_tool_info(current_tool, data) do
+  # The event *type* is the first authority on whether a call failed. It used to
+  # be ignored entirely: a `:tool_call_failed` carries `is_error: true` and
+  # usually no `status` or `exit_code`, so a failed call rendered with a success
+  # icon and a success verb.
+  defp build_tool_info(current_tool, data, type) do
     name = map_get(data, :tool_name) || map_get(current_tool, :name) || "tool"
     input = map_get(data, :tool_input) || map_get(current_tool, :input) || %{}
     output = map_get(data, :tool_output)
     exit_code = map_get(data, :exit_code) || map_get(output, :exit_code)
     duration_ms = map_get(data, :duration_ms) || map_get(output, :duration_ms)
-    status = normalize_status(map_get(data, :status) || map_get(output, :status), exit_code)
+
+    status = tool_status(type, data, output, exit_code)
 
     %{
       name: name,
@@ -268,6 +301,16 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
       duration_ms: duration_ms,
       status: status
     }
+  end
+
+  defp tool_status(:tool_call_failed, _data, _output, _exit_code), do: :failed
+
+  defp tool_status(_type, data, output, exit_code) do
+    if map_get(data, :is_error) == true do
+      :failed
+    else
+      normalize_status(map_get(data, :status) || map_get(output, :status), exit_code)
+    end
   end
 
   defp status_icon(%{status: :failed}, state), do: ANSI.red(ANSI.failure(), state.color)

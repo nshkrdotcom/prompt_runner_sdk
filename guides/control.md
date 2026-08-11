@@ -83,7 +83,7 @@ prompt_runner control view demo --log-mode studio --thinking hide
 | `log_mode` | `compact`, `verbose`, `studio` | which renderer is running |
 | `tool_output` | `none`, `summary`, `preview`, `full` | how much of a tool's output is shown |
 | `thinking` | `show`, `hide` | whether a reasoning model's thinking is printed |
-| `diff` | `none`, `stat`, `full` | how file changes are rendered |
+| `diff` | `none`, `stat`, `full` | how file changes are rendered (see below) |
 
 `:ok` means the request was accepted for delivery, not that it has been applied.
 The runner consumes requests **at event boundaries** — never mid-event, because
@@ -161,6 +161,40 @@ flagged, not disqualified.
 pause is to think, or to stop for the night — and a held provider process dies
 silently to provider idle limits and to `run_deadline_ms`, with the death
 discovered only on resume.
+
+## Seeing what changed on disk
+
+`diff` decides how a file change is rendered, and there are two genuinely
+different cases behind it.
+
+**The patch is in the event.** A Claude `Edit` carries `old_string` and
+`new_string`; a `Write` carries the whole `content`. The diff is derivable from
+the event alone — no filesystem access, no ambiguity, and it stays correct even
+if the file changed again afterwards.
+
+**Only the path is in the event.** A Codex `file_change` item and an
+Antigravity `replace_file_content` name the file and the kind of change and
+nothing else. The honest options are a `git diff` on that path, or a stat line.
+A `git diff` is cheap and accurate *at the moment it runs* — but it shows the
+file's current state, which after several edits in one turn is not the diff of
+that one tool call.
+
+**The rule: never present a reconstructed diff as if it were the tool's own
+patch.**
+
+| setting | patch in the event | path only |
+|---------|--------------------|-----------|
+| `none` | nothing | nothing |
+| `stat` | `✓ Edited lib/a.ex  +12 −3` | `✓ Edited lib/a.ex` |
+| `full` | the patch, indented | a `git diff`, labelled `(current state of lib/a.ex, not this call's change)` |
+
+At `:full` the body is capped at a line budget and truncation is always
+explicit — a truncated diff that looks complete is worse than no diff.
+
+```bash
+prompt_runner control view demo --diff full
+prompt_runner run demo --log-mode studio --diff full
+```
 
 ## The control directory
 

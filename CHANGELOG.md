@@ -66,6 +66,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `run_deadline_ms`.
 - `c:PromptRunner.LLM.steer/3`, so steering goes through the same seam as
   streaming rather than reaching past it into `PromptRunner.Session`.
+- Diff rendering, as the `diff` view setting (`none` | `stat` | `full`,
+  default `stat`) and the `--diff` flag. A Claude `Edit` or `Write` carries its
+  own patch, so it renders from the event alone — no filesystem read, correct
+  even if the file changed again afterwards. A Codex `file_change` or an
+  Antigravity `replace_file_content` carries only a path, so `:full` renders a
+  `git diff` explicitly labelled as the file's *current state*, never as that
+  call's change. Truncation is always marked: a truncated diff that looks
+  complete is worse than no diff.
 - `mix prompt_runner run PACKET --remaining`, and `remaining: true` on
   `PromptRunner.run/2`.
   Runs every prompt whose recorded status is not `completed`, in order,
@@ -110,6 +118,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A failed tool call no longer renders as a successful one. The studio renderer
+  ignored the event type: a `:tool_call_failed` carries `is_error: true` and
+  usually no `status` or `exit_code`, so a failed edit came out as
+  `✗ Edited lib/a.ex` — the icon saying failure and the verb saying success —
+  and a failed call with no `exit_code` at all came out with a success icon.
+  The event type is now the first authority, and `Edit`, `Write`, and `Read`
+  render a failure as a failure.
 - A verifier that cannot run is no longer read as failed work. Exit 126 and 127
   are classified `verifier_fault` and exit 124 `verifier_timeout`, distinct from
   a contract failure. A fault halts the run naming the command and its cwd,

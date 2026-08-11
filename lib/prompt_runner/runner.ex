@@ -1021,7 +1021,7 @@ defmodule PromptRunner.Runner do
 
   defp recovery_context(ctx, llm_meta, log_ctx) do
     %{
-      renderer: renderer_for_view(Plane.view(plane())),
+      renderer: renderer_for_view(Plane.view(plane()), ctx.llm.cwd),
       sinks: build_sinks(ctx.plan, log_ctx.log_io, log_ctx.events_file, ctx.llm),
       llm: ctx.llm,
       llm_meta: llm_meta,
@@ -1094,7 +1094,7 @@ defmodule PromptRunner.Runner do
     settings = {:set_view, Map.take(view, [:tool_output, :thinking, :diff])}
 
     if Map.has_key?(updates, :log_mode) do
-      [settings, {:renderer, renderer_for_view(view)} | rendering]
+      [settings, {:renderer, renderer_for_view(view, steer_cwd())} | rendering]
     else
       [settings | rendering]
     end
@@ -1127,6 +1127,13 @@ defmodule PromptRunner.Runner do
   end
 
   defp apply_control_command(_command, rendering), do: rendering
+
+  defp steer_cwd do
+    case Process.get(:prompt_runner_steer_context) do
+      %{llm: %{cwd: cwd}} -> cwd
+      _other -> nil
+    end
+  end
 
   defp deliver_steer(text, author) do
     case Process.get(:prompt_runner_steer_context) do
@@ -1183,13 +1190,24 @@ defmodule PromptRunner.Runner do
   # Keyed on the live view rather than on the config, so a `log_mode` change
   # arriving through the control plane picks the same renderer a launch flag
   # would have.
-  defp renderer_for_view(%{log_mode: :studio} = view),
-    do: {StudioRenderer, [tool_output: view.tool_output, thinking: view.thinking]}
+  # `cwd` is only for the diff renderer, and only for the path-only case where
+  # the only way to show anything is a `git diff` in the repository the tool
+  # was working in.
+  defp renderer_for_view(%{log_mode: :studio} = view, cwd) do
+    {StudioRenderer,
+     [
+       tool_output: view.tool_output,
+       thinking: view.thinking,
+       diff: Map.get(view, :diff, :stat),
+       cwd: cwd
+     ]}
+  end
 
-  defp renderer_for_view(%{log_mode: :verbose} = view),
+  defp renderer_for_view(%{log_mode: :verbose} = view, _cwd),
     do: {VerboseRenderer, [thinking: view.thinking]}
 
-  defp renderer_for_view(view), do: {CompactRenderer, [thinking: Map.get(view, :thinking, :show)]}
+  defp renderer_for_view(view, _cwd),
+    do: {CompactRenderer, [thinking: Map.get(view, :thinking, :show)]}
 
   defp print_prompt_header(plan, prompt, llm, log_file) do
     config = plan.config

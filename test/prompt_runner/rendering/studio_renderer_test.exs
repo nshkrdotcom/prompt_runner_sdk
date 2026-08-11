@@ -3,14 +3,16 @@ defmodule PromptRunner.Rendering.StudioRendererTest do
 
   alias PromptRunner.Rendering.Renderers.StudioRenderer
 
-  defp new_state do
-    {:ok, state} = StudioRenderer.init(color: false, tty: false, show_spinner: false)
+  defp new_state(opts) do
+    {:ok, state} =
+      StudioRenderer.init(Keyword.merge([color: false, tty: false, show_spinner: false], opts))
+
     state
   end
 
-  defp render(events) do
+  defp render(events, opts \\ []) do
     {output, _state} =
-      Enum.reduce(events, {[], new_state()}, fn event, {acc, state} ->
+      Enum.reduce(events, {[], new_state(opts)}, fn event, {acc, state} ->
         {:ok, iodata, state} = StudioRenderer.render_event(event, state)
         {[acc, iodata], state}
       end)
@@ -19,6 +21,104 @@ defmodule PromptRunner.Rendering.StudioRendererTest do
   end
 
   defp event(type, data), do: %{type: type, data: data}
+
+  describe "file changes" do
+    test "an Edit's stat comes from the event and appears on the summary line" do
+      output =
+        render([
+          event(:tool_call_started, %{
+            tool_name: "Edit",
+            tool_call_id: "t1",
+            tool_input: %{
+              "file_path" => "lib/a.ex",
+              "old_string" => "x\n",
+              "new_string" => "y\nz\n"
+            }
+          }),
+          event(:tool_call_completed, %{tool_call_id: "t1", tool_output: ""})
+        ])
+
+      assert output =~ "Edited lib/a.ex"
+      assert output =~ "+2"
+      assert output =~ "−1"
+    end
+
+    test "at diff: full the patch follows, indented" do
+      output =
+        render(
+          [
+            event(:tool_call_started, %{
+              tool_name: "Edit",
+              tool_call_id: "t1",
+              tool_input: %{
+                "file_path" => "lib/a.ex",
+                "old_string" => "old line\n",
+                "new_string" => "new line\n"
+              }
+            }),
+            event(:tool_call_completed, %{tool_call_id: "t1", tool_output: ""})
+          ],
+          diff: :full
+        )
+
+      assert output =~ "- old line"
+      assert output =~ "+ new line"
+    end
+
+    test "at diff: none neither the stat nor the patch appears" do
+      output =
+        render(
+          [
+            event(:tool_call_started, %{
+              tool_name: "Edit",
+              tool_call_id: "t1",
+              tool_input: %{
+                "file_path" => "lib/a.ex",
+                "old_string" => "x\n",
+                "new_string" => "y\n"
+              }
+            }),
+            event(:tool_call_completed, %{tool_call_id: "t1", tool_output: ""})
+          ],
+          diff: :none
+        )
+
+      assert output =~ "Edited lib/a.ex"
+      refute output =~ "+1"
+      refute output =~ "- x"
+    end
+
+    # The icon said failure and the verb said success, on the same line.
+    test "a failed edit does not render the word Edited" do
+      output =
+        render([
+          event(:tool_call_started, %{
+            tool_name: "Edit",
+            tool_call_id: "t1",
+            tool_input: %{"file_path" => "lib/a.ex"}
+          }),
+          event(:tool_call_failed, %{tool_call_id: "t1", tool_output: "boom", is_error: true})
+        ])
+
+      refute output =~ "Edited"
+      assert output =~ "Edit failed: lib/a.ex"
+    end
+
+    test "a failed write does not render the word Wrote" do
+      output =
+        render([
+          event(:tool_call_started, %{
+            tool_name: "Write",
+            tool_call_id: "t1",
+            tool_input: %{"file_path" => "lib/a.ex", "content" => "x\n"}
+          }),
+          event(:tool_call_failed, %{tool_call_id: "t1", tool_output: "boom", is_error: true})
+        ])
+
+      refute output =~ "Wrote"
+      assert output =~ "Write failed: lib/a.ex"
+    end
+  end
 
   describe "the session header" do
     test "names the model the run actually launched with" do
