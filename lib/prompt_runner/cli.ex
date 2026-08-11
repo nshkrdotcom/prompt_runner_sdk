@@ -40,6 +40,7 @@ defmodule PromptRunner.CLI do
   @run_switches [
     all: :boolean,
     remaining: :boolean,
+    new_run: :boolean,
     verify_first: :boolean,
     keep_going: :boolean,
     phase: :integer,
@@ -1234,7 +1235,7 @@ defmodule PromptRunner.CLI do
   end
 
   defp boolean_run_argv(opts) do
-    ~w(all remaining verify_first keep_going no_commit dry_run skip_preflight)a
+    ~w(all remaining new_run verify_first keep_going no_commit dry_run skip_preflight)a
     |> Enum.flat_map(fn key ->
       if opts[key], do: ["--#{String.replace(to_string(key), "_", "-")}"], else: []
     end)
@@ -1449,7 +1450,7 @@ defmodule PromptRunner.CLI do
       prompt_runner workspace prepare MANIFEST
       prompt_runner workspace doctor MANIFEST
       prompt_runner workspace import-state MANIFEST PACKET_DIR [--source PROGRESS_FILE]
-      prompt_runner start --workspace MANIFEST --packet PACKET_DIR --remaining [--from ID] [--through ID]
+      prompt_runner start --workspace MANIFEST --packet PACKET_DIR --remaining [--new-run] [--from ID] [--through ID]
       prompt_runner status --workspace MANIFEST [--json]
       prompt_runner watch --workspace MANIFEST [--for 240m] [--every 10m]
         [--require-running] [--require-progress] [--progress-timeout 60m] [--json]
@@ -1459,7 +1460,7 @@ defmodule PromptRunner.CLI do
       prompt_runner list [PACKET_DIR]
       prompt_runner plan [PACKET_DIR] [--provider PROVIDER] [--model MODEL]
       prompt_runner run [PACKET_DIR] [PROMPT_ID...] [--skip-preflight] [--dry-run]
-      prompt_runner run [PACKET_DIR] --remaining [--verify-first | --no-verify-first] [--keep-going]
+      prompt_runner run [PACKET_DIR] --remaining [--new-run] [--verify-first | --no-verify-first] [--keep-going]
       prompt_runner verify [PACKET_DIR] [PROMPT_ID...] [--workspace MANIFEST] [--json]
       prompt_runner repair [--packet PACKET_DIR] PROMPT_ID
       prompt_runner status [PACKET_DIR]
@@ -1489,6 +1490,10 @@ defmodule PromptRunner.CLI do
     `--keep-going` records a prompt-local failure and continues with the rest of
     the selected prompts. The command still exits non-zero after the selection
     and reports every failed prompt. Without it, runs remain fail-fast.
+
+    `--new-run` explicitly supersedes a failed or interrupted run generation,
+    preserving its journal and prompt progress while accepting the current
+    packet fingerprint. Without that flag, a changed packet fails closed.
 
     """)
   end

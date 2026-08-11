@@ -198,6 +198,14 @@ defmodule PromptRunner.CLIFlagsTest do
     assert opts[:keep_going]
   end
 
+  test "new-run is an explicit declared run switch" do
+    assert {:ok, opts, ["packet"]} =
+             CLI.parse_run_options(["packet", "--remaining", "--new-run"])
+
+    assert opts[:remaining]
+    assert opts[:new_run]
+  end
+
   test "from and through are strict declared run switches" do
     assert {:ok, opts, ["packet"]} =
              CLI.parse_run_options(["packet", "--from", "2", "--through", "17"])

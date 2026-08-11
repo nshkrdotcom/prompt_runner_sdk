@@ -153,6 +153,21 @@ resume into a full rerun.
 When `--remaining` selects nothing, the run says so rather than exiting zero in
 silence.
 
+### Intentionally replacing a run generation
+
+A failed or interrupted run is bound to the packet content it started with.
+Changing a prompt, dependency edge, or contract makes an ordinary resume fail
+closed. After reviewing and committing that packet change, start a fresh run
+generation explicitly while preserving completed-prompt progress:
+
+```bash
+mix prompt_runner run demo --remaining --new-run
+```
+
+The prior run directory and append-only journal remain intact and receive a
+`run_superseded` record naming the new identity. `--new-run` is never inferred
+from a fingerprint mismatch; without the flag the mismatch remains an error.
+
 ### Pre-flight verification
 
 Under `--remaining`, each prompt's verify contract is evaluated *before* the

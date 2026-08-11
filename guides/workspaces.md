@@ -23,6 +23,12 @@ prompt_runner watch --workspace workspace.yml --for 240m --every 10m \
 prompt_runner stop --workspace workspace.yml
 ```
 
+If a reviewed packet upgrade intentionally changes the content fingerprint of
+a failed or interrupted run, add `--new-run` to `start`. This preserves the old
+append-only journal and completed-prompt progress while creating a fresh run
+identity. A fingerprint mismatch without explicit supersession still fails
+closed.
+
 `prepare` is the only materializing operation. It clones without hardlinks or
 Git alternates, refuses dirty existing clones, fast-forwards only, and builds
 declared contract escripts into the operator's workspace. `doctor` is read-only:

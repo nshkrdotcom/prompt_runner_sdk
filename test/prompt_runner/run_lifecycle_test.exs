@@ -52,4 +52,51 @@ defmodule PromptRunner.RunLifecycleTest do
     changed = %{plan | prompts: [%Prompt{num: "01", name: "Changed", file: "01.prompt.md"}]}
     assert {:error, :run_packet_fingerprint_changed} = RunLifecycle.open(changed, ["01"], %{})
   end
+
+  test "the same packet content resumes from a different operator clone path", %{plan: plan} do
+    assert {:ok, first} = RunLifecycle.open(plan, ["01"], %{})
+    assert :ok = RunLifecycle.transition(first, "failed")
+
+    relocated = %{
+      plan
+      | source_root: "/different/operator/clone/packet",
+        prompts:
+          Enum.map(plan.prompts, fn prompt ->
+            %{
+              prompt
+              | file: Path.join("/different/operator/clone/packet", Path.basename(prompt.file))
+            }
+          end)
+    }
+
+    assert {:ok, resumed} = RunLifecycle.open(relocated, ["01"], %{})
+    assert resumed.run_id == first.run_id
+  end
+
+  test "an explicit new run supersedes the old journal and keeps the progress store", %{
+    plan: plan,
+    state_dir: state_dir
+  } do
+    progress = Path.join(state_dir, "progress.log")
+    File.mkdir_p!(state_dir)
+    File.write!(progress, "01:completed:2026-08-10T00:00:00Z:no_session\n")
+
+    assert {:ok, first} = RunLifecycle.open(plan, ["01"], %{})
+    assert :ok = RunLifecycle.transition(first, "failed")
+
+    changed = %{plan | prompts: [%Prompt{num: "01", name: "Changed", body: "new body"}]}
+
+    assert {:ok, replacement} =
+             RunLifecycle.open(changed, ["01"], %{remaining: true, new_run: true})
+
+    refute replacement.run_id == first.run_id
+    assert File.read!(progress) == "01:completed:2026-08-10T00:00:00Z:no_session\n"
+
+    assert {:ok, records} = PromptRunner.RunJournal.read(first.journal_path)
+    assert %{"type" => "run_superseded", "data" => data} = List.last(records)
+    assert data["new_run_id"] == replacement.run_id
+
+    assert %{"state" => "superseded"} =
+             first.snapshot_path |> File.read!() |> Jason.decode!()
+  end
 end

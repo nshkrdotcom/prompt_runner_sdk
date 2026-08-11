@@ -10,6 +10,10 @@ defmodule PromptRunner.RunLifecycle do
   alias PromptRunner.RunJournal
 
   @active_states ~w(starting running failed faulted stopping stop_incomplete)
+  @fingerprint_prompt_fields ~w(
+    num phase sp name body target_repos commit_message template references required_reading
+    context_files depends_on validation_commands verify metadata
+  )a
 
   @type t :: %__MODULE__{
           run_id: String.t() | nil,
@@ -44,10 +48,15 @@ defmodule PromptRunner.RunLifecycle do
 
     with :ok <- File.mkdir_p(root),
          {:ok, current} <- read_snapshot(current_path) do
-      if resumable?(current) do
-        resume(plan, current_path, current, targets, selection)
-      else
-        create(plan, current_path, targets, selection)
+      cond do
+        explicit_new_run?(selection) and resumable?(current) ->
+          supersede_and_create(plan, current_path, current, targets, selection)
+
+        resumable?(current) ->
+          resume(plan, current_path, current, targets, selection)
+
+        true ->
+          create(plan, current_path, targets, selection)
       end
     end
   end
@@ -71,8 +80,7 @@ defmodule PromptRunner.RunLifecycle do
     end
   end
 
-  defp create(plan, current_path, targets, selection) do
-    run_id = random_id()
+  defp create(plan, current_path, targets, selection, run_id \\ random_id()) do
     run_dir = Path.join(Path.dirname(current_path), run_id)
     journal_path = Path.join(run_dir, "journal.jsonl")
     snapshot_path = Path.join(run_dir, "current.json")
@@ -108,6 +116,28 @@ defmodule PromptRunner.RunLifecycle do
          targets: targets,
          upper_fence: upper_fence
        }}
+    end
+  end
+
+  defp supersede_and_create(plan, current_path, current, targets, selection) do
+    new_run_id = random_id()
+    old_snapshot_path = current["snapshot_path"]
+    old_journal_path = Path.join(Path.dirname(old_snapshot_path), "journal.jsonl")
+
+    with {:ok, seq} <-
+           RunJournal.append(old_journal_path, current["run_id"], "run_superseded", %{
+             "reason" => "explicit_new_run",
+             "new_run_id" => new_run_id,
+             "new_packet_fingerprint" => packet_fingerprint(plan)
+           }),
+         superseded =
+           current
+           |> Map.put("state", "superseded")
+           |> Map.put("last_seq", seq)
+           |> Map.put("updated_at", timestamp()),
+         :ok <- write_snapshot(old_snapshot_path, Map.delete(superseded, "snapshot_path")),
+         :ok <- write_snapshot(current_path, superseded) do
+      create(plan, current_path, targets, selection, new_run_id)
     end
   end
 
@@ -160,6 +190,9 @@ defmodule PromptRunner.RunLifecycle do
 
   defp resumable?(_current), do: false
 
+  defp explicit_new_run?(selection),
+    do: selection[:new_run] == true or selection["new_run"] == true
+
   defp read_snapshot(path) do
     case File.read(path) do
       {:ok, contents} ->
@@ -191,9 +224,9 @@ defmodule PromptRunner.RunLifecycle do
 
   defp packet_fingerprint(plan) do
     payload =
-      {plan.source_root,
+      {:prompt_runner_packet_fingerprint_v2,
        Enum.map(plan.prompts, fn prompt ->
-         {prompt.num, prompt.name, Map.get(prompt, :file)}
+         prompt |> Map.from_struct() |> Map.take(@fingerprint_prompt_fields)
        end)}
 
     :crypto.hash(:sha256, :erlang.term_to_binary(payload)) |> Base.encode16(case: :lower)

@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Immutable per-run state, packet fingerprints, persisted lower/upper selection
   fences, append-only sequenced journals, torn-tail quarantine, and widening
   rejection on resume.
+- Explicit `--new-run` supersession for an intentionally upgraded packet. The
+  prior run journal remains immutable and receives a `run_superseded` record;
+  completed-prompt progress is preserved while the new run receives a fresh
+  identity and content fingerprint.
 - Durable control storage outside the packet checkout: atomic synced snapshots
   and requests, append-and-sync event/log streams, per-request outcome receipts,
   and non-destructive request handling when persistence fails.
@@ -56,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory from the operator-owned clone. Live control, steering records,
   run-local amendments, and contract inspection address the external workspace
   runtime through `--workspace`; none falls back to the author's checkout.
+- Packet fingerprints are content-based and independent of an operator's clone
+  path. Moving the same packet into an isolated workspace no longer looks like
+  a packet mutation, while real prompt or contract changes still fail closed.
 - `--version` and `-v` now use the version surface instead of falling through
   to unknown-command help, and JSON contract inspection serializes diff entries
   as structured objects instead of crashing on tuples.

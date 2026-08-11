@@ -154,6 +154,7 @@ defmodule PromptRunner.Runner do
       selection: %{
         all: opts[:all] == true,
         remaining: opts[:remaining] == true,
+        new_run: opts[:new_run] == true,
         phase: opts[:phase],
         from: opts[:from],
         through: opts[:through],
