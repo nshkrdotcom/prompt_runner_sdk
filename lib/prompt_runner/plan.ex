@@ -150,7 +150,7 @@ defmodule PromptRunner.Plan do
     config_dir = resolved_config_dir(result.source_root)
     target_repos = resolve_target_repos(opts, result, config_dir)
     project_dir = default_project_dir(target_repos, result, config_dir)
-    {log_mode, log_meta, events_mode, tool_output} = normalize_display(opts)
+    {log_meta, events_mode, view} = normalize_display(opts)
 
     %Config{
       config_dir: config_dir,
@@ -179,10 +179,9 @@ defmodule PromptRunner.Plan do
       max_turns: opts[:max_turns],
       cli_confirmation: option_or_default(opts, :cli_confirmation, :warn),
       timeout: opts[:timeout],
-      log_mode: log_mode,
       log_meta: log_meta,
       events_mode: events_mode,
-      tool_output: tool_output,
+      view: view,
       phase_names: Map.get(result, :phase_names, %{})
     }
   end
@@ -356,10 +355,14 @@ defmodule PromptRunner.Plan do
 
   defp normalize_display(opts) do
     {
-      normalize_atom_option(opts[:log_mode], :compact),
       normalize_atom_option(opts[:log_meta], :none),
       normalize_atom_option(opts[:events_mode], :compact),
-      normalize_atom_option(opts[:tool_output], :summary)
+      %{
+        log_mode: normalize_atom_option(opts[:log_mode], :compact),
+        tool_output: normalize_atom_option(opts[:tool_output], :summary),
+        thinking: normalize_atom_option(opts[:thinking], :show),
+        diff: normalize_atom_option(opts[:diff], :stat)
+      }
     }
   end
 
@@ -519,6 +522,8 @@ defmodule PromptRunner.Plan do
     "log_meta" => :log_meta,
     "events_mode" => :events_mode,
     "tool_output" => :tool_output,
+    "thinking" => :thinking,
+    "diff" => :diff,
     "recovery" => :recovery,
     "prompt_overrides" => :prompt_overrides,
     "target" => :target,

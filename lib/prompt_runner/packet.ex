@@ -371,6 +371,8 @@ defmodule PromptRunner.Packet do
         "log_meta",
         "events_mode",
         "tool_output",
+        "thinking",
+        "diff",
         "recovery"
       ])
 

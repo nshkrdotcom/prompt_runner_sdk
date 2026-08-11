@@ -32,6 +32,7 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
      %{
        color: Keyword.get(opts, :color, true),
        tool_output: tool_output,
+       thinking: Keyword.get(opts, :thinking, :show),
        show_spinner: Keyword.get(opts, :show_spinner, true),
        indent: Keyword.get(opts, :indent, 2),
        is_tty: is_tty,
@@ -48,6 +49,12 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
   @impl true
   def render_event(%{hidden?: true}, state), do: {:ok, [], state}
 
+  def render_event(
+        %{type: :message_streamed, data: %{kind: :thinking}},
+        %{thinking: :hide} = state
+      ),
+      do: {:ok, [], state}
+
   def render_event(event, state) do
     state = %{state | event_count: state.event_count + 1}
     {iodata, new_state} = render(event, state)
@@ -56,6 +63,27 @@ defmodule PromptRunner.Rendering.Renderers.StudioRenderer do
 
   @impl true
   def finish(state), do: {:ok, [], state}
+
+  # A view change lands between events, so it takes effect from the next event
+  # onwards and never reformats what has already been written. Only the keys
+  # actually named change; a caller raising tool output must not reset anything
+  # else it did not mention.
+  @impl true
+  def set_view(view, state) when is_map(view) do
+    state =
+      case Map.fetch(view, :tool_output) do
+        {:ok, tool_output} -> %{state | tool_output: normalize_tool_output(tool_output)}
+        :error -> state
+      end
+
+    state =
+      case Map.fetch(view, :thinking) do
+        {:ok, thinking} when thinking in [:show, :hide] -> %{state | thinking: thinking}
+        _other -> state
+      end
+
+    {:ok, state}
+  end
 
   # "unknown session started" was this renderer reporting a gap it could not
   # fill: the model is named on the launched argv, but nothing put it in the

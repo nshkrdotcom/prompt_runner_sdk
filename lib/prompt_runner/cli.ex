@@ -4,6 +4,7 @@ defmodule PromptRunner.CLI do
   """
 
   alias PromptRunner
+  alias PromptRunner.CLI.Control, as: CLIControl
   alias PromptRunner.Packet
   alias PromptRunner.PacketLint
   alias PromptRunner.Packets
@@ -35,6 +36,8 @@ defmodule PromptRunner.CLI do
     log_meta: :string,
     events_mode: :string,
     tool_output: :string,
+    thinking: :string,
+    diff: :string,
     cli_confirmation: :string,
     runtime_store: :string,
     committer: :string,
@@ -483,6 +486,41 @@ defmodule PromptRunner.CLI do
     end
   end
 
+  defp run_control(["status" | rest]) do
+    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: [json: :boolean])
+    control_result(CLIControl.status(packet_dir(remaining), opts))
+  end
+
+  defp run_control(["view" | rest]) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [log_mode: :string, tool_output: :string, diff: :string]
+      )
+
+    control_result(CLIControl.view(packet_dir(remaining), opts))
+  end
+
+  defp run_control(["log" | rest]) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest, switches: [follow: :boolean, json: :boolean])
+
+    control_result(CLIControl.log(packet_dir(remaining), opts))
+  end
+
+  defp run_control(["events" | rest]) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest, switches: [json: :boolean, from: :string])
+
+    from = if opts[:from] == "current", do: :current, else: :start
+    control_result(CLIControl.watch(packet_dir(remaining), Keyword.put(opts, :from, from)))
+  end
+
+  defp run_control(_rest), do: handle_error(:unknown_command)
+
+  defp control_result(:ok), do: :ok
+  defp control_result({:error, :no_run}), do: handle_error(:no_run)
+  defp control_result({:error, reason}), do: handle_error(reason)
+
   defp packet_dir([], explicit), do: explicit || File.cwd!()
   defp packet_dir([candidate | _rest], nil), do: candidate
   defp packet_dir(_remaining, explicit), do: explicit
@@ -523,6 +561,7 @@ defmodule PromptRunner.CLI do
   defp parse_command(["repair" | rest]), do: {:repair, rest}
   defp parse_command(["status" | rest]), do: {:status, rest}
   defp parse_command(["watch" | rest]), do: {:watch, rest}
+  defp parse_command(["control" | rest]), do: {:control, rest}
   defp parse_command(["help" | _rest]), do: :help
   defp parse_command(["--help" | _rest]), do: :help
   defp parse_command(["-h" | _rest]), do: :help
@@ -547,6 +586,7 @@ defmodule PromptRunner.CLI do
   defp dispatch_command({:repair, rest}), do: run_repair(rest)
   defp dispatch_command({:status, rest}), do: run_status(rest)
   defp dispatch_command({:watch, rest}), do: run_watch(rest)
+  defp dispatch_command({:control, rest}), do: run_control(rest)
   defp dispatch_command(:help), do: show_help()
   defp dispatch_command(:unknown), do: handle_error(:unknown_command)
 
@@ -559,6 +599,8 @@ defmodule PromptRunner.CLI do
     |> maybe_put(:log_meta, opts[:log_meta])
     |> maybe_put(:events_mode, opts[:events_mode])
     |> maybe_put(:tool_output, opts[:tool_output])
+    |> maybe_put(:thinking, opts[:thinking])
+    |> maybe_put(:diff, opts[:diff])
     |> maybe_put(:cli_confirmation, opts[:cli_confirmation])
     |> maybe_put(:runtime_store, opts[:runtime_store])
     |> maybe_put(:committer, opts[:committer])
@@ -650,6 +692,18 @@ defmodule PromptRunner.CLI do
     System.halt(1)
   end
 
+  defp handle_error(:no_run) do
+    IO.puts(UI.red("ERROR: this packet has no recorded run"))
+    IO.puts("Start one with: prompt_runner run PACKET")
+    System.halt(1)
+  end
+
+  defp handle_error(:no_view_settings) do
+    IO.puts(UI.red("ERROR: name at least one setting"))
+    IO.puts("  prompt_runner control view PACKET --tool-output full")
+    System.halt(1)
+  end
+
   defp handle_error(:unknown_command) do
     IO.puts(UI.red("ERROR: unknown command"))
     show_help()
@@ -691,6 +745,12 @@ defmodule PromptRunner.CLI do
       prompt_runner repair [--packet PACKET_DIR] PROMPT_ID
       prompt_runner status [PACKET_DIR]
       prompt_runner watch [PACKET_DIR] [--interval SECONDS] [--once] [--json]
+
+    Control (a live run, from another terminal):
+      prompt_runner control status [PACKET_DIR] [--json]
+      prompt_runner control view [PACKET_DIR] [--log-mode MODE] [--tool-output MODE] [--diff MODE]
+      prompt_runner control log [PACKET_DIR] [--follow] [--json]
+      prompt_runner control events [PACKET_DIR] [--from current] [--json]
 
     `plan` and `run` accept the same override flags, so `plan` shows exactly
     what `run` would resolve.

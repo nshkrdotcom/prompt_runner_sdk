@@ -3,6 +3,7 @@ defmodule PromptRunner.Runner do
 
   alias PromptRunner.CommitMessages
   alias PromptRunner.Config
+  alias PromptRunner.Control.Plane
   alias PromptRunner.FailureEnvelope
   alias PromptRunner.Paths
   alias PromptRunner.Plan
@@ -16,6 +17,7 @@ defmodule PromptRunner.Runner do
   alias PromptRunner.RepoTargets
   alias PromptRunner.Run
   alias PromptRunner.Runtime
+  alias PromptRunner.RuntimeStore.FileStore
   alias PromptRunner.UI
   alias PromptRunner.Validator
   alias PromptRunner.Verifier
@@ -136,8 +138,55 @@ defmodule PromptRunner.Runner do
   end
 
   defp run_supervised(plan, targets, skip_commit, context) do
-    with_pid_file(plan, fn -> run_targets(plan, targets, skip_commit, context) end)
+    with_pid_file(plan, fn ->
+      with_control_plane(plan, fn -> run_targets(plan, targets, skip_commit, context) end)
+    end)
   end
+
+  # The control plane is run-scoped mutable state on a single-process run, and
+  # it is touched from inside the render loop's sink callbacks — the same shape
+  # as the stream-result and closer tracking above it. Threading it functionally
+  # through the whole attempt/recovery chain would buy nothing.
+  defp with_control_plane(plan, fun) do
+    put_plane(
+      Plane.open(control_packet_dir(plan),
+        packet: packet_label(plan),
+        view: Config.view(plan.config)
+      )
+    )
+
+    try do
+      result = fun.()
+      close_plane(if(match?({:error, _}, result), do: :failed, else: :completed))
+      result
+    catch
+      kind, reason ->
+        close_plane(:failed)
+        :erlang.raise(kind, reason, __STACKTRACE__)
+    after
+      Process.delete(:prompt_runner_control_plane)
+    end
+  end
+
+  # Keyed on the runtime store rather than on `state_dir`, which a packet plan
+  # carries whatever store it was given. A run that keeps no state on disk must
+  # not start writing a control directory next to the packet, and the store is
+  # the fact that says which kind of run this is.
+  defp control_packet_dir(%Plan{runtime_store: {FileStore, _state}, source_root: source_root})
+       when is_binary(source_root),
+       do: source_root
+
+  defp control_packet_dir(_plan), do: nil
+
+  defp packet_label(%Plan{source_root: source_root}) when is_binary(source_root),
+    do: Path.basename(source_root)
+
+  defp packet_label(_plan), do: nil
+
+  defp plane, do: Process.get(:prompt_runner_control_plane, %Plane{})
+  defp put_plane(%Plane{} = value), do: Process.put(:prompt_runner_control_plane, value)
+
+  defp close_plane(status), do: put_plane(Plane.close(plane(), status))
 
   # Liveness has to be checkable from outside the run, and a process-name match
   # is not that check: it matches any command line containing the pattern,
@@ -607,6 +656,7 @@ defmodule PromptRunner.Runner do
 
     emit_observer(plan, %{type: :prompt_started, prompt: prompt, mode: mode, attempt: attempt})
     Runtime.record_attempt_started(plan, prompt, attempt, to_string(mode))
+    put_plane(Plane.prompt_started(plane(), prompt, mode, attempt, ctx.llm))
 
     with :ok <- ensure_prompt_file(prompt, ctx.prompt_path),
          {:ok, provider_info} <- preflight_llm_provider(ctx.llm) do
@@ -645,7 +695,7 @@ defmodule PromptRunner.Runner do
     print_prompt_header(ctx.plan, ctx.prompt, ctx.llm, log_file)
     maybe_print_provider_preflight(ctx.provider_info)
 
-    if config.log_mode != :studio and is_binary(events_file) do
+    if Config.view(config).log_mode != :studio and is_binary(events_file) do
       IO.puts("Events: #{events_file}")
       IO.puts("")
     end
@@ -662,7 +712,7 @@ defmodule PromptRunner.Runner do
     IO.puts("  ...")
     IO.puts("")
 
-    if config.log_mode != :studio do
+    if Config.view(config).log_mode != :studio do
       IO.puts(UI.yellow("Starting #{ctx.llm.sdk} session..."))
       IO.puts("")
     end
@@ -774,7 +824,7 @@ defmodule PromptRunner.Runner do
   end
 
   defp print_completion_success(plan, prompt) do
-    if plan.config.log_mode == :studio do
+    if Config.view(plan.config).log_mode == :studio do
       IO.puts(UI.green("  ✓ Prompt #{prompt.num} completed"))
     else
       IO.puts(UI.green("LLM completed successfully"))
@@ -969,7 +1019,7 @@ defmodule PromptRunner.Runner do
 
   defp recovery_context(ctx, llm_meta, log_ctx) do
     %{
-      renderer: renderer_for_config(ctx.plan.config),
+      renderer: renderer_for_view(Plane.view(plane())),
       sinks: build_sinks(ctx.plan, log_ctx.log_io, log_ctx.events_file, ctx.llm),
       llm: ctx.llm,
       llm_meta: llm_meta,
@@ -1011,7 +1061,7 @@ defmodule PromptRunner.Runner do
     do: value |> Integer.to_string() |> normalize_prompt_id()
 
   defp safe_render_stream(stream, renderer, sinks) do
-    Rendering.stream(stream, renderer: renderer, sinks: sinks)
+    Rendering.stream(stream, renderer: renderer, sinks: sinks, boundary: &control_boundary/1)
   rescue
     exception ->
       {:error, {:stream_failed, Exception.message(exception)}}
@@ -1023,25 +1073,51 @@ defmodule PromptRunner.Runner do
   defp resolve_stream_result(:ok, callback_result), do: callback_result
   defp resolve_stream_result({:error, reason}, _callback_result), do: {:error, reason}
 
-  defp renderer_for_config(config) do
-    case config.log_mode do
-      :studio -> {StudioRenderer, studio_opts(config)}
-      :verbose -> {VerboseRenderer, []}
-      _ -> {CompactRenderer, []}
+  # One event boundary: drain whatever the control plane was handed, then turn
+  # the accepted commands into something the render pipeline can act on. A
+  # `log_mode` change means a different renderer; the view is re-applied on top
+  # of it so the incoming renderer starts with the settings in force rather
+  # than with its own defaults.
+  defp control_boundary(_event) do
+    {updated, commands} = Plane.boundary(plane())
+    put_plane(updated)
+
+    if commands == [] do
+      []
+    else
+      view = Plane.view(updated)
+      settings = [{:set_view, Map.take(view, [:tool_output, :thinking, :diff])}]
+
+      if Enum.any?(commands, &view_command?(&1, :log_mode)) do
+        [{:renderer, renderer_for_view(view)} | settings]
+      else
+        settings
+      end
     end
   end
 
-  defp studio_opts(config) do
-    opts = [tool_output: config.tool_output]
-    if config.log_mode == :studio, do: opts, else: []
-  end
+  defp view_command?({:set_view, updates}, key) when is_map(updates),
+    do: Map.has_key?(updates, key)
+
+  defp view_command?(_command, _key), do: false
+
+  # Keyed on the live view rather than on the config, so a `log_mode` change
+  # arriving through the control plane picks the same renderer a launch flag
+  # would have.
+  defp renderer_for_view(%{log_mode: :studio} = view),
+    do: {StudioRenderer, [tool_output: view.tool_output, thinking: view.thinking]}
+
+  defp renderer_for_view(%{log_mode: :verbose} = view),
+    do: {VerboseRenderer, [thinking: view.thinking]}
+
+  defp renderer_for_view(view), do: {CompactRenderer, [thinking: Map.get(view, :thinking, :show)]}
 
   defp print_prompt_header(plan, prompt, llm, log_file) do
     config = plan.config
 
     IO.puts("")
 
-    if config.log_mode == :studio do
+    if Config.view(config).log_mode == :studio do
       bar = UI.dim(String.duplicate("━", 60))
       IO.puts(bar)
       IO.puts(UI.bold("  Prompt #{prompt.num}: #{prompt.name}"))
@@ -1087,6 +1163,7 @@ defmodule PromptRunner.Runner do
   end
 
   defp stream_tracking_callback(plan, event, _iodata, llm, log_io) do
+    put_plane(Plane.observe(plane(), event))
     emit_observer(plan, Map.put(event, :raw?, true))
     maybe_print_cli_confirmation(event, llm, log_io)
     maybe_log_recovery_metadata(event, log_io)
@@ -1761,7 +1838,7 @@ defmodule PromptRunner.Runner do
 
   defp write_session_header(log_io, config, llm, llm_meta, prompt_path) do
     header =
-      if config.log_mode == :compact do
+      if Config.view(config).log_mode == :compact do
         tools_label =
           if is_list(llm.allowed_tools) and llm.allowed_tools != [] do
             Enum.join(llm.allowed_tools, ",")

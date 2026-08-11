@@ -145,7 +145,7 @@ defmodule PromptRunner.ConfigTest do
     )
 
     assert {:ok, config} = Config.load(config_path)
-    assert config.log_mode == :studio
+    assert Config.view(config).log_mode == :studio
   end
 
   test "accepts tool_output values and normalizes them" do
@@ -179,7 +179,7 @@ defmodule PromptRunner.ConfigTest do
       )
 
       assert {:ok, config} = Config.load(config_path)
-      assert config.tool_output == mode
+      assert Config.view(config).tool_output == mode
     end
   end
 
@@ -216,10 +216,12 @@ defmodule PromptRunner.ConfigTest do
   end
 
   test "supports --tool-output override via with_overrides/2" do
-    config = %Config{tool_output: :summary}
+    config = %Config{view: Config.default_view()}
 
-    assert Config.with_overrides(config, tool_output: "preview").tool_output == :preview
-    assert Config.with_overrides(config, tool_output: :full).tool_output == :full
+    assert Config.view(Config.with_overrides(config, tool_output: "preview")).tool_output ==
+             :preview
+
+    assert Config.view(Config.with_overrides(config, tool_output: :full)).tool_output == :full
   end
 
   test "rejects invalid timeout values" do

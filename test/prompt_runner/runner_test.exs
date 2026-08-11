@@ -467,7 +467,6 @@ defmodule PromptRunner.RunnerTest do
         log_dir: "logs",
         model: "haiku",
         log_mode: :studio,
-        tool_output: :summary,
         llm: %{provider: "claude"}
       }
       """

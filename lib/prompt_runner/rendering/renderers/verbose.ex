@@ -19,6 +19,7 @@ defmodule PromptRunner.Rendering.Renderers.VerboseRenderer do
     {:ok,
      %{
        color: Keyword.get(opts, :color, true),
+       thinking: Keyword.get(opts, :thinking, :show),
        in_text: false,
        event_count: 0,
        tool_count: 0
@@ -26,7 +27,21 @@ defmodule PromptRunner.Rendering.Renderers.VerboseRenderer do
   end
 
   @impl true
+  def set_view(view, state) when is_map(view) do
+    case Map.fetch(view, :thinking) do
+      {:ok, thinking} when thinking in [:show, :hide] -> {:ok, %{state | thinking: thinking}}
+      _other -> {:ok, state}
+    end
+  end
+
+  @impl true
   def render_event(%{hidden?: true}, state), do: {:ok, [], state}
+
+  def render_event(
+        %{type: :message_streamed, data: %{kind: :thinking}},
+        %{thinking: :hide} = state
+      ),
+      do: {:ok, [], state}
 
   def render_event(event, state) do
     state = %{state | event_count: state.event_count + 1}

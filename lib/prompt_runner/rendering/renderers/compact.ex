@@ -22,6 +22,7 @@ defmodule PromptRunner.Rendering.Renderers.CompactRenderer do
     {:ok,
      %{
        color: Keyword.get(opts, :color, true),
+       thinking: Keyword.get(opts, :thinking, :show),
        streaming: nil,
        line_open: false,
        in_text: false,
@@ -32,8 +33,27 @@ defmodule PromptRunner.Rendering.Renderers.CompactRenderer do
      }}
   end
 
+  # The Claude lane used to swallow thinking blocks inside assistant messages,
+  # so until it decoded them this setting had nothing to hide for that provider.
+  # Now it does, and a reasoning model's full chain of thought is signal to some
+  # readers and a wall of text to others. The event still reaches every sink;
+  # only the human-facing render drops it.
+  @impl true
+  def set_view(view, state) when is_map(view) do
+    case Map.fetch(view, :thinking) do
+      {:ok, thinking} when thinking in [:show, :hide] -> {:ok, %{state | thinking: thinking}}
+      _other -> {:ok, state}
+    end
+  end
+
   @impl true
   def render_event(%{hidden?: true}, state), do: {:ok, [], state}
+
+  def render_event(
+        %{type: :message_streamed, data: %{kind: :thinking}},
+        %{thinking: :hide} = state
+      ),
+      do: {:ok, [], state}
 
   def render_event(event, state) do
     state = %{state | event_count: state.event_count + 1}

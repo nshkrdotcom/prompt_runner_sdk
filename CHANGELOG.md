@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `PromptRunner.Control`: a process-addressable API for watching a live run and
+  changing how it renders, without attaching to the session.
+  `current_run/1`, `snapshot/1`, `set_view/3`, `subscribe/3`, `unsubscribe/2`,
+  and `log/1`. A `run_ref` is `{packet_dir, run_id}` — explicit ids rather than
+  an implicit "current run", which costs nothing now and avoids a rewrite if
+  the runner ever goes concurrent. Reads never touch the session, so polling
+  cannot slow, block, or crash the run being watched.
+- The control directory, `packet/.prompt_runner/control/`: `requests/` (one
+  file per command, consumed and deleted), `log.jsonl` (append-only: every
+  command, who, when, outcome, including refusals), `snapshot.json` (rewritten
+  at each event boundary, written-and-renamed so a reader never sees half of
+  one), and `events.jsonl` (the canonical stream a subscriber follows). A
+  directory rather than a socket: no daemon, no port, works under `tee`,
+  `nohup`, and tmux, survives the runner dying, and is per-packet so two
+  programs cannot cross wires. Nothing arriving through it is ever fatal to a
+  run — a malformed file, an unknown command, or a request naming a run that
+  has since ended is logged with its reason, deleted, and stepped over.
+  A run that keeps no state on disk writes no control directory at all.
+- `mix prompt_runner control status|view|log|events`, written entirely against
+  `PromptRunner.Control`.
+- Live view settings, changeable mid-run at an event boundary: `log_mode`,
+  `tool_output`, `thinking`, and `diff`, as `--thinking` / `--diff` launch
+  flags and through `control view`. `log_mode` swaps the renderer outright.
+- `c:PromptRunner.Rendering.Renderer.set_view/2`, an optional callback, and a
+  `:boundary` hook on `PromptRunner.Rendering.stream/2`. Requests are consumed
+  between events and never inside one, because a view that changed halfway
+  through rendering an event produces output belonging to neither setting.
+- `examples/watch_run.exs`: a consumer that is not the CLI, driving a live run
+  through `PromptRunner.Control` alone.
 - `mix prompt_runner run PACKET --remaining`, and `remaining: true` on
   `PromptRunner.run/2`.
   Runs every prompt whose recorded status is not `completed`, in order,
@@ -36,6 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `PromptRunner.Config` groups its four view settings under a single `:view`
+  field. `config.log_mode` becomes `PromptRunner.Config.view(config).log_mode`.
+  They are one concept — the control plane sets exactly these and reports
+  exactly these back — and the struct was over the field-count limit.
+- Claude runs now show thinking, because `cli_subprocess_core` stopped
+  swallowing it. `--thinking hide`, or `control view --thinking hide`, turns it
+  off. The event still reaches every sink; only the human-facing render drops
+  it.
 - `--continue` now names the prompts it is stepping over and points at
   `--remaining`. Its selection is unchanged — it is a documented behaviour and
   some callers want it.

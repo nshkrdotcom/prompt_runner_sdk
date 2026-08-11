@@ -8,24 +8,40 @@ defmodule PromptRunner.Rendering do
   @type renderer_spec :: {module(), Renderer.opts()}
   @type sink_spec :: {module(), Sink.opts()}
 
+  @typedoc """
+  What a boundary hook may ask the pipeline to do after an event.
+
+  `{:set_view, view}` reaches the live renderer through
+  `c:PromptRunner.Rendering.Renderer.set_view/2`; `{:renderer, spec}` replaces
+  the renderer outright, which is what a `log_mode` change means.
+  """
+  @type command :: {:set_view, map()} | {:renderer, renderer_spec()}
+
   @type opts :: [
           renderer: renderer_spec(),
-          sinks: [sink_spec()]
+          sinks: [sink_spec()],
+          boundary: (map() -> [command()])
         ]
 
   @spec stream(Enumerable.t(), opts()) :: :ok | {:error, term()}
   def stream(event_stream, opts) do
     {renderer_mod, renderer_opts} = Keyword.fetch!(opts, :renderer)
     sink_specs = Keyword.get(opts, :sinks, [])
+    boundary = Keyword.get(opts, :boundary)
 
     with {:ok, renderer_state} <- renderer_mod.init(renderer_opts),
          {:ok, sink_states} <- init_sinks(sink_specs) do
-      {final_renderer_state, final_sink_states} =
-        Enum.reduce(event_stream, {renderer_state, sink_states}, fn event, {r_state, s_states} ->
-          {:ok, iodata, new_r_state} = renderer_mod.render_event(event, r_state)
+      initial = {{renderer_mod, renderer_state}, sink_states}
+
+      {{final_renderer_mod, final_renderer_state}, final_sink_states} =
+        Enum.reduce(event_stream, initial, fn event, {renderer, s_states} ->
+          {mod, r_state} = renderer
+          {:ok, iodata, new_r_state} = mod.render_event(event, r_state)
           new_s_states = write_to_sinks(s_states, event, iodata)
-          {new_r_state, new_s_states}
+          {apply_boundary(boundary, event, {mod, new_r_state}), new_s_states}
         end)
+
+      renderer_mod = final_renderer_mod
 
       {:ok, final_iodata, _final_renderer_state} = renderer_mod.finish(final_renderer_state)
 
@@ -40,6 +56,46 @@ defmodule PromptRunner.Rendering do
       :ok
     end
   end
+
+  # Requests are consumed between events, never inside one: a view that changed
+  # halfway through rendering an event produces output belonging to neither
+  # setting.
+  defp apply_boundary(nil, _event, renderer), do: renderer
+
+  defp apply_boundary(boundary, event, renderer) do
+    boundary
+    |> apply_boundary_fun(event)
+    |> Enum.reduce(renderer, &apply_command/2)
+  end
+
+  defp apply_boundary_fun(boundary, event) do
+    case boundary.(event) do
+      commands when is_list(commands) -> commands
+      _other -> []
+    end
+  end
+
+  defp apply_command({:set_view, view}, {mod, state}) when is_map(view) do
+    if function_exported?(mod, :set_view, 2) do
+      {:ok, new_state} = mod.set_view(view, state)
+      {mod, new_state}
+    else
+      {mod, state}
+    end
+  end
+
+  # A `log_mode` change is a different renderer, not a different setting on the
+  # one already running. Whatever the outgoing renderer had accumulated —
+  # counters, open lines — goes with it; the alternative is a renderer holding
+  # another renderer's state.
+  defp apply_command({:renderer, {new_mod, new_opts}}, {mod, state}) do
+    case new_mod.init(new_opts) do
+      {:ok, new_state} -> {new_mod, new_state}
+      {:error, _reason} -> {mod, state}
+    end
+  end
+
+  defp apply_command(_command, renderer), do: renderer
 
   defp init_sinks(sink_specs) do
     results =

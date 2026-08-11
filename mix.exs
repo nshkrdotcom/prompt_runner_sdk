@@ -116,6 +116,7 @@ defmodule PromptRunner.MixProject do
         {"guides/linting.md", filename: "linting", title: "Packet Linting"},
         {"guides/supervision.md", filename: "supervision", title: "Supervising A Long Run"},
         {"guides/rendering.md", filename: "rendering", title: "Rendering Modes"},
+        {"guides/control.md", filename: "control", title: "Watching And Steering A Live Run"},
         {"guides/multi-repo.md", filename: "multi-repo", title: "Multi-Repository Packets"},
         {"guides/architecture.md", filename: "architecture", title: "Architecture"},
         {"examples/README.md", filename: "examples", title: "Examples Overview"},
@@ -147,7 +148,7 @@ defmodule PromptRunner.MixProject do
           "verification-and-repair",
           "rendering"
         ],
-        Operations: ["supervision"],
+        Operations: ["supervision", "control"],
         Embedding: ["api"],
         Architecture: ["architecture"],
         Examples: [
@@ -221,6 +222,9 @@ defmodule PromptRunner.MixProject do
           PromptRunner.Session
         ],
         Observability: [
+          PromptRunner.Control,
+          PromptRunner.Control.Snapshot,
+          PromptRunner.Control.Entry,
           PromptRunner.Observer.PubSub,
           PromptRunner.UI
         ],

@@ -214,6 +214,8 @@ duration of a run, and quiet time comes from file mtimes. See
 - `--log-meta`
 - `--events-mode`
 - `--tool-output`
+- `--thinking` (`show` | `hide`)
+- `--diff` (`none` | `stat` | `full`)
 - `--cli-confirmation`
 - `--runtime-store`
 - `--committer`

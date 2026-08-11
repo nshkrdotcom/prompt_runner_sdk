@@ -15,6 +15,20 @@ defmodule PromptRunner.Config do
   @type repo_config :: %{name: String.t(), path: String.t(), default: boolean()}
   @type optional_path :: String.t() | nil
 
+  @typedoc """
+  The settings that decide what a reader sees while a run is happening.
+
+  Grouped rather than spread across the struct because they are one concept:
+  `PromptRunner.Control.set_view/3` changes exactly these, live, and
+  `PromptRunner.Control.Snapshot` reports exactly these back.
+  """
+  @type view :: %{
+          log_mode: :compact | :verbose | :studio,
+          tool_output: :summary | :preview | :full,
+          thinking: :show | :hide,
+          diff: :none | :stat | :full
+        }
+
   @type t :: %__MODULE__{
           config_dir: String.t(),
           project_dir: String.t() | nil,
@@ -42,10 +56,9 @@ defmodule PromptRunner.Config do
           max_turns: pos_integer() | nil,
           cli_confirmation: :off | :warn | :require,
           timeout: pos_integer() | :unbounded | :infinity | nil,
-          log_mode: :compact | :verbose | :studio,
+          view: view(),
           log_meta: :none | :full,
           events_mode: :compact | :full | :off,
-          tool_output: :summary | :preview | :full,
           phase_names: map()
         }
 
@@ -76,10 +89,9 @@ defmodule PromptRunner.Config do
     :max_turns,
     :cli_confirmation,
     :timeout,
-    :log_mode,
     :log_meta,
     :events_mode,
-    :tool_output,
+    :view,
     :phase_names
   ]
 
@@ -94,6 +106,22 @@ defmodule PromptRunner.Config do
     end
   end
 
+  @doc """
+  The live view settings in force for this config.
+  """
+  @spec view(t()) :: view()
+  def view(%__MODULE__{view: view}) when is_map(view), do: view
+  def view(%__MODULE__{}), do: default_view()
+
+  @doc false
+  @spec default_view() :: view()
+  def default_view,
+    do: %{log_mode: :compact, tool_output: :summary, thinking: :show, diff: :stat}
+
+  defp put_view(config, key, value) do
+    %{config | view: Map.put(view(config), key, value)}
+  end
+
   @spec with_overrides(t(), keyword()) :: t()
   def with_overrides(config, opts) do
     config
@@ -103,6 +131,8 @@ defmodule PromptRunner.Config do
     |> maybe_override_log_meta(opts[:log_meta])
     |> maybe_override_events_mode(opts[:events_mode])
     |> maybe_override_tool_output(opts[:tool_output])
+    |> maybe_override_thinking(opts[:thinking])
+    |> maybe_override_diff(opts[:diff])
     |> maybe_override_cli_confirmation(opts[:cli_confirmation])
     |> maybe_override_require_cli_confirmation(opts[:require_cli_confirmation])
   end
@@ -270,13 +300,19 @@ defmodule PromptRunner.Config do
     with {:ok, log_mode} <- normalize_log_mode(config[:log_mode]),
          {:ok, log_meta} <- normalize_log_meta(config[:log_meta], log_mode),
          {:ok, events_mode} <- normalize_events_mode(config[:events_mode]),
-         {:ok, tool_output} <- normalize_tool_output(config[:tool_output]) do
+         {:ok, tool_output} <- normalize_tool_output(config[:tool_output]),
+         {:ok, thinking} <- normalize_thinking(config[:thinking]),
+         {:ok, diff} <- normalize_diff(config[:diff]) do
       {:ok,
        %{
-         log_mode: log_mode,
          log_meta: log_meta,
          events_mode: events_mode,
-         tool_output: tool_output
+         view: %{
+           log_mode: log_mode,
+           tool_output: tool_output,
+           thinking: thinking,
+           diff: diff
+         }
        }}
     end
   end
@@ -328,10 +364,9 @@ defmodule PromptRunner.Config do
       timeout:
         coalesce([llm_section[:timeout], config[:timeout]], nil)
         |> normalize_timeout_value(),
-      log_mode: log_settings.log_mode,
       log_meta: log_settings.log_meta,
       events_mode: log_settings.events_mode,
-      tool_output: log_settings.tool_output,
+      view: log_settings.view,
       phase_names: coalesce([config[:phase_names]], %{})
     }
   end
@@ -444,6 +479,56 @@ defmodule PromptRunner.Config do
   end
 
   defp normalize_tool_output(mode), do: {:error, {:invalid_tool_output, mode}}
+
+  # A reasoning model's thinking is signal for some readers and a wall of text
+  # for others, and until the Claude lane decoded its content blocks the
+  # question never came up for that provider because the thinking was silently
+  # dropped. Showing what the provider actually sent is the honest default;
+  # `:hide` is one setting away, at launch or mid-run.
+  defp normalize_thinking(nil), do: {:ok, :show}
+  defp normalize_thinking(value) when is_atom(value), do: normalize_thinking(to_string(value))
+
+  defp normalize_thinking(value) when is_binary(value) do
+    case String.downcase(value) do
+      "show" -> {:ok, :show}
+      "hide" -> {:ok, :hide}
+      other -> {:error, {:invalid_thinking, other}}
+    end
+  end
+
+  defp normalize_thinking(value), do: {:error, {:invalid_thinking, value}}
+
+  defp normalize_diff(nil), do: {:ok, :stat}
+  defp normalize_diff(value) when is_atom(value), do: normalize_diff(to_string(value))
+
+  defp normalize_diff(value) when is_binary(value) do
+    case String.downcase(value) do
+      "none" -> {:ok, :none}
+      "stat" -> {:ok, :stat}
+      "full" -> {:ok, :full}
+      other -> {:error, {:invalid_diff, other}}
+    end
+  end
+
+  defp normalize_diff(value), do: {:error, {:invalid_diff, value}}
+
+  defp maybe_override_thinking(config, nil), do: config
+
+  defp maybe_override_thinking(config, value) do
+    case normalize_thinking(value) do
+      {:ok, thinking} -> put_view(config, :thinking, thinking)
+      {:error, _reason} -> config
+    end
+  end
+
+  defp maybe_override_diff(config, nil), do: config
+
+  defp maybe_override_diff(config, value) do
+    case normalize_diff(value) do
+      {:ok, diff} -> put_view(config, :diff, diff)
+      {:error, _reason} -> config
+    end
+  end
 
   defp maybe_override_cli_confirmation(config, nil), do: config
 
@@ -626,7 +711,7 @@ defmodule PromptRunner.Config do
   defp maybe_override_log_mode(config, mode) do
     case normalize_log_mode(mode) do
       {:error, _} -> config
-      {:ok, normalized} -> %{config | log_mode: normalized}
+      {:ok, normalized} -> put_view(config, :log_mode, normalized)
     end
   end
 
@@ -653,7 +738,7 @@ defmodule PromptRunner.Config do
   defp maybe_override_tool_output(config, mode) do
     case normalize_tool_output(mode) do
       {:error, _} -> config
-      {:ok, normalized} -> %{config | tool_output: normalized}
+      {:ok, normalized} -> put_view(config, :tool_output, normalized)
     end
   end
 
