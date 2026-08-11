@@ -14,7 +14,7 @@
 </p>
 
 Prompt Runner SDK executes packetized prompt workflows against local
-repositories. This README targets `prompt_runner_sdk ~> 0.9.0`.
+repositories. This README targets `prompt_runner_sdk ~> 0.10.0`.
 
 The packet-first design introduced in `0.7.0` carries forward unchanged:
 
@@ -25,7 +25,7 @@ The packet-first design introduced in `0.7.0` carries forward unchanged:
 - a built-in simulated provider can prove recovery behavior without any
   external provider CLI
 
-`0.9.0` is shaped by a thirty-session unattended program run on `0.8.1`. Every
+`0.10.0` is shaped by a thirty-session unattended program run on `0.8.1`. Every
 addition is something that program had to build for itself, and every fix is
 something it hit:
 
@@ -66,7 +66,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.9.0"}
+    {:prompt_runner_sdk, "~> 0.10.0"}
   ]
 end
 ```
@@ -179,7 +179,8 @@ Do not modify any other files. Respond with exactly `ok`.
 
 Required reading belongs in the body: only the markdown after the front matter
 reaches the model. Commands belong inside `timeout`: the verifier runs them
-through `bash -lc` with no timeout of its own.
+through `bash -c` with no timeout of its own. The shell inherits the runner's
+environment and does not re-run login profiles.
 
 Turn the verification contract into a human checklist and check the packet:
 
@@ -429,8 +430,8 @@ they exist next to this repository, then GitHub, then Hex:
 ```bash
 mix deps.sources
 # dependency sources:
-#   agent_session_manager -> path (../agent_session_manager) -> 0.12.1
-#   cli_subprocess_core -> path (../cli_subprocess_core) -> 0.4.1
+#   agent_session_manager -> path (../agent_session_manager) -> 0.13.0
+#   cli_subprocess_core -> path (../cli_subprocess_core) -> 0.6.0
 ```
 
 To resolve against the published releases instead — which is what you want

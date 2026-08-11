@@ -12,7 +12,7 @@ defmodule PromptRunner.MixProject do
 
   @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
 
-  @version "0.9.1"
+  @version "0.10.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
   @homepage_url "https://hex.pm/packages/prompt_runner_sdk"
   @docs_url "https://hexdocs.pm/prompt_runner_sdk"
@@ -48,8 +48,8 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      workspace_dep(:agent_session_manager, "~> 0.12.3"),
-      workspace_dep(:cli_subprocess_core, "~> 0.5.1"),
+      workspace_dep(:agent_session_manager, "~> 0.13.0"),
+      workspace_dep(:cli_subprocess_core, "~> 0.6.0"),
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.12"},
       {:mox, "~> 1.2", only: :test},
@@ -248,6 +248,7 @@ defmodule PromptRunner.MixProject do
       description: description(),
       files: ~w(
           lib
+          priv
           guides
           assets
           mix.exs

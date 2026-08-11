@@ -171,4 +171,16 @@ defmodule PromptRunner.CLIFlagsTest do
 
     assert output =~ "SKIPPED (--no-commit)"
   end
+
+  test "run and plan reject unknown switches instead of silently discarding them" do
+    assert {:error, {:invalid_options, invalid}} =
+             CLI.parse_run_options(["--remainging", "packet"])
+
+    assert [{"--remainging", nil}] = invalid
+  end
+
+  test "keep-going is a declared run switch" do
+    assert {:ok, opts, ["packet"]} = CLI.parse_run_options(["packet", "--keep-going"])
+    assert opts[:keep_going]
+  end
 end

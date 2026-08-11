@@ -24,9 +24,19 @@ defmodule PromptRunner.RuntimeStore.FileStore do
 
   @impl true
   def statuses(%{progress_file: progress_file}) do
+    case statuses_checked(%{progress_file: progress_file}) do
+      {:ok, statuses} -> statuses
+      {:error, _reason} -> %{}
+    end
+  end
+
+  @doc false
+  @spec statuses_checked(map()) :: {:ok, map()} | {:error, term()}
+  def statuses_checked(%{progress_file: progress_file}) do
     case File.read(progress_file) do
-      {:ok, content} -> parse_progress_content(content)
-      {:error, _} -> %{}
+      {:ok, content} -> parse_progress_content_checked(content, progress_file)
+      {:error, :enoent} -> {:ok, %{}}
+      {:error, reason} -> {:error, {:progress_store_unreadable, progress_file, reason}}
     end
   end
 
@@ -96,18 +106,32 @@ defmodule PromptRunner.RuntimeStore.FileStore do
     end
   end
 
-  defp parse_progress_content(content) do
+  defp parse_progress_content_checked(content, path) do
+    if String.trim(content) == "" do
+      {:error, {:progress_store_invalid, path, 1, ""}}
+    else
+      parse_progress_lines(content, path)
+    end
+  end
+
+  defp parse_progress_lines(content, path) do
     content
     |> String.split("\n", trim: true)
-    |> Enum.reduce(%{}, fn line, acc ->
-      case String.split(line, ":", parts: 3) do
-        [num, status, rest] ->
-          {timestamp, commit} = split_progress_suffix(rest)
-          Map.put(acc, num, %{status: status, timestamp: timestamp, commit: commit})
-
-        _ ->
-          acc
-      end
+    |> Enum.with_index(1)
+    |> Enum.reduce_while({:ok, %{}}, fn {line, line_number}, {:ok, acc} ->
+      parse_progress_line(line, line_number, path, acc)
     end)
+  end
+
+  defp parse_progress_line(line, line_number, path, acc) do
+    case String.split(line, ":", parts: 3) do
+      [num, status, rest] when num != "" and status != "" and rest != "" ->
+        {timestamp, commit} = split_progress_suffix(rest)
+        entry = %{status: status, timestamp: timestamp, commit: commit}
+        {:cont, {:ok, Map.put(acc, num, entry)}}
+
+      _ ->
+        {:halt, {:error, {:progress_store_invalid, path, line_number, line}}}
+    end
   end
 end

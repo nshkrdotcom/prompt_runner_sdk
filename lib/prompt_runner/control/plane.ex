@@ -17,8 +17,7 @@ defmodule PromptRunner.Control.Plane do
 
   alias PromptRunner.Control.{Entry, Interventions, Snapshot, Store}
 
-  @type command ::
-          {:set_view, map()} | {:steer, String.t(), String.t() | nil} | {:pause, String.t() | nil}
+  @type command :: {:set_view, map()} | {:steer, String.t(), String.t() | nil}
 
   @type t :: %__MODULE__{
           packet_dir: String.t() | nil,
@@ -251,14 +250,6 @@ defmodule PromptRunner.Control.Plane do
 
       true ->
         {plane, [{:steer, String.trim(text), author}]}
-    end
-  end
-
-  defp dispatch(plane, "pause" = command, params, author) do
-    if plane.snapshot.prompt_id == nil do
-      {reject(plane, command, params, author, "no prompt is running"), []}
-    else
-      {plane, [{:pause, author}]}
     end
   end
 

@@ -1,13 +1,13 @@
 # Getting Started
 
-This guide targets `prompt_runner_sdk ~> 0.9.0`.
+This guide targets `prompt_runner_sdk ~> 0.10.0`.
 
 ## Install
 
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.9.0"}
+    {:prompt_runner_sdk, "~> 0.10.0"}
   ]
 end
 ```
@@ -155,7 +155,7 @@ Two things to notice, because both are easy to get wrong:
   matter reaches the model; the `required_reading:` front-matter key is parsed,
   stored, and never sent anywhere.
 - Every `commands:` entry is wrapped in `timeout`. The verifier runs commands
-  through `bash -lc` with no timeout of its own, so a hung command hangs the
+  through `bash -c` with no timeout of its own, so a hung command hangs the
   whole run after the model work is already spent.
 
 `mix prompt_runner packet lint` reports both mistakes.

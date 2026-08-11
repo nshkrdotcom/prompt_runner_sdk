@@ -3,6 +3,7 @@ defmodule PromptRunner.Progress do
 
   alias PromptRunner.Config
   alias PromptRunner.Plan
+  alias PromptRunner.RuntimeStore.FileStore
 
   @type source :: Plan.t() | Config.t()
 
@@ -39,15 +40,31 @@ defmodule PromptRunner.Progress do
   earlier prompt that failed or never ran.
 
   A prompt with no recorded status is remaining: absence of a record is not
-  evidence of success. If the progress store cannot be read at all, every
-  prompt is remaining, because a resume that silently runs nothing is worse
-  than one that re-verifies finished work.
+  evidence of success. Use `remaining_checked/2` for a run selection so an
+  existing unreadable or malformed store cannot be mistaken for a new run.
   """
   @spec remaining(source(), [String.t()]) :: [String.t()]
   def remaining(source, nums) when is_list(nums) do
     statuses = statuses(source)
     Enum.reject(nums, &completed?(statuses, &1))
   end
+
+  @doc """
+  Returns remaining prompts only when the progress store can be trusted.
+
+  A missing store is a new run and selects every prompt. An existing store that
+  cannot be read or parsed is an error: silently treating lost completion state
+  as an empty store can re-run an entire packet.
+  """
+  @spec remaining_checked(source(), [String.t()]) ::
+          {:ok, [String.t()]} | {:error, term()}
+  def remaining_checked(%Plan{runtime_store: {FileStore, state}}, nums) when is_list(nums) do
+    with {:ok, statuses} <- FileStore.statuses_checked(state) do
+      {:ok, Enum.reject(nums, &completed?(statuses, &1))}
+    end
+  end
+
+  def remaining_checked(source, nums) when is_list(nums), do: {:ok, remaining(source, nums)}
 
   @spec last_completed(source()) :: String.t() | nil
   def last_completed(%Plan{runtime_store: {module, state}}) do

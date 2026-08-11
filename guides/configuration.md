@@ -1,6 +1,6 @@
 # Packet Manifest Reference
 
-Prompt Runner 0.9.0 uses two primary authoring files:
+Prompt Runner 0.10.0 uses two primary authoring files:
 
 - `prompt_runner_packet.md`
 - `*.prompt.md`
@@ -251,7 +251,7 @@ recovery:
 
 ## Completion Contract Keys
 
-Prompt Runner 0.9.0 supports:
+Prompt Runner 0.10.0 supports:
 
 - `files_exist`
 - `files_absent`
@@ -287,7 +287,7 @@ verify:
 ```
 
 Wrap every `commands:` entry in `timeout`. The verifier runs commands through
-`bash -lc` with no timeout of its own, so a hung command hangs the run after
+`bash -c` with no timeout of its own, so a hung command hangs the run after
 the model work is already spent.
 
 Anything else under `verify:` is parsed, stored, and never evaluated.

@@ -1,0 +1,5 @@
+exclusive-run-lock
+keep-going
+remaining
+strict-run-options
+verifier-non-login-shell

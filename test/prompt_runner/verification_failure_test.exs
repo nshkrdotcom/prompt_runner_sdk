@@ -109,13 +109,30 @@ defmodule PromptRunner.VerificationFailureTest do
 
     modes = attempt_modes(root)
 
-    # The default policy allows two repairs. One initial run plus at most that
-    # many repairs, and then the run stops.
-    assert "run" in modes
-    assert Enum.count(modes, &(&1 == "repair")) <= 2
-    assert length(modes) <= 3
+    # The default policy allows two repairs. The old loop guard stopped after
+    # the first repair regardless of this value, so max_attempts was decorative.
+    # The attempt count itself is the bound: both repairs run, then it stops.
+    assert modes == ["run", "repair", "repair"]
 
     assert output =~ "Verification failed for prompt 01"
+  end
+
+  test "a custom repair budget is honored exactly", %{repo: repo} do
+    recovery = """
+    recovery:
+      repair:
+        enabled: true
+        max_attempts: 3
+    """
+
+    root = packet!(repo, recovery)
+
+    capture_io(fn ->
+      assert {:error, {:verification_failed, _report}} =
+               PromptRunner.run(root, interface: :cli, no_commit: true)
+    end)
+
+    assert attempt_modes(root) == ["run", "repair", "repair", "repair"]
   end
 
   test "an unsatisfiable contract fails immediately when repair is disabled", %{repo: repo} do

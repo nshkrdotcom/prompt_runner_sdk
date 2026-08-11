@@ -1,7 +1,7 @@
 # Supervising A Long Run
 
 A packet with thirty prompts, each sized for tens of minutes of model work, is
-a run nobody watches continuously. Prompt Runner 0.9.0 adds
+a run nobody watches continuously. Prompt Runner 0.10.0 adds
 `mix prompt_runner watch` for that case.
 
 ```bash
@@ -19,7 +19,7 @@ WATCH 16:57Z runner=UP prompt=11 quiet=0min repos=3 dirty=0 commits=27
 
 | Field | Meaning |
 |-------|---------|
-| `runner` | `UP` when `.prompt_runner/run.pid` names a process that still exists |
+| `runner` | `UP` when `.prompt_runner/run.pid` names the process identity that acquired the run lock |
 | `prompt` | id in the newest `prompt-*.log`, or `none` |
 | `quiet` | minutes since the newest file mtime across the log directory and every configured repo |
 | `repos` | number of repositories in the packet manifest |
@@ -37,9 +37,11 @@ indistinguishable from health.
 
 ### Liveness comes from a pid file, not a process-name match
 
-The runner writes `.prompt_runner/run.pid` when a run starts and removes it
-when the run ends, including when it fails. `watch` reads that pid and probes
-whether the process still exists.
+The runner exclusively creates `.prompt_runner/run.pid` when a run starts and
+removes it when that same run ends, including when it fails. A second run for
+the packet is refused rather than overwriting the first lock. On Linux the file
+also records `/proc` process start time, preventing a recycled PID from reading
+as the original run.
 
 The alternative — matching a process name or command line — matches *any*
 process whose command line contains the pattern. That includes the supervisor's

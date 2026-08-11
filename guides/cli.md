@@ -135,9 +135,9 @@ order. That includes prompts *earlier* than the furthest one that finished: if
 03 failed while 04 succeeded, `--remaining` runs 03 and 05, and says so.
 
 A prompt with no recorded status is remaining — the absence of a record is not
-evidence of success. If the progress store cannot be read at all, every prompt
-is remaining, because a resume that silently runs nothing is worse than one
-that re-verifies finished work.
+evidence of success. A missing progress store is a new run. An existing store
+that cannot be read or parsed stops selection instead of silently turning a
+resume into a full rerun.
 
 When `--remaining` selects nothing, the run says so rather than exiting zero in
 silence.

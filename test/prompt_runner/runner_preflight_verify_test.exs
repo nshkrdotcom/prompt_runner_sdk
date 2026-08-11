@@ -1,3 +1,10 @@
+defmodule PromptRunner.Test.FailingCommitter do
+  @behaviour PromptRunner.Committer
+
+  @impl true
+  def commit(_plan, _prompt, _llm, _opts), do: {:error, :deliberate_failure}
+end
+
 defmodule PromptRunner.RunnerPreflightVerifyTest do
   @moduledoc """
   Evaluating the contract before spending a provider session, and halting when
@@ -133,6 +140,26 @@ defmodule PromptRunner.RunnerPreflightVerifyTest do
       assert state["attempts"] in [nil, []]
     end
 
+    test "a passing but uncommitted evidence file still runs a session" do
+      {plan, _packet_root, repo} =
+        packet!("""
+        verify:
+          files_exist:
+            - "README.md"
+        """)
+
+      File.write!(Path.join(repo, "README.md"), "finished but not committed\n")
+      expect_one_session()
+
+      {result, output} =
+        run_quiet(fn ->
+          Runner.execute_plan(plan, [run: true, remaining: true, no_commit: true], [])
+        end)
+
+      assert result == :ok
+      refute output =~ "no session was run"
+    end
+
     test "a prompt whose contract fails still runs a session" do
       # Repair off, so the assertion is about how many sessions pre-flight
       # allowed rather than about how many the repair policy adds afterwards.
@@ -247,6 +274,27 @@ defmodule PromptRunner.RunnerPreflightVerifyTest do
         end)
 
       assert result == :ok
+    end
+  end
+
+  describe "commit completion" do
+    test "a failed committer cannot mark a verified prompt complete" do
+      {plan, packet_root, _repo} =
+        packet!("""
+        verify:
+          files_exist:
+            - "README.md"
+        """)
+
+      plan = %{plan | committer: {PromptRunner.Test.FailingCommitter, []}}
+      expect_one_session()
+
+      {result, _output} =
+        run_quiet(fn -> Runner.execute_plan(plan, [run: true], ["01"]) end)
+
+      assert {:error, {:commit_failed, {:error, :deliberate_failure}}} = result
+      assert Progress.statuses(plan)["01"].status == "failed"
+      assert prompt_state(packet_root)["status"] == "commit_failed"
     end
   end
 

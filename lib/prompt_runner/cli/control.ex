@@ -77,21 +77,6 @@ defmodule PromptRunner.CLI.Control do
     end
   end
 
-  @spec pause(String.t(), keyword()) :: :ok | {:error, term()}
-  def pause(packet_dir, opts \\ []) do
-    with {:ok, run_ref} <- Control.current_run(packet_dir),
-         :ok <- Control.pause(run_ref, opts) do
-      IO.puts(
-        UI.green(
-          "Pause queued. The turn is interrupted and the provider thread is left " <>
-            "resumable; the process is not held open."
-        )
-      )
-
-      :ok
-    end
-  end
-
   @spec amend(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def amend(packet_dir, prompt_id, opts) do
     with {:ok, clause, entries} <- amendment_clause(opts),

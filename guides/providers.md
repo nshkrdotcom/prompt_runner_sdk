@@ -1,7 +1,7 @@
 # Provider Guide
 
 Prompt Runner delegates provider execution to `agent_session_manager`.
-This guide targets `prompt_runner_sdk ~> 0.9.0`.
+This guide targets `prompt_runner_sdk ~> 0.10.0`.
 
 Supported providers:
 
@@ -68,7 +68,7 @@ Normalized shared permission modes:
 Not every provider accepts every mode. Prompt Runner delegates the decision to
 `ASM.Permission.normalize/2`, so an unsupported pairing fails at config load
 with `{:invalid_permission_mode, provider, mode}` rather than at launch. On
-`agent_session_manager ~> 0.12.1`, Cursor and Antigravity reject `auto`, and
+`agent_session_manager ~> 0.13.0`, Cursor and Antigravity reject `auto`, and
 Antigravity additionally rejects `plan`.
 
 ## Normalized Common Options
@@ -120,7 +120,7 @@ codex_thread_opts:
 Do not put raw unsupported CLI flags such as `sandbox` or `ask_for_approval`
 under `codex_thread_opts`.
 
-Claude accepts `reasoning_effort` as of `agent_session_manager ~> 0.12.1`; it
+Claude accepts `reasoning_effort` in `agent_session_manager ~> 0.13.0`; it
 resolves through the shared model registry the same way Codex's does.
 `include_thinking` remains the separate control for thinking output:
 

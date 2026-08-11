@@ -64,8 +64,9 @@ defmodule PromptRunner do
   - `phase: 2` — run one phase
   - `remaining: true` — run every prompt whose recorded status is not
     `completed`, in order, including prompts *earlier* than the furthest one
-    that finished. A prompt with no record is remaining, and an unreadable
-    progress store makes every prompt remaining.
+    that finished. A prompt with no record is remaining. A missing progress
+    store means a new run; an existing unreadable or malformed store is an
+    error rather than permission to re-run the packet.
   - `continue: true` — resume from `last_completed + 1`. This steps over an
     earlier prompt that failed or never ran; when it does, the skipped prompts
     are named.
@@ -80,6 +81,10 @@ defmodule PromptRunner do
   is a request to run it. A contract with no evaluable clause, and one
   containing `changed_paths_only`, are never pre-flighted — both would pass
   vacuously.
+
+  `keep_going: true` records prompt-local errors, attempts the rest of the
+  selected prompts, and returns all failures at the end. The default remains
+  fail-fast for dependent prompt chains.
   """
   @spec run(term(), keyword()) :: {:ok, Run.t()} | {:error, term()}
   def run(input, opts \\ []) do

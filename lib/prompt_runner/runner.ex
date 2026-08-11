@@ -7,6 +7,7 @@ defmodule PromptRunner.Runner do
   alias PromptRunner.Control.Interventions
   alias PromptRunner.Control.Plane
   alias PromptRunner.FailureEnvelope
+  alias PromptRunner.Git
   alias PromptRunner.Paths
   alias PromptRunner.Plan
   alias PromptRunner.Preflight
@@ -18,6 +19,7 @@ defmodule PromptRunner.Runner do
   alias PromptRunner.Rendering.Sinks.{CallbackSink, FileSink, JSONLSink, TTYSink}
   alias PromptRunner.RepoTargets
   alias PromptRunner.Run
+  alias PromptRunner.RunLock
   alias PromptRunner.Runtime
   alias PromptRunner.RuntimeStore.FileStore
   alias PromptRunner.UI
@@ -131,6 +133,7 @@ defmodule PromptRunner.Runner do
   # not redo finished work. `--verify-first` states it either way.
   defp run_context(opts, remaining) do
     %{
+      keep_going?: opts[:keep_going] == true,
       verify_first?:
         case opts[:verify_first] do
           value when is_boolean(value) -> value
@@ -194,19 +197,13 @@ defmodule PromptRunner.Runner do
   # Liveness has to be checkable from outside the run, and a process-name match
   # is not that check: it matches any command line containing the pattern,
   # including the supervisor's own shell, so it reports a healthy run forever.
-  # A pid file plus a signal-zero probe cannot self-match. It is written only
-  # when the plan has a state directory, so in-memory API runs stay free of
-  # filesystem side effects.
+  # An exclusive pid file plus process-start identity cannot self-match, cannot
+  # be overwritten by a second run, and cannot mistake PID reuse for liveness.
+  # It is written only when the plan has a state directory, so in-memory API
+  # runs stay free of filesystem side effects.
   defp with_pid_file(%Plan{state_dir: state_dir}, fun) when is_binary(state_dir) do
     path = Paths.pid_file(state_dir)
-    File.mkdir_p!(state_dir)
-    File.write!(path, System.pid() <> "\n")
-
-    try do
-      fun.()
-    after
-      File.rm(path)
-    end
+    RunLock.with_lock(path, fun)
   end
 
   defp with_pid_file(_plan, fun), do: fun.()
@@ -239,12 +236,60 @@ defmodule PromptRunner.Runner do
   end
 
   defp run_targets(plan, targets, skip_commit, context) do
+    if context.keep_going? do
+      run_targets_keep_going(plan, targets, skip_commit, context)
+    else
+      run_targets_fail_fast(plan, targets, skip_commit, context)
+    end
+  end
+
+  defp run_targets_fail_fast(plan, targets, skip_commit, context) do
     Enum.reduce_while(targets, :ok, fn num, _acc ->
       case run_prompt(plan, num, skip_commit, context) do
         :ok -> {:cont, :ok}
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
+  end
+
+  defp run_targets_keep_going(plan, targets, skip_commit, context) do
+    result =
+      Enum.reduce_while(targets, [], fn num, failures ->
+        case run_prompt(plan, num, skip_commit, context) do
+          :ok ->
+            {:cont, failures}
+
+          # A verifier fault means the contract did not execute. It is usually
+          # shared infrastructure (toolchain, permissions, missing executable),
+          # so attempting the rest can repeat the same expensive fault across
+          # an entire packet. Keep-going applies to prompt outcomes, not broken
+          # infrastructure.
+          {:error, {:verifier_fault, _faults} = reason} ->
+            {:halt, {:infrastructure_error, reason}}
+
+          {:error, reason} ->
+            {:cont, [%{prompt: num, reason: reason} | failures]}
+        end
+      end)
+
+    case result do
+      {:infrastructure_error, reason} ->
+        {:error, reason}
+
+      [] ->
+        :ok
+
+      failures ->
+        failures = Enum.reverse(failures)
+        IO.puts("")
+
+        IO.puts(
+          UI.red("#{length(failures)} selected prompt(s) failed; all others were attempted:")
+        )
+
+        Enum.each(failures, &IO.puts("  #{&1.prompt}: #{summarize_reason(&1.reason)}"))
+        {:error, {:prompts_failed, failures}}
+    end
   end
 
   @doc false
@@ -262,33 +307,41 @@ defmodule PromptRunner.Runner do
         {:ok, Prompts.phase_nums(plan, opts[:phase])}
 
       opts[:remaining] ->
-        {:ok, Progress.remaining(plan, Prompts.nums(plan))}
+        Progress.remaining_checked(plan, Prompts.nums(plan))
 
       opts[:continue] ->
-        targets =
-          case Progress.last_completed(plan) do
-            nil ->
-              Prompts.nums(plan)
-
-            last ->
-              next =
-                last
-                |> String.to_integer()
-                |> Kernel.+(1)
-                |> Integer.to_string()
-                |> String.pad_leading(2, "0")
-
-              Prompts.nums(plan) |> Enum.filter(&(&1 >= next))
-          end
-
-        warn_continue_skips(plan, targets)
-        {:ok, targets}
+        continue_targets(plan)
 
       opts[:all] ->
         {:ok, Prompts.nums(plan)}
 
       true ->
         {:error, :no_target}
+    end
+  end
+
+  defp continue_targets(plan) do
+    with {:ok, remaining_prompts} <- Progress.remaining_checked(plan, Prompts.nums(plan)) do
+      targets = targets_after_last_completed(plan)
+      warn_continue_skips(remaining_prompts, targets)
+      {:ok, targets}
+    end
+  end
+
+  defp targets_after_last_completed(plan) do
+    case Progress.last_completed(plan) do
+      nil ->
+        Prompts.nums(plan)
+
+      last ->
+        next =
+          last
+          |> String.to_integer()
+          |> Kernel.+(1)
+          |> Integer.to_string()
+          |> String.pad_leading(2, "0")
+
+        Prompts.nums(plan) |> Enum.filter(&(&1 >= next))
     end
   end
 
@@ -307,8 +360,8 @@ defmodule PromptRunner.Runner do
   # that failed or never ran is stepped over. That is a reasonable thing to ask
   # for and a terrible thing to get by accident, so say which prompts are being
   # left behind rather than leaving it to be discovered later.
-  defp warn_continue_skips(plan, targets) do
-    case Progress.remaining(plan, Prompts.nums(plan)) -- targets do
+  defp warn_continue_skips(remaining_prompts, targets) do
+    case remaining_prompts -- targets do
       [] ->
         :ok
 
@@ -606,7 +659,7 @@ defmodule PromptRunner.Runner do
     if changed_paths_only?(prompt.verify) do
       :run
     else
-      classify_preflight(Verifier.verify_prompt(plan, prompt))
+      classify_preflight(plan, Verifier.verify_prompt(plan, prompt))
     end
   end
 
@@ -616,11 +669,56 @@ defmodule PromptRunner.Runner do
     Map.has_key?(contract, "changed_paths_only") or Map.has_key?(contract, :changed_paths_only)
   end
 
-  defp classify_preflight(report) do
+  defp classify_preflight(plan, report) do
     cond do
-      Verifier.fault?(report) -> {:fault, report}
-      report.pass? and report.items != [] -> {:satisfied, report}
-      true -> :run
+      Verifier.fault?(report) ->
+        {:fault, report}
+
+      report.pass? and report.items != [] and preflight_evidence_clean?(plan, report) ->
+        {:satisfied, report}
+
+      true ->
+        :run
+    end
+  end
+
+  # A passing file contract is not enough to skip the provider when the file is
+  # still uncommitted. This is the crash window `--remaining` exists to recover:
+  # work may satisfy files_exist/contains/doc after a session died but still
+  # need the session's commit-and-push standing orders. Check only paths named
+  # by the contract, so unrelated dirt in a deliberately shared repository does
+  # not force a completed prompt to run again.
+  defp preflight_evidence_clean?(plan, report) do
+    report.items
+    |> Enum.filter(&(is_binary(Map.get(&1, :resolved_path)) and Map.get(&1, :pass?) == true))
+    |> Enum.all?(&report_item_clean?(plan, &1))
+  end
+
+  defp report_item_clean?(plan, item) do
+    with root when is_binary(root) <- report_repo_root(plan, Map.get(item, :repo)),
+         path when is_binary(path) <- Map.get(item, :resolved_path),
+         relative when relative != path <- Path.relative_to(path, root),
+         false <- String.starts_with?(relative, ".."),
+         {output, 0} <- Git.cmd(root, ["status", "--porcelain", "--", relative]) do
+      String.trim(output) == ""
+    else
+      # A path outside a configured target repository is not commit evidence;
+      # leave its normal verifier result authoritative.
+      _other -> true
+    end
+  end
+
+  defp report_repo_root(%Plan{config: config}, repo_name) do
+    case config.target_repos do
+      repos when is_list(repos) ->
+        selected =
+          Enum.find(repos, &(to_string(&1.name) == to_string(repo_name))) ||
+            Enum.find(repos, &(&1.default == true)) || List.first(repos)
+
+        if selected, do: selected.path, else: config.project_dir
+
+      _other ->
+        config.project_dir
     end
   end
 
@@ -1111,22 +1209,6 @@ defmodule PromptRunner.Runner do
     rendering
   end
 
-  # A pause is a steer with nothing to say: interrupt the turn and let the
-  # thread be resumed later. It never holds the provider process open, because
-  # a pause has no bounded duration and a held process dies to provider idle
-  # limits and to `run_deadline_ms` — a death discovered only on resume.
-  defp apply_control_command({:pause, author}, rendering) do
-    case Process.get(:prompt_runner_steer_context) do
-      %{llm: llm, meta: meta} ->
-        record_pause(llm_module().steer(llm, meta, @resume_prompt), author)
-
-      _other ->
-        put_plane(Plane.steer_refused(plane(), "", author, :no_live_session))
-    end
-
-    rendering
-  end
-
   defp apply_control_command(_command, rendering), do: rendering
 
   defp steer_cwd do
@@ -1165,23 +1247,6 @@ defmodule PromptRunner.Runner do
     put_plane(Plane.steer_refused(plane(), text, author, reason))
     IO.puts("")
     IO.puts(UI.red("  ↳ steer refused: #{inspect(reason)}"))
-  end
-
-  defp record_pause({:ok, _delivery}, author) do
-    put_plane(Plane.record(plane(), "pause", %{}, author: author, outcome: :applied))
-    Process.put(:prompt_runner_pending_steer, %{text: @resume_prompt, author: author, lane: nil})
-    IO.puts("")
-    IO.puts(UI.yellow("  ↳ paused; the thread can be resumed later"))
-  end
-
-  defp record_pause({:error, reason}, author) do
-    put_plane(
-      Plane.record(plane(), "pause", %{},
-        author: author,
-        outcome: :rejected,
-        reason: inspect(reason)
-      )
-    )
   end
 
   defp first_line(text) do
@@ -2152,13 +2217,28 @@ defmodule PromptRunner.Runner do
   end
 
   defp complete_prompt_attempt(ctx, report, override?, failure) do
-    commit_info =
+    commit_result =
       if ctx.skip_commit do
-        {:skip, :no_commit}
+        {:ok, {:skip, :no_commit}}
       else
-        commit_prompt(ctx.plan, ctx.prompt, ctx.llm)
+        commit_prompt_checked(ctx.plan, ctx.prompt, ctx.llm)
       end
 
+    case commit_result do
+      {:ok, commit_info} ->
+        finish_completed_attempt(ctx, report, override?, failure, commit_info)
+
+      {:error, reason} ->
+        Runtime.mark_status(ctx.plan, ctx.prompt.num, "commit_failed", %{
+          "last_verifier" => report,
+          "reason" => summarize_reason(reason)
+        })
+
+        return_error(ctx.plan, ctx.prompt.num, reason)
+    end
+  end
+
+  defp finish_completed_attempt(ctx, report, override?, failure, commit_info) do
     Progress.mark_completed(ctx.plan, ctx.prompt.num, commit_info)
 
     Runtime.mark_status(
@@ -2315,6 +2395,33 @@ defmodule PromptRunner.Runner do
     {module, opts} = plan.committer
     module.commit(plan, prompt, %{}, opts)
   end
+
+  defp commit_prompt_checked(plan, prompt, llm) do
+    result = commit_prompt(plan, prompt, llm)
+
+    if commit_success?(result) do
+      {:ok, result}
+    else
+      {:error, {:commit_failed, result}}
+    end
+  rescue
+    error -> {:error, {:commit_failed, Exception.message(error)}}
+  catch
+    kind, reason -> {:error, {:commit_failed, "#{kind}: #{inspect(reason)}"}}
+  end
+
+  defp commit_success?({:ok, _sha}), do: true
+  defp commit_success?({:skip, _reason}), do: true
+
+  defp commit_success?(results) when is_list(results) do
+    results != [] and
+      Enum.all?(results, fn
+        {_repo, result} -> commit_success?(result)
+        _other -> false
+      end)
+  end
+
+  defp commit_success?(_other), do: false
 
   defp get_repo_path(%Plan{config: config}, repo_name), do: get_repo_path(config, repo_name)
 

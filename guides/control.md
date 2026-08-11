@@ -103,7 +103,6 @@ accumulated — counters, an open line — goes with it.
 
 ```bash
 prompt_runner control steer demo "you're down a rabbit hole; check dependency_sources.exs first"
-prompt_runner control pause demo
 ```
 
 Steering changes *how* the agent works toward an **unchanged** definition of
@@ -115,8 +114,7 @@ freely, and what makes amendment a different verb.
 
 | lane | stdin | how a steer arrives |
 |------|-------|---------------------|
-| `claude` | open | written to the running turn; the turn continues |
-| `codex`, `amp`, `cursor`, `antigravity` | closed at start | the turn is interrupted and the same provider thread is resumed with the steer as its next prompt |
+| `claude`, `codex`, `amp`, `cursor`, `antigravity` | closed at start | the turn is interrupted and the same provider thread is resumed with the steer as its next prompt |
 
 Which one applies is the provider profile's own transport fact —
 `CliSubprocessCore.ProviderProfile.accepts_input_after_start?/1` — not a list of
@@ -153,14 +151,6 @@ disappears. Run state is runtime detail; this is not.
 The prompt's result records `steered`, `steer_count`, and the path to the
 artifact, so a human-guided result is distinguishable from an autonomous one —
 flagged, not disqualified.
-
-### Pausing
-
-`pause/2` interrupts the turn and leaves the provider thread resumable. It does
-**not** hold the process open. A pause has no bounded duration — the reason to
-pause is to think, or to stop for the night — and a held provider process dies
-silently to provider idle limits and to `run_deadline_ms`, with the death
-discovered only on resume.
 
 ## Seeing what changed on disk
 

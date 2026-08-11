@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-10
+
 ### Added
+
+- `--keep-going` for packets whose prompts are independent: prompt-local
+  failures are collected and reported after the remaining selected prompts
+  have been attempted. Fail-fast remains the default.
+- A packaged `priv/capabilities` manifest for launchers to inspect without
+  compiling or executing the runner.
 
 - `PromptRunner.Control`: a process-addressable API for watching a live run and
   changing how it renders, without attaching to the session.
@@ -38,16 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through rendering an event produces output belonging to neither setting.
 - `examples/watch_run.exs`: a consumer that is not the CLI, driving a live run
   through `PromptRunner.Control` alone.
-- Steering: `PromptRunner.Control.steer/3` and `pause/2`, and
-  `mix prompt_runner control steer|pause`. Steering changes *how* the agent
+- Steering: `PromptRunner.Control.steer/3` and
+  `mix prompt_runner control steer`. Steering changes *how* the agent
   works toward an unchanged definition of done — the verify contract is
   untouched, which is what makes it safe to allow freely.
 
-  Which mechanism a steer uses is the provider profile's own transport fact:
-  `claude` leaves stdin open and takes the text on the running turn; every
-  other provider closes stdin at start, so the turn is interrupted and the same
-  provider thread resumed with the steer as its next prompt — same thread, full
-  context, nothing re-derived.
+  Which mechanism a steer uses is the provider profile's own transport fact.
+  No current shipped profile declares incremental input after startup, so the
+  turn is interrupted and the same provider thread resumes with the steer as
+  its next prompt — same thread, full context, nothing re-derived.
 
   A steer has its own budget, `recovery.max_steers` (default 3), per prompt per
   run. It never consumes and never resets `retry.max_attempts` or
@@ -61,9 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `packet/.prompt_runner/interventions/<prompt>.jsonl` that is committed with
   the work. The prompt's result records `steered` and `steer_count`.
 
-  `pause/2` interrupts and leaves the thread resumable rather than holding the
-  provider process open, which would die silently to provider idle limits and
-  to `run_deadline_ms`.
 - `c:PromptRunner.LLM.steer/3`, so steering goes through the same seam as
   streaming rather than reaching past it into `PromptRunner.Session`.
 - Diff rendering, as the `diff` view setting (`none` | `stat` | `full`,
@@ -104,9 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resumes from `last_completed + 1`, so a packet whose 03 failed while 04
   succeeded resumed at 05 and stepped over 03 in silence; both live packets
   carried a `remaining_prompts()` bash function to work around it. A prompt with
-  no record is remaining, and an unreadable store makes every prompt remaining —
-  a resume that silently runs nothing is worse than one that re-verifies
-  finished work. When `--remaining` selects nothing, the run says so.
+  no record is remaining. A missing store is a new run; an existing unreadable
+  or malformed store fails closed instead of turning a resume into a full
+  rerun. When `--remaining` selects nothing, the run says so.
 - Pre-flight verification. Under `--remaining`, a prompt's verify contract is
   evaluated before the provider is invoked; one that already passes is marked
   completed with no session and records `session_ran: false` and
@@ -138,8 +142,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A repair attempt's failure block is rendered as labelled fields and the
   command's own output rather than `inspect/1` of an Elixir map, capped at a
   line budget with an explicit truncation marker.
+- A packet run owns an exclusive pidfile lock. A second run cannot overwrite
+  the first run's identity, cleanup cannot remove a successor's lock, and Linux
+  process start time prevents a recycled PID from reporting a dead run as UP.
+- `--keep-going` stops immediately on verifier infrastructure faults while
+  continuing past prompt-local outcomes, avoiding the same broken toolchain or
+  command being retried across an entire packet.
 
 ### Fixed
+
+- Reject unknown run and plan switches instead of silently discarding them.
+- Make `--remaining` and `--continue` fail closed when an existing progress
+  store is unreadable, empty, or malformed; a missing store still means a new
+  run.
+- Honor the configured repair attempt budget instead of hard-stopping after
+  the first failed repair.
+- Run verifier commands in a non-login shell so the explicitly supplied runner
+  environment survives into contracts.
+- Do not pre-flight-complete a prompt merely because its named evidence exists
+  when that evidence is still uncommitted. Unrelated changes elsewhere in a
+  shared repository remain outside that decision.
+- A failed or crashing committer no longer marks a verified prompt completed;
+  it records `commit_failed` and leaves the prompt eligible for recovery.
+- Remove the advertised pause command. It interrupted a turn and immediately
+  auto-resumed it, so it never established a paused state or an honest resume
+  protocol.
 
 - A steer resumes the work rather than ending it. The steer text alone became
   the whole resume prompt, so a thread resumed with "write the numbers as
@@ -779,6 +806,9 @@ paid in provider tokens for as long as nobody is watching.
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
+[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.7.0...v0.8.0

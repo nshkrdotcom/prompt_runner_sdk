@@ -22,7 +22,7 @@ defmodule PromptRunner.Verifier do
         }
 
   # Exit codes that say the check never ran, as opposed to ran and disagreed.
-  # `bash -lc` reports 127 for a command it could not find and 126 for one it
+  # `bash -c` reports 127 for a command it could not find and 126 for one it
   # found and could not execute; `timeout` reports 124 when it killed its child.
   # None of these is evidence about the work in either direction, and reading
   # them as a verification failure discards finished attempts — which is exactly
@@ -327,7 +327,7 @@ defmodule PromptRunner.Verifier do
       %{repo: repo, command: command, cwd: cwd} =
         resolve_command_entry(entry, repo_index, default_scope)
 
-      {output, code} = System.cmd("bash", ["-lc", command], cd: cwd, stderr_to_stdout: true)
+      {output, code} = System.cmd("bash", ["-c", command], cd: cwd, stderr_to_stdout: true)
       fault = Map.get(@fault_exit_codes, code)
 
       %{

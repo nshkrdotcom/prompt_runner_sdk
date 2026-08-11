@@ -27,6 +27,7 @@ defmodule PromptRunner.CLI do
     all: :boolean,
     remaining: :boolean,
     verify_first: :boolean,
+    keep_going: :boolean,
     phase: :integer,
     no_commit: :boolean,
     dry_run: :boolean,
@@ -399,13 +400,18 @@ defmodule PromptRunner.CLI do
   end
 
   defp run_plan(rest) do
-    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: @run_switches)
-    packet_dir = packet_dir(remaining)
+    case parse_run_options(rest) do
+      {:ok, opts, remaining} ->
+        packet_dir = packet_dir(remaining)
 
-    case PromptRunner.plan(packet_dir, cli_opts(opts)) do
-      {:ok, plan} ->
-        print_plan_summary(plan)
-        :ok
+        case PromptRunner.plan(packet_dir, cli_opts(opts)) do
+          {:ok, plan} ->
+            print_plan_summary(plan)
+            :ok
+
+          {:error, reason} ->
+            handle_error(reason)
+        end
 
       {:error, reason} ->
         handle_error(reason)
@@ -413,30 +419,45 @@ defmodule PromptRunner.CLI do
   end
 
   defp run_run(rest) do
-    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: @run_switches)
-
-    {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining)
-
-    case PromptRunner.plan(packet_dir, cli_opts(opts)) do
-      {:ok, plan} ->
-        cli_run_opts =
-          opts
-          |> cli_opts()
-          |> Keyword.put(:run, true)
-          |> maybe_put(:all, opts[:all] || (prompt_ids == [] and not truthy?(opts[:remaining])))
-          |> maybe_put(:remaining, opts[:remaining])
-          |> maybe_put(:verify_first, opts[:verify_first])
-          |> maybe_put(:phase, opts[:phase])
-          |> maybe_put(:no_commit, opts[:no_commit])
-          |> maybe_put(:dry_run, opts[:dry_run])
-
-        case Runner.execute_plan(plan, cli_run_opts, prompt_ids) do
-          :ok -> :ok
-          {:error, reason} -> handle_error(reason)
-        end
-
+    with {:ok, opts, remaining} <- parse_run_options(rest),
+         {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining),
+         {:ok, plan} <- PromptRunner.plan(packet_dir, cli_opts(opts)) do
+      execute_cli_run(plan, opts, prompt_ids)
+    else
       {:error, reason} ->
         handle_error(reason)
+    end
+  end
+
+  defp execute_cli_run(plan, opts, prompt_ids) do
+    cli_run_opts =
+      opts
+      |> cli_opts()
+      |> Keyword.put(:run, true)
+      |> maybe_put(
+        :all,
+        opts[:all] || (prompt_ids == [] and not truthy?(opts[:remaining]))
+      )
+      |> maybe_put(:remaining, opts[:remaining])
+      |> maybe_put(:verify_first, opts[:verify_first])
+      |> maybe_put(:keep_going, opts[:keep_going])
+      |> maybe_put(:phase, opts[:phase])
+      |> maybe_put(:no_commit, opts[:no_commit])
+      |> maybe_put(:dry_run, opts[:dry_run])
+
+    case Runner.execute_plan(plan, cli_run_opts, prompt_ids) do
+      :ok -> :ok
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  @doc false
+  @spec parse_run_options([String.t()]) ::
+          {:ok, keyword(), [String.t()]} | {:error, {:invalid_options, list()}}
+  def parse_run_options(rest) when is_list(rest) do
+    case OptionParser.parse(rest, strict: @run_switches) do
+      {opts, remaining, []} -> {:ok, opts, remaining}
+      {_opts, _remaining, invalid} -> {:error, {:invalid_options, invalid}}
     end
   end
 
@@ -507,11 +528,6 @@ defmodule PromptRunner.CLI do
       [] -> handle_error(:empty_steer)
       [packet | words] -> steer_target(packet, words, opts)
     end
-  end
-
-  defp run_control(["pause" | rest]) do
-    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: [author: :string])
-    control_result(CLIControl.pause(packet_dir(remaining), opts))
   end
 
   defp run_control(["amend" | rest]) do
@@ -858,7 +874,7 @@ defmodule PromptRunner.CLI do
       prompt_runner list [PACKET_DIR]
       prompt_runner plan [PACKET_DIR] [--provider PROVIDER] [--model MODEL]
       prompt_runner run [PACKET_DIR] [PROMPT_ID...] [--skip-preflight] [--dry-run]
-      prompt_runner run [PACKET_DIR] --remaining [--verify-first | --no-verify-first]
+      prompt_runner run [PACKET_DIR] --remaining [--verify-first | --no-verify-first] [--keep-going]
       prompt_runner repair [--packet PACKET_DIR] PROMPT_ID
       prompt_runner status [PACKET_DIR]
       prompt_runner watch [PACKET_DIR] [--interval SECONDS] [--once] [--json]
@@ -869,7 +885,6 @@ defmodule PromptRunner.CLI do
       prompt_runner control log [PACKET_DIR] [--follow] [--json]
       prompt_runner control events [PACKET_DIR] [--from current] [--json]
       prompt_runner control steer [PACKET_DIR] TEXT... [--author NAME]
-      prompt_runner control pause [PACKET_DIR] [--author NAME]
       prompt_runner control contract [PACKET_DIR] PROMPT_ID [--json]
       prompt_runner control amend [PACKET_DIR] PROMPT_ID --add-file PATH --reason "..." [--persist]
       prompt_runner control relax [PACKET_DIR] PROMPT_ID --drop CLAUSE --reason "..." --confirm
@@ -881,6 +896,10 @@ defmodule PromptRunner.CLI do
     in order, including ones earlier than the furthest one that finished. It
     pre-verifies each prompt first and skips any whose contract already passes;
     `--no-verify-first` turns that off.
+
+    `--keep-going` records a prompt-local failure and continues with the rest of
+    the selected prompts. The command still exits non-zero after the selection
+    and reports every failed prompt. Without it, runs remain fail-fast.
 
     """)
   end

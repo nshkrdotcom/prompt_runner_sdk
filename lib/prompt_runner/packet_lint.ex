@@ -30,7 +30,7 @@ defmodule PromptRunner.PacketLint do
   - `unknown_verify_clause` — an unrecognized key under `verify:` is parsed,
     stored, and never evaluated, so the contract is weaker than it reads.
   - `verify_command_missing_path` — a `commands:` entry names a script that
-    does not exist under the directory the verifier will run it in. `bash -lc`
+    does not exist under the directory the verifier will run it in. `bash -c`
     exits 127 for that, which the runner reports as a verifier fault and which,
     before that classification existed, was read as failed work.
 
@@ -443,7 +443,7 @@ defmodule PromptRunner.PacketLint do
           "verify_command_without_timeout",
           prompt,
           "verify command is not wrapped in timeout: #{inspect(command)} — the verifier runs " <>
-            "every command through bash -lc with no timeout, so a hung command hangs the " <>
+            "every command through bash -c with no timeout, so a hung command hangs the " <>
             "whole run after the model work is already spent"
         )
       ]

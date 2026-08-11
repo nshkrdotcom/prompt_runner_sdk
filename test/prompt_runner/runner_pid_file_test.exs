@@ -114,7 +114,9 @@ defmodule PromptRunner.RunnerPidFileTest do
     end)
 
     assert_received {:pid_file, {:ok, contents}}
-    assert String.trim(contents) == System.pid()
+    pid = System.pid()
+    assert [^pid, start_time] = String.split(contents)
+    assert start_time =~ ~r/^\d+$/
 
     refute File.exists?(pid_path)
   end
@@ -127,6 +129,31 @@ defmodule PromptRunner.RunnerPidFileTest do
       assert {:error, _reason} = PromptRunner.run(root, interface: :cli, no_commit: true)
     end)
 
+    refute File.exists?(pid_path)
+  end
+
+  test "a second run cannot overwrite the active run's pid file", %{repo: repo} do
+    root = packet!(repo, "README.md")
+    pid_path = root |> Paths.state_dir() |> Paths.pid_file()
+    test_pid = self()
+
+    capture_io(fn ->
+      assert {:ok, _run} =
+               PromptRunner.run(root,
+                 interface: :cli,
+                 no_commit: true,
+                 on_prompt_started: fn _event ->
+                   before = File.read!(pid_path)
+
+                   assert {:error, {:run_already_active, ^pid_path, _pid}} =
+                            PromptRunner.run(root, interface: :cli, no_commit: true)
+
+                   send(test_pid, {:lock_unchanged, before == File.read!(pid_path)})
+                 end
+               )
+    end)
+
+    assert_received {:lock_unchanged, true}
     refute File.exists?(pid_path)
   end
 end

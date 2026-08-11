@@ -101,6 +101,14 @@ defmodule PromptRunner.WatchTest do
     assert sample.pid == String.to_integer(System.pid())
   end
 
+  test "a live but reused pid identity reads as down", %{root: root} do
+    write_pid(root, System.pid() <> " 0")
+
+    assert {:ok, sample} = Watch.sample(root)
+    assert sample.runner == :down
+    assert sample.pid == String.to_integer(System.pid())
+  end
+
   test "a pid file naming a dead process reads as down", %{root: root} do
     write_pid(root, @dead_pid)
 

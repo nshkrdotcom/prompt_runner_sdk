@@ -128,6 +128,13 @@ defmodule PromptRunner.VerifierFaultTest do
     assert report.failures == []
   end
 
+  test "verification commands inherit the runner environment without a login shell" do
+    {report, _repo} =
+      report_for("if shopt -q login_shell; then echo unexpected-login-shell; exit 9; fi")
+
+    assert report.pass?
+  end
+
   test "fault_line names the command and the directory it could not run in" do
     {report, repo} = report_for("./definitely_not_here.sh")
 

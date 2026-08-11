@@ -136,22 +136,6 @@ defmodule PromptRunner.Control do
   end
 
   @doc """
-  Interrupts the current turn and resumes the same provider thread.
-
-  Not a hold on the process. A pause has no bounded duration — the reason to
-  pause is to think, or to stop for the night — and holding the provider
-  process open dies silently to provider idle limits and to `run_deadline_ms`,
-  with the death discovered only on resume. So this interrupts the turn and
-  resumes the thread, which is the machinery steering builds anyway.
-  """
-  @spec pause(run_ref(), keyword()) :: :ok | {:error, term()}
-  def pause(run_ref, opts \\ [])
-
-  def pause({packet_dir, run_id}, opts) do
-    submit(packet_dir, run_id, "pause", %{}, opts)
-  end
-
-  @doc """
   Adds a requirement to a prompt's verify contract.
 
   Amendment changes what "done" means. It is the one capability here that can

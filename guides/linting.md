@@ -1,7 +1,7 @@
 # Packet Linting
 
 `mix prompt_runner packet lint` is the static authoring gate added in Prompt
-Runner 0.9.0. It is the sibling of `packet doctor`, and the difference between
+Runner 0.10.0. It is the sibling of `packet doctor`, and the difference between
 them is worth stating precisely:
 
 - **`packet doctor` reports gaps.** A packet with no prompts, a packet with no
@@ -73,7 +73,7 @@ and the verifier cannot drift.
 
 A `commands:` entry names a script that does not exist under the directory the
 verifier will run it in — the entry's `repo:`, or the prompt's first target, or
-the packet root. `bash -lc` exits 127 for that, which the runner classifies as a
+the packet root. `bash -c` exits 127 for that, which the runner classifies as a
 verifier fault and halts on. A contract kept pointing at `bin/check_doc.sh`
 after those scripts moved one directory down; every clause exited 127 and a
 finished prompt was discarded before that classification existed.
@@ -92,7 +92,7 @@ unless `--strict` is given.
 
 ### `verify_command_without_timeout`
 
-The verifier runs every command through `bash -lc` with **no timeout**. A
+The verifier runs every command through `bash -c` with **no timeout**. A
 command that hangs hangs the whole run, after the model work is already spent
 and often after the session has already committed. Wrap commands:
 

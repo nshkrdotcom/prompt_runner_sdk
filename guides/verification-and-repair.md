@@ -1,6 +1,6 @@
 # Verification And Repair
 
-Prompt Runner 0.9.0 treats deterministic verification as the source of truth
+Prompt Runner 0.10.0 treats deterministic verification as the source of truth
 for prompt completion. A provider reporting success is evidence, not a verdict.
 
 ## Contract Keys
@@ -42,7 +42,8 @@ entry, a typo'd clause name. See [Packet Linting](linting.md).
 
 ## `commands` Has No Timeout
 
-The verifier runs every command through `bash -lc` with no timeout of its own.
+The verifier runs every command through `bash -c` with no timeout of its own.
+It inherits the runner's environment and does not re-run login profiles.
 A command that hangs hangs the whole run, after the model work is already spent.
 Wrap every command:
 
@@ -58,7 +59,7 @@ This is not a style preference. A contract without it can cost a whole session.
 
 ## A Broken Verifier Is Not Failed Work
 
-`bash -lc` distinguishes "the check ran and disagreed" from "the check never
+`bash -c` distinguishes "the check ran and disagreed" from "the check never
 ran", and so does the verifier:
 
 | exit | means | classified as |

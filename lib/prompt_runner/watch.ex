@@ -12,8 +12,10 @@ defmodule PromptRunner.Watch do
   WATCH 16:57Z runner=UP prompt=11 quiet=0min repos=3 dirty=0 commits=27
   ```
 
-  - `runner` — `UP` when `.prompt_runner/run.pid` names a process that still
-    exists. The runner writes that file for the duration of a run. Liveness is
+  - `runner` — `UP` when `.prompt_runner/run.pid` names the same process
+    identity that acquired the packet lock. On Linux the identity includes
+    `/proc` start time, so PID reuse cannot revive a dead run. The runner writes
+    that file for the duration of a run. Liveness is
     deliberately *not* a process-name match: such a pattern matches any command
     line containing it, including the supervisor's own shell, and an earlier
     implementation of exactly this check reported a healthy run forever.
@@ -50,6 +52,7 @@ defmodule PromptRunner.Watch do
   alias PromptRunner.Git
   alias PromptRunner.Packet
   alias PromptRunner.Paths
+  alias PromptRunner.RunLock
 
   @default_interval_seconds 900
 
@@ -161,33 +164,7 @@ defmodule PromptRunner.Watch do
   # -- liveness
 
   defp runner_status(pid_path) do
-    case read_pid(pid_path) do
-      nil -> {:down, nil}
-      pid -> {alive_status(pid), pid}
-    end
-  end
-
-  defp read_pid(pid_path) do
-    with {:ok, contents} <- File.read(pid_path),
-         {pid, _rest} <- Integer.parse(String.trim(contents)),
-         true <- pid > 0 do
-      pid
-    else
-      _other -> nil
-    end
-  end
-
-  defp alive_status(pid), do: if(alive?(pid), do: :up, else: :down)
-
-  defp alive?(pid) do
-    if File.dir?("/proc") do
-      File.dir?("/proc/#{pid}")
-    else
-      match?(
-        {_output, 0},
-        System.cmd("kill", ["-0", Integer.to_string(pid)], stderr_to_stdout: true)
-      )
-    end
+    RunLock.status(pid_path)
   end
 
   # -- current prompt

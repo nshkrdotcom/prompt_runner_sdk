@@ -113,23 +113,23 @@ defmodule PromptRunner.RecoveryPolicy do
       retry_count < retry_limit(recovery, failure)
   end
 
-  defp repair_after_verification_failure?(recovery, repair_count, mode) do
+  defp repair_after_verification_failure?(recovery, repair_count, _mode) do
     RecoveryConfig.repair_enabled?(recovery) and
       RecoveryConfig.repair_trigger?(recovery, "trigger_on_nominal_success_with_failed_verifier") and
-      repair_count < RecoveryConfig.repair_max_attempts(recovery) and mode != :repair
+      repair_count < RecoveryConfig.repair_max_attempts(recovery)
   end
 
   defp repair_after_failure?(
          recovery,
          repair_count,
-         mode,
+         _mode,
          retry_exhausted?,
          workspace_changed?
        ) do
     workspace_changed? and
       RecoveryConfig.repair_enabled?(recovery) and
       repair_count < RecoveryConfig.repair_max_attempts(recovery) and
-      mode != :repair and repair_trigger?(recovery, retry_exhausted?)
+      repair_trigger?(recovery, retry_exhausted?)
   end
 
   defp provider_failure_result(reason, failure), do: {:provider_failed, reason, failure}

@@ -67,11 +67,10 @@ defmodule PromptRunner.Session do
   @doc """
   Says something to a session that is already running.
 
-  Two mechanisms, and the lane decides which one applies. `claude` leaves stdin
-  open and takes the text on it: the turn continues, uninterrupted, and nothing
-  else happens. Every other provider closes stdin at start, so the only way in
-  is to interrupt the turn and resume the same provider thread with the text as
-  the next prompt — same thread, full context, no protocol change.
+  The provider profile decides the mechanism. Current shipped profiles close
+  stdin at start, so steering interrupts the turn and resumes the same provider
+  thread with the text as the next prompt. A future profile may advertise
+  incremental input, in which case text can be delivered to the live turn.
 
   Returns:
 

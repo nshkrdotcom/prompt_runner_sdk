@@ -116,10 +116,31 @@ defmodule PromptRunner.RunnerRemainingTest do
       assert "02" in Progress.remaining(plan!(root), ~w(01 02 03 04))
     end
 
-    test "an unreadable store makes every prompt remaining", %{root: root} do
+    test "a missing store means a new run and makes every prompt remaining", %{root: root} do
       refute File.exists?(progress_file(root))
 
       assert Progress.remaining(plan!(root), ~w(01 02 03 04)) == ~w(01 02 03 04)
+
+      assert {:ok, ~w(01 02 03 04)} =
+               Progress.remaining_checked(plan!(root), ~w(01 02 03 04))
+    end
+
+    test "a malformed existing store fails closed", %{root: root} do
+      write_progress!(root, ["this is not a progress record"])
+
+      assert {:error, {:progress_store_invalid, path, 1, _line}} =
+               Progress.remaining_checked(plan!(root), ~w(01 02 03 04))
+
+      assert path == progress_file(root)
+    end
+
+    test "an empty existing store fails closed instead of becoming run-all", %{root: root} do
+      write_progress!(root, [])
+
+      assert {:error, {:progress_store_invalid, path, 1, ""}} =
+               Progress.remaining_checked(plan!(root), ~w(01 02 03 04))
+
+      assert path == progress_file(root)
     end
 
     test "the requested order is preserved", %{root: root} do
@@ -158,6 +179,13 @@ defmodule PromptRunner.RunnerRemainingTest do
 
       assert {:ok, ~w(01)} =
                Runner.build_targets_for_test(plan!(root), [run: true, remaining: true], ~w(01))
+    end
+
+    test "a malformed progress store cannot turn --remaining into run-all", %{root: root} do
+      write_progress!(root, ["broken"])
+
+      assert {:error, {:progress_store_invalid, _path, 1, "broken"}} =
+               Runner.build_targets_for_test(plan!(root), [run: true, remaining: true], [])
     end
   end
 
