@@ -179,6 +179,8 @@ defmodule PromptRunner.Workspace do
 
   defp within?(path, root) do
     relative = Path.relative_to(Path.expand(path), Path.expand(root))
-    relative == "." or not (relative == ".." or String.starts_with?(relative, "../"))
+
+    Path.type(relative) == :relative and
+      (relative == "." or not (relative == ".." or String.starts_with?(relative, "../")))
   end
 end

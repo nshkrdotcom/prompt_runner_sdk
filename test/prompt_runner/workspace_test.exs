@@ -194,6 +194,8 @@ defmodule PromptRunner.WorkspaceTest do
 
   test "a packet tracked by a workspace repository is read from the independent clone", %{
     manifest: manifest,
+    remote: remote,
+    root: root,
     source: source,
     xdg_data: xdg_data
   } do
@@ -231,6 +233,25 @@ defmodule PromptRunner.WorkspaceTest do
 
     {_output, 0} =
       System.cmd("git", ["push", "origin", "HEAD"], cd: source, stderr_to_stdout: true)
+
+    unrelated = Path.join(root, "an-unrelated-source-with-a-longer-name-than-the-owner")
+    File.mkdir_p!(unrelated)
+    branch = PromptRunner.Git.value(source, ["branch", "--show-current"])
+
+    File.write!(
+      manifest,
+      String.replace(
+        File.read!(manifest),
+        "repositories:\n",
+        """
+        repositories:
+          unrelated:
+            remote: "#{remote}"
+            ref: "#{branch}"
+            source: "#{unrelated}"
+        """
+      )
+    )
 
     assert {:ok, _prepared} = Workspace.prepare(manifest)
     clone = Path.join([xdg_data, "prompt_runner", "workspaces", "test-workspace", "repos", "app"])
