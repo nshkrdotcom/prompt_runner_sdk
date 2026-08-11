@@ -141,6 +141,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A steer resumes the work rather than ending it. The steer text alone became
+  the whole resume prompt, so a thread resumed with "write the numbers as
+  digits" heard a complete instruction, said "got it", and finished its turn —
+  a live run stopped six numbers into a twelve-number task. The resume now
+  carries the steer *and* the instruction to carry on, because steering changes
+  how the agent works toward an unchanged definition of done.
+- A guardrail record reaches the control log, not only the session log. Phase
+  A's acceptance asked for it there; when Phase A landed there was no control
+  log to put it in.
 - A failed tool call no longer renders as a successful one. The studio renderer
   ignored the event type: a `:tool_call_failed` carries `is_error: true` and
   usually no `status` or `exit_code`, so a failed edit came out as

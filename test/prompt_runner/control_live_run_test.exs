@@ -203,6 +203,46 @@ defmodule PromptRunner.ControlLiveRunTest do
     assert File.ls!(Path.join([packet_root, ".prompt_runner", "control", "requests"])) == []
   end
 
+  # Phase A's acceptance says the control log records an allowlist miss. When
+  # Phase A landed there was no control log to put it in, so it went to the
+  # session log only.
+  test "a guardrail record reaches the control log", %{packet_root: packet_root} do
+    expect(PromptRunner.LLMMock, :start_stream, fn llm, _prompt ->
+      stream = [
+        %{type: :run_started, data: %{model: "simulated-demo"}},
+        %{
+          type: :tool_call_started,
+          data: %{
+            tool_name: "TodoWrite",
+            tool_call_id: "t1",
+            guardrail: %{
+              action: :recorded,
+              rule: :allowed_tools,
+              reason: :lane_observes_tools_after_execution,
+              tool_name: "TodoWrite",
+              allowed_tools: ["Read"]
+            }
+          }
+        },
+        %{type: :run_completed, data: %{stop_reason: "end_turn"}}
+      ]
+
+      {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
+    end)
+
+    run(packet_root)
+    assert_received {:result, :ok}
+
+    {:ok, run_ref} = Control.current_run(packet_root)
+    assert {:ok, entries} = Control.log(run_ref)
+    assert [entry] = Enum.filter(entries, &(&1.command == "guardrail"))
+
+    assert entry.params["tool"] == "TodoWrite"
+    assert entry.params["allowed_tools"] == "Read"
+    assert entry.reason == "lane_observes_tools_after_execution"
+    assert entry.prompt_id == "01"
+  end
+
   test "the snapshot records how the run ended when a prompt fails", %{packet_root: packet_root} do
     expect(PromptRunner.LLMMock, :start_stream, fn _llm, _prompt ->
       {:error, :boom}

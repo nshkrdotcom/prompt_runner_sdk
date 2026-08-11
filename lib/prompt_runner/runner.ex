@@ -1273,26 +1273,51 @@ defmodule PromptRunner.Runner do
   # `allowed_tools` is recorded rather than raised — killing the run at that
   # point prevents nothing and discards the work. The record is what makes the
   # allowlist miss reviewable afterwards.
+  #
+  # It goes to both places on purpose. The session log is where someone reading
+  # one run's transcript will look; the control log is the reviewable record of
+  # everything that governed the run, and a guardrail decision belongs there
+  # next to the steers and the amendments. When Phase A landed there was no
+  # control log to put it in.
   defp maybe_log_guardrail(%{type: :tool_call_started, data: data}, log_io) when is_map(data) do
     case map_get(data, :guardrail) do
-      guardrail when is_map(guardrail) ->
-        # Leading newline: the renderer writes to this same device and is
-        # mid-line whenever a tool starts, so without it the record lands
-        # spliced into a token and stops being greppable.
-        IO.binwrite(
-          log_io,
-          "\nGUARDRAIL action=#{map_get(guardrail, :action)} rule=#{map_get(guardrail, :rule)} " <>
-            "tool=#{map_get(guardrail, :tool_name)} " <>
-            "allowed_tools=#{Enum.join(map_get(guardrail, :allowed_tools) || [], ",")} " <>
-            "reason=#{map_get(guardrail, :reason)}\n"
-        )
-
-      _other ->
-        :ok
+      guardrail when is_map(guardrail) -> record_guardrail(guardrail, log_io)
+      _other -> :ok
     end
   end
 
   defp maybe_log_guardrail(_event, _log_io), do: :ok
+
+  defp record_guardrail(guardrail, log_io) do
+    tool = map_get(guardrail, :tool_name)
+    allowed = Enum.join(map_get(guardrail, :allowed_tools) || [], ",")
+    action = map_get(guardrail, :action)
+    reason = map_get(guardrail, :reason)
+
+    # Leading newline: the renderer writes to this same device and is mid-line
+    # whenever a tool starts, so without it the record lands spliced into a
+    # token and stops being greppable.
+    IO.binwrite(
+      log_io,
+      "\nGUARDRAIL action=#{action} rule=#{map_get(guardrail, :rule)} tool=#{tool} " <>
+        "allowed_tools=#{allowed} reason=#{reason}\n"
+    )
+
+    put_plane(
+      Plane.record(
+        plane(),
+        "guardrail",
+        %{
+          "tool" => tool,
+          "allowed_tools" => allowed,
+          "rule" => to_string(map_get(guardrail, :rule))
+        },
+        author: "runner",
+        outcome: :received,
+        reason: to_string(reason)
+      )
+    )
+  end
 
   defp error_tracking_callback(event) do
     case event.type do
@@ -1367,6 +1392,20 @@ defmodule PromptRunner.Runner do
     end
   end
 
+  # The steer text alone is not the resume prompt. A thread resumed with only
+  # "write the numbers as digits" hears a complete instruction, says "got it",
+  # and ends its turn — which is what a live run did, stopping six numbers into
+  # a twelve-number task. Steering changes *how* the agent works toward an
+  # unchanged definition of done, so the resume has to say both.
+  defp steer_resume_prompt(text) do
+    """
+    #{text}
+
+    Take that into account and carry on with the work you were doing. Do not
+    start over, and do not stop to acknowledge this — the task is unchanged.
+    """
+  end
+
   defp resume_with_steer(text, pending, recovery) do
     IO.puts(UI.yellow("Resuming the provider thread with the steer..."))
 
@@ -1375,7 +1414,7 @@ defmodule PromptRunner.Runner do
       "STEER action=resume provider=#{recovery.llm.sdk} text=#{inspect(first_line(text))}\n"
     )
 
-    case llm_module().resume_stream(recovery.llm, recovery.llm_meta, text) do
+    case llm_module().resume_stream(recovery.llm, recovery.llm_meta, steer_resume_prompt(text)) do
       {:ok, resumed_stream, resumed_close, resumed_meta} ->
         put_plane(
           Plane.steer_delivered(

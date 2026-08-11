@@ -144,7 +144,13 @@ defmodule PromptRunner.ControlSteeringTest do
 
     output = run(packet_root)
     assert_received {:result, :ok}
-    assert_received {:resumed_with, "check dependency_sources.exs first"}
+    # The steer, plus the instruction to carry on. Without the second half a
+    # live Claude run acknowledged the steer and ended its turn six numbers
+    # into a twelve-number task.
+    assert_received {:resumed_with, resumed}
+    assert resumed =~ "check dependency_sources.exs first"
+    assert resumed =~ "carry on with the work you were doing"
+    assert resumed =~ "the task is unchanged"
 
     assert output =~ "interrupting to steer"
     assert output =~ "Resuming the provider thread with the steer"
