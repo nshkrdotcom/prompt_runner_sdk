@@ -1295,7 +1295,8 @@ defmodule PromptRunner.CLI do
       prompt_runner workspace import-state MANIFEST PACKET_DIR [--source PROGRESS_FILE]
       prompt_runner start --workspace MANIFEST --packet PACKET_DIR --remaining [--from ID] [--through ID]
       prompt_runner status --workspace MANIFEST [--json]
-      prompt_runner watch --workspace MANIFEST [--interval SECONDS] [--json]
+      prompt_runner watch --workspace MANIFEST [--for 240m] [--every 10m]
+        [--require-running] [--require-progress] [--progress-timeout 60m] [--json]
       prompt_runner stop --workspace MANIFEST
 
     Execution:
