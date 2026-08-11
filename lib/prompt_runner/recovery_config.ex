@@ -17,6 +17,12 @@ defmodule PromptRunner.RecoveryConfig do
 
   @default %{
     "resume_attempts" => 2,
+    # Steering has its own budget and does not touch the retry or repair ones.
+    # Those bound the run's own attempts to satisfy a contract; a steer is not
+    # one of those. This exists because on a lane that resumes, a steer *is* a
+    # fresh provider invocation, and a person who steers three times and walks
+    # away has created three calls nothing was counting.
+    "max_steers" => 3,
     "retry" => %{
       "max_attempts" => 3,
       "base_delay_ms" => 1_000,
@@ -60,6 +66,10 @@ defmodule PromptRunner.RecoveryConfig do
   end
 
   def with_override(base, _override) when is_map(base), do: base
+
+  @spec max_steers(t()) :: non_neg_integer()
+  def max_steers(config) when is_map(config),
+    do: non_neg_integer(Map.get(config, "max_steers"), 3)
 
   @spec resume_attempts(t()) :: non_neg_integer()
   def resume_attempts(config) when is_map(config),
@@ -111,6 +121,7 @@ defmodule PromptRunner.RecoveryConfig do
   defp normalize_numbers(config) do
     config
     |> put_path(["resume_attempts"], non_neg_integer(get_path(config, ["resume_attempts"]), 2))
+    |> put_path(["max_steers"], non_neg_integer(get_path(config, ["max_steers"]), 3))
     |> put_path(
       ["retry", "max_attempts"],
       non_neg_integer(get_path(config, ["retry", "max_attempts"]), 3)

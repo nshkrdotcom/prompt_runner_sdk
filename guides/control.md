@@ -95,6 +95,73 @@ privileged synchronous path the CLI does not have.
 A `log_mode` change replaces the renderer. Whatever the outgoing renderer had
 accumulated — counters, an open line — goes with it.
 
+## Steering
+
+```elixir
+:ok = PromptRunner.Control.steer(run_ref, "check dependency_sources.exs before you keep editing mix files")
+```
+
+```bash
+prompt_runner control steer demo "you're down a rabbit hole; check dependency_sources.exs first"
+prompt_runner control pause demo
+```
+
+Steering changes *how* the agent works toward an **unchanged** definition of
+done. The verify contract is untouched: the prompt still passes or fails on
+exactly the criteria it started with. That is what makes steering safe to allow
+freely, and what makes amendment a different verb.
+
+### Two lanes, two mechanisms
+
+| lane | stdin | how a steer arrives |
+|------|-------|---------------------|
+| `claude` | open | written to the running turn; the turn continues |
+| `codex`, `amp`, `cursor`, `antigravity` | closed at start | the turn is interrupted and the same provider thread is resumed with the steer as its next prompt |
+
+Which one applies is the provider profile's own transport fact —
+`CliSubprocessCore.ProviderProfile.accepts_input_after_start?/1` — not a list of
+provider names, and not a caller's choice. On the resume lanes the agent keeps
+its full context: same thread, no protocol change, nothing re-derived.
+
+### A steer has its own budget
+
+`recovery.max_steers` (default 3), per prompt, per run. It exists because on a
+resume lane a steer *is* a fresh provider invocation, and a person who steers
+three times and walks away has created three calls nothing was counting.
+
+A steer never consumes and never resets `retry.max_attempts` or
+`repair.max_attempts`. Those bound the run's own attempts to satisfy a
+contract; a steer is not one of those. Exhausting `max_steers` is a **logged
+refusal**, not a run failure — the run carries on unsteered.
+
+### A steer is recorded, and is never evidence
+
+Two separate things.
+
+**Never evidence.** A contract asserting a document contains X is not satisfied
+by a human having said "put X in the doc". The verifier sees what the session
+produced, not what it was told.
+
+**Always recorded**, in two places. On the control log, with its attempt
+number; and as an append-only artifact at
+`packet/.prompt_runner/interventions/<prompt>.jsonl`, one object per steer —
+timestamp, prompt, attempt, author, text, lane, and delivery mechanism. The
+artifact lives with the prompt configuration and is committed alongside the
+work, so a steer is timestamped by a commit rather than by a state file that
+disappears. Run state is runtime detail; this is not.
+
+The prompt's result records `steered`, `steer_count`, and the path to the
+artifact, so a human-guided result is distinguishable from an autonomous one —
+flagged, not disqualified.
+
+### Pausing
+
+`pause/2` interrupts the turn and leaves the provider thread resumable. It does
+**not** hold the process open. A pause has no bounded duration — the reason to
+pause is to think, or to stop for the night — and a held provider process dies
+silently to provider idle limits and to `run_deadline_ms`, with the death
+discovered only on resume.
+
 ## The control directory
 
 ```

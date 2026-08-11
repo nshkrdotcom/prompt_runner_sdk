@@ -38,6 +38,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through rendering an event produces output belonging to neither setting.
 - `examples/watch_run.exs`: a consumer that is not the CLI, driving a live run
   through `PromptRunner.Control` alone.
+- Steering: `PromptRunner.Control.steer/3` and `pause/2`, and
+  `mix prompt_runner control steer|pause`. Steering changes *how* the agent
+  works toward an unchanged definition of done — the verify contract is
+  untouched, which is what makes it safe to allow freely.
+
+  Which mechanism a steer uses is the provider profile's own transport fact:
+  `claude` leaves stdin open and takes the text on the running turn; every
+  other provider closes stdin at start, so the turn is interrupted and the same
+  provider thread resumed with the steer as its next prompt — same thread, full
+  context, nothing re-derived.
+
+  A steer has its own budget, `recovery.max_steers` (default 3), per prompt per
+  run. It never consumes and never resets `retry.max_attempts` or
+  `repair.max_attempts`: those bound the run's own attempts to satisfy a
+  contract, and a steer is not one of those. Exhausting it is a logged refusal,
+  not a run failure.
+
+  A steer is never evidence — a contract asserting a document contains X is not
+  satisfied by a human having said "put X in the doc" — and is always recorded,
+  both on the control log and as an append-only artifact at
+  `packet/.prompt_runner/interventions/<prompt>.jsonl` that is committed with
+  the work. The prompt's result records `steered` and `steer_count`.
+
+  `pause/2` interrupts and leaves the thread resumable rather than holding the
+  provider process open, which would die silently to provider idle limits and
+  to `run_deadline_ms`.
+- `c:PromptRunner.LLM.steer/3`, so steering goes through the same seam as
+  streaming rather than reaching past it into `PromptRunner.Session`.
 - `mix prompt_runner run PACKET --remaining`, and `remaining: true` on
   `PromptRunner.run/2`.
   Runs every prompt whose recorded status is not `completed`, in order,

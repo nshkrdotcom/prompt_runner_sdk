@@ -29,6 +29,15 @@ defmodule PromptRunner.SimulatedLLM do
     {:ok, simulation_stream(step, meta), fn -> :ok end, meta}
   end
 
+  # The simulated provider has no process to interrupt and no stdin to write
+  # to. It reports the same shape the closed-stdin lanes report, so the runner's
+  # steer path — interrupt, then resume the thread with the text — is exercised
+  # end to end without a provider.
+  @impl true
+  def steer(llm, meta, text) when is_map(llm) and is_map(meta) and is_binary(text) do
+    {:ok, :interrupted}
+  end
+
   defp simulation_attempt(llm, attempt) do
     llm
     |> simulation_config()

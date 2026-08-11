@@ -101,6 +101,55 @@ defmodule PromptRunner.Control do
   end
 
   @doc """
+  Says something to the agent while it is working.
+
+  Steering changes *how* the agent works toward an unchanged definition of
+  done — "you're down a rabbit hole, check `dependency_sources.exs` before you
+  keep editing mix files". The verify contract is untouched: the prompt still
+  passes or fails on exactly the criteria it started with, which is what makes
+  steering safe to allow freely and amendment (`amend/4`) not.
+
+  A steer is never evidence. A contract asserting a document contains X is not
+  satisfied by a human having said "put X in the doc" — the verifier sees what
+  the session produced, not what it was told.
+
+  A steer is always recorded, twice: on the control log, and as an append-only
+  artifact at `packet/.prompt_runner/interventions/<prompt>.jsonl` that is
+  committed with the work. The prompt's result records that it was steered and
+  how many times, so a human-guided result is distinguishable from an
+  autonomous one — flagged, not disqualified.
+
+  Options:
+
+  - `:author` — recorded on both records, defaults to the OS user
+  """
+  @spec steer(run_ref(), String.t(), keyword()) :: :ok | {:error, term()}
+  def steer(run_ref, text, opts \\ [])
+
+  def steer({packet_dir, run_id}, text, opts) when is_binary(text) do
+    case String.trim(text) do
+      "" -> {:error, :empty_steer}
+      trimmed -> submit(packet_dir, run_id, "steer", %{"text" => trimmed}, opts)
+    end
+  end
+
+  @doc """
+  Interrupts the current turn and resumes the same provider thread.
+
+  Not a hold on the process. A pause has no bounded duration — the reason to
+  pause is to think, or to stop for the night — and holding the provider
+  process open dies silently to provider idle limits and to `run_deadline_ms`,
+  with the death discovered only on resume. So this interrupts the turn and
+  resumes the thread, which is the machinery steering builds anyway.
+  """
+  @spec pause(run_ref(), keyword()) :: :ok | {:error, term()}
+  def pause(run_ref, opts \\ [])
+
+  def pause({packet_dir, run_id}, opts) do
+    submit(packet_dir, run_id, "pause", %{}, opts)
+  end
+
+  @doc """
   Every command the plane has seen for this packet, oldest first.
 
   Includes refused commands. A refusal that leaves no trace is

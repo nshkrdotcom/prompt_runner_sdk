@@ -15,21 +15,24 @@ defmodule PromptRunner.Control.Plane do
   here is a no-op returning the same state.
   """
 
-  alias PromptRunner.Control.{Entry, Snapshot, Store}
+  alias PromptRunner.Control.{Entry, Interventions, Snapshot, Store}
 
-  @type command :: {:set_view, map()}
+  @type command ::
+          {:set_view, map()} | {:steer, String.t(), String.t() | nil} | {:pause, String.t() | nil}
 
   @type t :: %__MODULE__{
           packet_dir: String.t() | nil,
           snapshot: Snapshot.t(),
           run_started_mono: integer() | nil,
-          prompt_started_mono: integer() | nil
+          prompt_started_mono: integer() | nil,
+          max_steers: non_neg_integer()
         }
 
   defstruct packet_dir: nil,
             snapshot: %Snapshot{},
             run_started_mono: nil,
-            prompt_started_mono: nil
+            prompt_started_mono: nil,
+            max_steers: 0
 
   @doc """
   Opens the control plane for a run and writes its first snapshot.
@@ -58,7 +61,8 @@ defmodule PromptRunner.Control.Plane do
     %__MODULE__{
       packet_dir: packet_dir,
       snapshot: snapshot,
-      run_started_mono: monotonic_ms()
+      run_started_mono: monotonic_ms(),
+      max_steers: Keyword.get(opts, :max_steers, 0)
     }
     |> persist()
   end
@@ -68,6 +72,12 @@ defmodule PromptRunner.Control.Plane do
 
   @spec enabled?(t()) :: boolean()
   def enabled?(%__MODULE__{packet_dir: packet_dir}), do: is_binary(packet_dir)
+
+  @spec steer_count(t()) :: non_neg_integer()
+  def steer_count(%__MODULE__{snapshot: %Snapshot{steer_count: count}}), do: count
+
+  @spec packet_dir(t()) :: String.t() | nil
+  def packet_dir(%__MODULE__{packet_dir: packet_dir}), do: packet_dir
 
   @spec view(t()) :: Snapshot.view()
   def view(%__MODULE__{snapshot: %Snapshot{view: view}}), do: view
@@ -91,7 +101,8 @@ defmodule PromptRunner.Control.Plane do
         prompt_started_at: DateTime.utc_now(),
         tool_count: 0,
         input_tokens: 0,
-        output_tokens: 0
+        output_tokens: 0,
+        steer_count: steer_count_for(plane, prompt)
     }
 
     persist(%{plane | snapshot: snapshot, prompt_started_mono: monotonic_ms()})
@@ -210,8 +221,104 @@ defmodule PromptRunner.Control.Plane do
     end
   end
 
+  # The budget is per prompt and per run. It exists to bound *unattended*
+  # provider invocations: on a lane that resumes, a steer is a fresh `codex exec
+  # resume`, and a person who steers three times and walks away has created
+  # three calls nothing was counting. It is not a limit on how often a human may
+  # speak across days, so a new run starts the count again.
+  #
+  # Exhausting it is a logged refusal, not a run failure. The run carries on
+  # unsteered.
+  defp dispatch(plane, "steer" = command, params, author) do
+    text = params["text"]
+
+    cond do
+      not (is_binary(text) and String.trim(text) != "") ->
+        {reject(plane, command, params, author, "steer has no text"), []}
+
+      plane.snapshot.prompt_id == nil ->
+        {reject(plane, command, params, author, "no prompt is running"), []}
+
+      plane.snapshot.steer_count >= plane.max_steers ->
+        {reject(
+           plane,
+           command,
+           params,
+           author,
+           "steer budget spent (#{plane.snapshot.steer_count}/#{plane.max_steers} for this " <>
+             "prompt); raise recovery.max_steers to allow more"
+         ), []}
+
+      true ->
+        {plane, [{:steer, String.trim(text), author}]}
+    end
+  end
+
+  defp dispatch(plane, "pause" = command, params, author) do
+    if plane.snapshot.prompt_id == nil do
+      {reject(plane, command, params, author, "no prompt is running"), []}
+    else
+      {plane, [{:pause, author}]}
+    end
+  end
+
   defp dispatch(plane, command, params, author) do
     {reject(plane, command, params, author, "unknown command"), []}
+  end
+
+  @doc """
+  Records a steer that was actually delivered, and counts it against the budget.
+
+  Called by the runner rather than by `boundary/1`, because only the runner
+  knows whether the text reached the session — a steer refused by the lane must
+  not spend budget or leave an artifact claiming the agent was told something.
+  """
+  @spec steer_delivered(t(), String.t(), String.t() | nil, atom(), atom()) :: t()
+  def steer_delivered(%__MODULE__{packet_dir: nil} = plane, _text, _author, _lane, _delivery),
+    do: plane
+
+  def steer_delivered(%__MODULE__{} = plane, text, author, lane, delivery) do
+    Interventions.append(plane.packet_dir, %{
+      at: DateTime.utc_now(),
+      prompt_id: plane.snapshot.prompt_id,
+      attempt: plane.snapshot.attempt,
+      author: author,
+      text: text,
+      lane: lane,
+      delivery: delivery,
+      run_id: plane.snapshot.run_id
+    })
+
+    plane = %{plane | snapshot: %{plane.snapshot | steer_count: plane.snapshot.steer_count + 1}}
+
+    record(plane, "steer", %{"text" => text, "delivery" => to_string(delivery)},
+      author: author,
+      outcome: :applied
+    )
+  end
+
+  @doc """
+  Records a steer the lane refused. Costs no budget and leaves no artifact.
+  """
+  @spec steer_refused(t(), String.t(), String.t() | nil, term()) :: t()
+  def steer_refused(%__MODULE__{} = plane, text, author, reason) do
+    reject(plane, "steer", %{"text" => text}, author, steer_refusal_text(reason))
+  end
+
+  defp steer_refusal_text(:no_live_session),
+    do: "no provider session is live; nothing to steer"
+
+  defp steer_refusal_text(:no_active_turn),
+    do: "the provider has not started a turn yet; nothing to interrupt"
+
+  defp steer_refusal_text(reason), do: inspect(reason)
+
+  # Carried across attempts of the same prompt and reset when the prompt
+  # changes: a retry or a repair is still the same prompt being steered, and
+  # handing back a fresh budget on each attempt would make the budget mean
+  # nothing.
+  defp steer_count_for(%__MODULE__{snapshot: snapshot}, prompt) do
+    if snapshot.prompt_id == Map.get(prompt, :num), do: snapshot.steer_count, else: 0
   end
 
   defp reject(plane, command, params, author, reason) do

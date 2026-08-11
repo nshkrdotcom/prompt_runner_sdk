@@ -56,6 +56,42 @@ defmodule PromptRunner.CLI.Control do
     end
   end
 
+  @spec steer(String.t(), [String.t()], keyword()) :: :ok | {:error, term()}
+  def steer(packet_dir, words, opts \\ []) do
+    case Enum.join(words, " ") |> String.trim() do
+      "" ->
+        {:error, :empty_steer}
+
+      text ->
+        with {:ok, run_ref} <- Control.current_run(packet_dir),
+             :ok <- Control.steer(run_ref, text, opts) do
+          IO.puts(
+            UI.green(
+              "Steer queued. It is delivered at the next event boundary; " <>
+                "`control log` records whether the lane took it."
+            )
+          )
+
+          :ok
+        end
+    end
+  end
+
+  @spec pause(String.t(), keyword()) :: :ok | {:error, term()}
+  def pause(packet_dir, opts \\ []) do
+    with {:ok, run_ref} <- Control.current_run(packet_dir),
+         :ok <- Control.pause(run_ref, opts) do
+      IO.puts(
+        UI.green(
+          "Pause queued. The turn is interrupted and the provider thread is left " <>
+            "resumable; the process is not held open."
+        )
+      )
+
+      :ok
+    end
+  end
+
   @spec log(String.t(), keyword()) :: :ok | {:error, term()}
   def log(packet_dir, opts \\ []) do
     with {:ok, run_ref} <- Control.current_run(packet_dir),

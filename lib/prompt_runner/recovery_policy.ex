@@ -21,6 +21,13 @@ defmodule PromptRunner.RecoveryPolicy do
     end
   end
 
+  @doc """
+  How many steers this prompt may take before further ones are refused.
+  """
+  @spec max_steers(Plan.t(), map() | nil) :: non_neg_integer()
+  def max_steers(%Plan{} = plan, prompt \\ nil),
+    do: plan |> config(prompt) |> RecoveryConfig.max_steers()
+
   @spec resume_allowed?(Plan.t(), map(), :ok | {:error, term()}, non_neg_integer()) :: boolean()
   def resume_allowed?(%Plan{} = plan, prompt, {:error, reason}, resume_count) do
     failure = FailureEnvelope.from_reason(reason)

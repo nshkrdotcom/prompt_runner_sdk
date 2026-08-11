@@ -3,6 +3,7 @@ defmodule PromptRunner.Runner do
 
   alias PromptRunner.CommitMessages
   alias PromptRunner.Config
+  alias PromptRunner.Control.Interventions
   alias PromptRunner.Control.Plane
   alias PromptRunner.FailureEnvelope
   alias PromptRunner.Paths
@@ -151,7 +152,8 @@ defmodule PromptRunner.Runner do
     put_plane(
       Plane.open(control_packet_dir(plan),
         packet: packet_label(plan),
-        view: Config.view(plan.config)
+        view: Config.view(plan.config),
+        max_steers: RecoveryPolicy.max_steers(plan)
       )
     )
 
@@ -1082,24 +1084,101 @@ defmodule PromptRunner.Runner do
     {updated, commands} = Plane.boundary(plane())
     put_plane(updated)
 
-    if commands == [] do
-      []
-    else
-      view = Plane.view(updated)
-      settings = [{:set_view, Map.take(view, [:tool_output, :thinking, :diff])}]
+    commands
+    |> Enum.reduce([], &apply_control_command/2)
+    |> Enum.reverse()
+  end
 
-      if Enum.any?(commands, &view_command?(&1, :log_mode)) do
-        [{:renderer, renderer_for_view(view)} | settings]
-      else
-        settings
-      end
+  defp apply_control_command({:set_view, updates}, rendering) do
+    view = Plane.view(plane())
+    settings = {:set_view, Map.take(view, [:tool_output, :thinking, :diff])}
+
+    if Map.has_key?(updates, :log_mode) do
+      [settings, {:renderer, renderer_for_view(view)} | rendering]
+    else
+      [settings | rendering]
     end
   end
 
-  defp view_command?({:set_view, updates}, key) when is_map(updates),
-    do: Map.has_key?(updates, key)
+  # A steer is delivered here, at an event boundary, because that is the only
+  # point at which the runner is between events and holds the session handle.
+  # On a lane that takes stdin the turn continues untouched; on one that does
+  # not, the interrupt ends this stream and `run_stream_with_recovery/3` resumes
+  # the same thread with the steer text.
+  defp apply_control_command({:steer, text, author}, rendering) do
+    deliver_steer(text, author)
+    rendering
+  end
 
-  defp view_command?(_command, _key), do: false
+  # A pause is a steer with nothing to say: interrupt the turn and let the
+  # thread be resumed later. It never holds the provider process open, because
+  # a pause has no bounded duration and a held process dies to provider idle
+  # limits and to `run_deadline_ms` — a death discovered only on resume.
+  defp apply_control_command({:pause, author}, rendering) do
+    case Process.get(:prompt_runner_steer_context) do
+      %{llm: llm, meta: meta} ->
+        record_pause(llm_module().steer(llm, meta, @resume_prompt), author)
+
+      _other ->
+        put_plane(Plane.steer_refused(plane(), "", author, :no_live_session))
+    end
+
+    rendering
+  end
+
+  defp apply_control_command(_command, rendering), do: rendering
+
+  defp deliver_steer(text, author) do
+    case Process.get(:prompt_runner_steer_context) do
+      %{llm: llm, meta: meta} ->
+        record_steer(llm_module().steer(llm, meta, text), text, author, llm)
+
+      _other ->
+        put_plane(Plane.steer_refused(plane(), text, author, :no_live_session))
+    end
+  end
+
+  defp record_steer({:ok, :delivered}, text, author, llm) do
+    put_plane(Plane.steer_delivered(plane(), text, author, llm.sdk, :send_input))
+    IO.puts("")
+    IO.puts(UI.yellow("  ↳ steered: #{first_line(text)}"))
+  end
+
+  # The interrupt has landed; the text has not been said yet. It is stashed for
+  # the resume that happens when this stream ends, and only recorded as
+  # delivered once the provider thread has actually been handed it.
+  defp record_steer({:ok, :interrupted}, text, author, llm) do
+    Process.put(:prompt_runner_pending_steer, %{text: text, author: author, lane: llm.sdk})
+    IO.puts("")
+    IO.puts(UI.yellow("  ↳ interrupting to steer: #{first_line(text)}"))
+  end
+
+  defp record_steer({:error, reason}, text, author, _llm) do
+    put_plane(Plane.steer_refused(plane(), text, author, reason))
+    IO.puts("")
+    IO.puts(UI.red("  ↳ steer refused: #{inspect(reason)}"))
+  end
+
+  defp record_pause({:ok, _delivery}, author) do
+    put_plane(Plane.record(plane(), "pause", %{}, author: author, outcome: :applied))
+    Process.put(:prompt_runner_pending_steer, %{text: @resume_prompt, author: author, lane: nil})
+    IO.puts("")
+    IO.puts(UI.yellow("  ↳ paused; the thread can be resumed later"))
+  end
+
+  defp record_pause({:error, reason}, author) do
+    put_plane(
+      Plane.record(plane(), "pause", %{},
+        author: author,
+        outcome: :rejected,
+        reason: inspect(reason)
+      )
+    )
+  end
+
+  defp first_line(text) do
+    text |> String.split("\n") |> List.first() |> String.slice(0, 100)
+  end
 
   # Keyed on the live view rather than on the config, so a `log_mode` change
   # arriving through the control plane picks the same renderer a launch flag
@@ -1223,6 +1302,8 @@ defmodule PromptRunner.Runner do
   end
 
   defp run_stream_with_recovery(stream, recovery, attempt \\ 0) do
+    Process.put(:prompt_runner_steer_context, %{llm: recovery.llm, meta: recovery.llm_meta})
+
     result =
       render_stream_attempt(
         stream,
@@ -1233,6 +1314,77 @@ defmodule PromptRunner.Runner do
         recovery.log_io
       )
 
+    case maybe_resume_after_steer(result, recovery, attempt) do
+      {:resume, resumed_stream, resumed_close, resumed_meta} ->
+        {resumed_result, extra_closers} =
+          run_stream_with_recovery(
+            resumed_stream,
+            %{recovery | llm_meta: resumed_meta},
+            attempt
+          )
+
+        {resumed_result, [resumed_close | extra_closers]}
+
+      :no_steer ->
+        continue_recovery(result, recovery, attempt)
+    end
+  end
+
+  # A steer on a lane that cannot take stdin interrupts the turn, so the stream
+  # ends. Resuming the same provider thread with the steer text as the next
+  # prompt is how the agent hears it: same thread, full context, no protocol
+  # change.
+  #
+  # This runs before the failure-resume path and does not count against
+  # `resume_attempts`. That budget bounds the run's own attempts to recover from
+  # a provider failure; a person saying something is not one of those.
+  defp maybe_resume_after_steer(_result, recovery, _attempt) do
+    case Process.delete(:prompt_runner_pending_steer) do
+      %{text: text} = pending ->
+        resume_with_steer(text, pending, recovery)
+
+      _other ->
+        :no_steer
+    end
+  end
+
+  defp resume_with_steer(text, pending, recovery) do
+    IO.puts(UI.yellow("Resuming the provider thread with the steer..."))
+
+    IO.binwrite(
+      recovery.log_io,
+      "STEER action=resume provider=#{recovery.llm.sdk} text=#{inspect(first_line(text))}\n"
+    )
+
+    case llm_module().resume_stream(recovery.llm, recovery.llm_meta, text) do
+      {:ok, resumed_stream, resumed_close, resumed_meta} ->
+        put_plane(
+          Plane.steer_delivered(
+            plane(),
+            text,
+            pending.author,
+            recovery.llm.sdk,
+            :interrupt_and_resume
+          )
+        )
+
+        emit_observer(recovery.plan, %{
+          type: :prompt_steered,
+          prompt: recovery.prompt,
+          delivery: :interrupt_and_resume,
+          author: pending.author
+        })
+
+        {:resume, resumed_stream, resumed_close, resumed_meta}
+
+      {:error, reason} ->
+        put_plane(Plane.steer_refused(plane(), text, pending.author, reason))
+        IO.puts(UI.red("Steer resume failed: #{inspect(reason)}"))
+        :no_steer
+    end
+  end
+
+  defp continue_recovery(result, recovery, attempt) do
     case maybe_resume_failed_stream(result, recovery, attempt) do
       {:resume, resumed_stream, resumed_close, resumed_meta} ->
         {resumed_result, extra_closers} =
@@ -1951,11 +2103,19 @@ defmodule PromptRunner.Runner do
 
     Progress.mark_completed(ctx.plan, ctx.prompt.num, commit_info)
 
-    Runtime.mark_status(ctx.plan, ctx.prompt.num, "completed", %{
-      "commit_info" => commit_info,
-      "last_verifier" => report,
-      "failure" => failure
-    })
+    Runtime.mark_status(
+      ctx.plan,
+      ctx.prompt.num,
+      "completed",
+      Map.merge(
+        %{
+          "commit_info" => commit_info,
+          "last_verifier" => report,
+          "failure" => failure
+        },
+        steering_record(ctx)
+      )
+    )
 
     emit_observer(ctx.plan, %{
       type: :prompt_completed,
@@ -1974,12 +2134,20 @@ defmodule PromptRunner.Runner do
   defp fail_prompt_attempt(ctx, report, reason, failure) do
     Progress.mark_failed(ctx.plan, ctx.prompt.num)
 
-    Runtime.mark_status(ctx.plan, ctx.prompt.num, "failed", %{
-      "last_verifier" => report,
-      "failure_class" => FailureEnvelope.class_name(failure),
-      "failure" => failure,
-      "reason" => summarize_reason(reason)
-    })
+    Runtime.mark_status(
+      ctx.plan,
+      ctx.prompt.num,
+      "failed",
+      Map.merge(
+        %{
+          "last_verifier" => report,
+          "failure_class" => FailureEnvelope.class_name(failure),
+          "failure" => failure,
+          "reason" => summarize_reason(reason)
+        },
+        steering_record(ctx)
+      )
+    )
 
     emit_observer(ctx.plan, %{type: :prompt_failed, prompt: ctx.prompt, reason: reason})
     return_error(ctx.plan, ctx.prompt.num, reason, false)
@@ -2006,12 +2174,20 @@ defmodule PromptRunner.Runner do
   defp record_verification_failure(ctx, report, reason, failure) do
     Progress.mark_failed(ctx.plan, ctx.prompt.num)
 
-    Runtime.mark_status(ctx.plan, ctx.prompt.num, "verification_failed", %{
-      "last_verifier" => report,
-      "failure_class" => FailureEnvelope.class_name(failure),
-      "failure" => failure,
-      "reason" => summarize_reason(reason)
-    })
+    Runtime.mark_status(
+      ctx.plan,
+      ctx.prompt.num,
+      "verification_failed",
+      Map.merge(
+        %{
+          "last_verifier" => report,
+          "failure_class" => FailureEnvelope.class_name(failure),
+          "failure" => failure,
+          "reason" => summarize_reason(reason)
+        },
+        steering_record(ctx)
+      )
+    )
 
     emit_observer(ctx.plan, %{type: :prompt_failed, prompt: ctx.prompt, reason: reason})
 
@@ -2035,6 +2211,27 @@ defmodule PromptRunner.Runner do
     )
 
     {:retry, reason, failure, delay_ms}
+  end
+
+  # A human-guided result has to be distinguishable from an autonomous one.
+  # Flagged, not disqualified: the verifier still saw only what the session
+  # produced, and a steer is never evidence about the work.
+  defp steering_record(ctx) do
+    case Plane.steer_count(plane()) do
+      0 ->
+        %{"steered" => false}
+
+      count ->
+        %{
+          "steered" => true,
+          "steer_count" => count,
+          "interventions_file" =>
+            Path.relative_to(
+              Interventions.path(Plane.packet_dir(plane()), ctx.prompt.num),
+              ctx.plan.source_root || ""
+            )
+        }
+    end
   end
 
   defp commit_prompt(plan, prompt, _llm) do

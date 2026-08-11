@@ -500,6 +500,20 @@ defmodule PromptRunner.CLI do
     control_result(CLIControl.view(packet_dir(remaining), opts))
   end
 
+  defp run_control(["steer" | rest]) do
+    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: [author: :string])
+
+    case remaining do
+      [] -> handle_error(:empty_steer)
+      [packet | words] -> steer_target(packet, words, opts)
+    end
+  end
+
+  defp run_control(["pause" | rest]) do
+    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: [author: :string])
+    control_result(CLIControl.pause(packet_dir(remaining), opts))
+  end
+
   defp run_control(["log" | rest]) do
     {opts, remaining, _invalid} =
       OptionParser.parse(rest, switches: [follow: :boolean, json: :boolean])
@@ -517,8 +531,19 @@ defmodule PromptRunner.CLI do
 
   defp run_control(_rest), do: handle_error(:unknown_command)
 
+  # `control steer PACKET some words` and `control steer some words` both have
+  # to work, and only the filesystem can tell them apart.
+  defp steer_target(first, words, opts) do
+    if File.dir?(first) do
+      control_result(CLIControl.steer(first, words, opts))
+    else
+      control_result(CLIControl.steer(File.cwd!(), [first | words], opts))
+    end
+  end
+
   defp control_result(:ok), do: :ok
   defp control_result({:error, :no_run}), do: handle_error(:no_run)
+  defp control_result({:error, :empty_steer}), do: handle_error(:empty_steer)
   defp control_result({:error, reason}), do: handle_error(reason)
 
   defp packet_dir([], explicit), do: explicit || File.cwd!()
@@ -698,6 +723,12 @@ defmodule PromptRunner.CLI do
     System.halt(1)
   end
 
+  defp handle_error(:empty_steer) do
+    IO.puts(UI.red("ERROR: a steer needs something to say"))
+    IO.puts(~s(  prompt_runner control steer PACKET "check dependency_sources.exs first"))
+    System.halt(1)
+  end
+
   defp handle_error(:no_view_settings) do
     IO.puts(UI.red("ERROR: name at least one setting"))
     IO.puts("  prompt_runner control view PACKET --tool-output full")
@@ -751,6 +782,8 @@ defmodule PromptRunner.CLI do
       prompt_runner control view [PACKET_DIR] [--log-mode MODE] [--tool-output MODE] [--diff MODE]
       prompt_runner control log [PACKET_DIR] [--follow] [--json]
       prompt_runner control events [PACKET_DIR] [--from current] [--json]
+      prompt_runner control steer [PACKET_DIR] TEXT... [--author NAME]
+      prompt_runner control pause [PACKET_DIR] [--author NAME]
 
     `plan` and `run` accept the same override flags, so `plan` shows exactly
     what `run` would resolve.

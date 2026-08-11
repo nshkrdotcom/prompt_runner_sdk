@@ -56,6 +56,11 @@ defmodule PromptRunner.LLMFacade do
     delegate_module(llm).resume_stream(llm, meta, prompt)
   end
 
+  @impl true
+  def steer(llm, meta, text) when is_map(llm) and is_map(meta) and is_binary(text) do
+    delegate_module(llm).steer(llm, meta, text)
+  end
+
   defp delegate_module(%{sdk: :simulated}), do: PromptRunner.SimulatedLLM
   defp delegate_module(%{provider: :simulated}), do: PromptRunner.SimulatedLLM
   defp delegate_module(_llm), do: session_module()

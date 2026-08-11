@@ -64,6 +64,86 @@ defmodule PromptRunner.Session do
     end
   end
 
+  @doc """
+  Says something to a session that is already running.
+
+  Two mechanisms, and the lane decides which one applies. `claude` leaves stdin
+  open and takes the text on it: the turn continues, uninterrupted, and nothing
+  else happens. Every other provider closes stdin at start, so the only way in
+  is to interrupt the turn and resume the same provider thread with the text as
+  the next prompt — same thread, full context, no protocol change.
+
+  Returns:
+
+  - `{:ok, :delivered}` — the text reached the running turn
+  - `{:ok, :interrupted}` — the turn was interrupted, and the caller has to
+    resume the thread with this text once the stream ends
+  - `{:error, reason}` — nothing was delivered and nothing was interrupted
+  """
+  @spec steer(llm_config(), map(), String.t()) ::
+          {:ok, :delivered | :interrupted} | {:error, term()}
+  def steer(llm_config, meta, text) when is_map(meta) and is_binary(text) do
+    session = meta_value(meta, :session)
+
+    cond do
+      not (is_pid(session) and Process.alive?(session)) ->
+        {:error, :no_live_session}
+
+      accepts_input?(llm_config) ->
+        with_run_id(meta, &deliver_input(session, &1, text))
+
+      true ->
+        with_run_id(meta, &interrupt_turn(session, &1))
+    end
+  end
+
+  # The run id is the one the last event carried. Without it there is nothing to
+  # reach: a steer arriving before the provider has said anything has no turn to
+  # land in, on either mechanism.
+  defp with_run_id(meta, fun) do
+    case meta |> meta_value(:state_ref) |> current_state_value(:last_run_id) do
+      run_id when is_binary(run_id) -> fun.(run_id)
+      _other -> {:error, :no_active_turn}
+    end
+  end
+
+  @doc """
+  Whether this lane can be handed more input without interrupting its turn.
+
+  Reads the provider profile's own transport fact rather than a list of
+  provider names, so a profile that changes its mind changes this with it.
+  """
+  @spec accepts_input?(llm_config()) :: boolean()
+  def accepts_input?(llm_config) when is_map(llm_config) do
+    with {:ok, provider} <- normalize_provider(llm_config),
+         {:ok, profile} <- core_profile(provider) do
+      CliSubprocessCore.ProviderProfile.accepts_input_after_start?(profile)
+    else
+      _other -> false
+    end
+  end
+
+  defp core_profile(provider) do
+    case ASM.Provider.resolve(provider) do
+      {:ok, %{core_profile: profile}} when is_atom(profile) -> {:ok, profile}
+      _other -> {:error, :no_profile}
+    end
+  end
+
+  defp deliver_input(session, run_id, text) do
+    case ASM.send_input(session, run_id, text) do
+      :ok -> {:ok, :delivered}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp interrupt_turn(session, run_id) do
+    case ASM.interrupt(session, run_id) do
+      :ok -> {:ok, :interrupted}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc false
   @spec effective_timeout_ms_for_config(llm_config()) :: pos_integer()
   def effective_timeout_ms_for_config(llm_config) when is_map(llm_config) do
