@@ -52,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Workspace status now serializes containment-manager faults as structured
+  JSON instead of crashing when an operator shell cannot reach its systemd user
+  bus.
 - Workspace acceptance samples and reports now encode violations as structured
   JSON objects. A required-running watch previously discovered a stopped or
   failed service correctly, then crashed while encoding the tuple
