@@ -205,6 +205,25 @@ defmodule PromptRunner.WorkspaceTest do
     assert is_binary(Jason.encode!(report))
   end
 
+  test "status remains JSON-serializable when the systemd user bus is unavailable", %{
+    manifest: manifest
+  } do
+    command_runner = fn "systemctl", _argv, _opts ->
+      {"Failed to connect to bus: No medium found", 1}
+    end
+
+    assert {:ok, status} = Workspace.status(manifest, command_runner: command_runner)
+    assert status.containment.state == :unknown
+
+    assert status.containment.error == %{
+             kind: "systemctl_status_failed",
+             exit_code: 1,
+             details: "Failed to connect to bus: No medium found"
+           }
+
+    assert is_binary(Jason.encode!(status))
+  end
+
   test "watch persists a structured failure report when running state is required", %{
     manifest: manifest
   } do

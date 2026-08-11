@@ -49,8 +49,11 @@ defmodule PromptRunner.Workspace.Status do
     unit = PromptRunner.Workspace.service_unit(id)
 
     case SystemdUser.status(unit, opts) do
-      {:ok, status} -> Map.put(status, :unit, unit)
-      {:error, reason} -> %{unit: unit, state: :unknown, error: reason, populated?: nil}
+      {:ok, status} ->
+        Map.put(status, :unit, unit)
+
+      {:error, reason} ->
+        %{unit: unit, state: :unknown, error: error_value(reason), populated?: nil}
     end
   end
 
@@ -68,7 +71,7 @@ defmodule PromptRunner.Workspace.Status do
         }
 
       {:error, reason} ->
-        %{ready?: false, path: path, records: nil, last_seq: nil, error: reason}
+        %{ready?: false, path: path, records: nil, last_seq: nil, error: error_value(reason)}
     end
   end
 
@@ -121,4 +124,12 @@ defmodule PromptRunner.Workspace.Status do
     end)
     |> Enum.max(fn -> nil end)
   end
+
+  defp error_value({kind, exit_code, details})
+       when is_atom(kind) and is_integer(exit_code) and is_binary(details) do
+    %{kind: Atom.to_string(kind), exit_code: exit_code, details: details}
+  end
+
+  defp error_value(reason) when is_binary(reason), do: reason
+  defp error_value(reason), do: inspect(reason)
 end
