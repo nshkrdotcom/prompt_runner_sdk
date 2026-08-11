@@ -514,6 +514,35 @@ defmodule PromptRunner.CLI do
     control_result(CLIControl.pause(packet_dir(remaining), opts))
   end
 
+  defp run_control(["amend" | rest]) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [
+          add_file: :string,
+          add_command: :string,
+          add_path: :string,
+          reason: :string,
+          persist: :boolean
+        ]
+      )
+
+    with_prompt_target(remaining, &control_result(CLIControl.amend(&1, &2, opts)))
+  end
+
+  defp run_control(["relax" | rest]) do
+    {opts, remaining, _invalid} =
+      OptionParser.parse(rest,
+        switches: [drop: :string, reason: :string, confirm: :boolean, persist: :boolean]
+      )
+
+    with_prompt_target(remaining, &control_result(CLIControl.relax(&1, &2, opts)))
+  end
+
+  defp run_control(["contract" | rest]) do
+    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: [json: :boolean])
+    with_prompt_target(remaining, &control_result(CLIControl.contract(&1, &2, opts)))
+  end
+
   defp run_control(["log" | rest]) do
     {opts, remaining, _invalid} =
       OptionParser.parse(rest, switches: [follow: :boolean, json: :boolean])
@@ -544,7 +573,35 @@ defmodule PromptRunner.CLI do
   defp control_result(:ok), do: :ok
   defp control_result({:error, :no_run}), do: handle_error(:no_run)
   defp control_result({:error, :empty_steer}), do: handle_error(:empty_steer)
+  defp control_result({:error, :reason_required}), do: handle_error(:reason_required)
+
+  defp control_result({:error, :confirmation_required}),
+    do: handle_error(:confirmation_required)
+
+  defp control_result({:error, :no_amendment}), do: handle_error(:no_amendment)
+  defp control_result({:error, :no_relaxation}), do: handle_error(:no_relaxation)
+
   defp control_result({:error, reason}), do: handle_error(reason)
+
+  # `control amend PACKET 03 ...` and `control amend 03 ...` both have to work,
+  # and only the filesystem can tell a packet directory from a prompt id.
+  defp with_prompt_target([packet, prompt_id | _rest], fun) do
+    if File.dir?(packet) do
+      fun.(packet, normalize_id(prompt_id))
+    else
+      fun.(File.cwd!(), normalize_id(packet))
+    end
+  end
+
+  defp with_prompt_target([only], fun) do
+    if File.dir?(only),
+      do: handle_error(:missing_prompt_id),
+      else: fun.(File.cwd!(), normalize_id(only))
+  end
+
+  defp with_prompt_target(_remaining, _fun), do: handle_error(:missing_prompt_id)
+
+  defp normalize_id(id), do: id |> String.trim() |> String.pad_leading(2, "0")
 
   defp packet_dir([], explicit), do: explicit || File.cwd!()
   defp packet_dir([candidate | _rest], nil), do: candidate
@@ -729,6 +786,35 @@ defmodule PromptRunner.CLI do
     System.halt(1)
   end
 
+  defp handle_error(:reason_required) do
+    IO.puts(UI.red("ERROR: --reason is mandatory"))
+    IO.puts("An amendment with no stated reason is refused, not defaulted.")
+    System.halt(1)
+  end
+
+  defp handle_error(:confirmation_required) do
+    IO.puts(UI.red("ERROR: relax needs --confirm"))
+
+    IO.puts(
+      "Removing a requirement is the risky direction. Adding one is `control amend`;\n" <>
+        "weakening one says so out loud."
+    )
+
+    System.halt(1)
+  end
+
+  defp handle_error(:no_amendment) do
+    IO.puts(UI.red("ERROR: name what to add"))
+    IO.puts("  --add-file PATH | --add-command CMD | --add-path PATH")
+    System.halt(1)
+  end
+
+  defp handle_error(:no_relaxation) do
+    IO.puts(UI.red("ERROR: name the clause to drop"))
+    IO.puts("  --drop contains")
+    System.halt(1)
+  end
+
   defp handle_error(:no_view_settings) do
     IO.puts(UI.red("ERROR: name at least one setting"))
     IO.puts("  prompt_runner control view PACKET --tool-output full")
@@ -784,6 +870,9 @@ defmodule PromptRunner.CLI do
       prompt_runner control events [PACKET_DIR] [--from current] [--json]
       prompt_runner control steer [PACKET_DIR] TEXT... [--author NAME]
       prompt_runner control pause [PACKET_DIR] [--author NAME]
+      prompt_runner control contract [PACKET_DIR] PROMPT_ID [--json]
+      prompt_runner control amend [PACKET_DIR] PROMPT_ID --add-file PATH --reason "..." [--persist]
+      prompt_runner control relax [PACKET_DIR] PROMPT_ID --drop CLAUSE --reason "..." --confirm
 
     `plan` and `run` accept the same override flags, so `plan` shows exactly
     what `run` would resolve.

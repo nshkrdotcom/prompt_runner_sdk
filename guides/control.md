@@ -196,6 +196,65 @@ prompt_runner control view demo --diff full
 prompt_runner run demo --log-mode studio --diff full
 ```
 
+## Amendment — changing what "done" means
+
+Steering leaves the contract alone. Amendment does not, and it is the one
+capability here that can make a completed prompt mean something other than what
+the packet says. So it is governed more tightly.
+
+```bash
+prompt_runner control contract demo 03
+prompt_runner control amend demo 03 --add-file lib/nshkr/foo.ex --reason "the work needs a module the packet author did not anticipate"
+prompt_runner control relax demo 03 --drop contains --reason "the requirement was wrong" --confirm
+```
+
+### Timing is part of the meaning
+
+Claims in these programs are pre-registered by git commit timestamp precisely
+so nobody can decide what they were proving after seeing the result. An
+amendment that *weakens* a contract after a verify failure is exactly the move
+pre-registration exists to prevent. So the record says which:
+
+- `pre_verify` — before any verify attempt ran. Ordinary scope correction.
+- `post_failure` — after a verify failure. Suspect by default.
+- `post_success` — after a verify pass. Also after the fact, and named honestly
+  rather than folded into either of the other two.
+
+An amendment log that does not say *when, relative to verification*, is not an
+audit trail. Both appear in the prompt's result.
+
+### Asymmetric by design
+
+Adding a requirement is routine — `amend`. Removing or weakening one is the
+risky direction and takes a different verb, `relax`, with `--confirm`. Never a
+different argument to the same command.
+
+`--reason` is mandatory on both. An amendment with no stated reason is refused,
+not defaulted.
+
+### Run-local by default
+
+The packet file stays authoritative and a re-run from clean state uses its
+contract. `--persist` writes the change back, which is a separate explicit act
+because a packet is a versioned artifact and editing it is a commit, not a side
+effect.
+
+### Diffable
+
+```
+  contract for 03
+
+  pre_verify   add files_exist by ada — the work needs this module
+
+    files_exist: README.md
+  + files_exist: lib/nshkr/foo.ex
+```
+
+If you cannot show the diff, you do not have the audit. A prompt completed
+under an amended contract records `amended`, the amendments themselves, and the
+path to the log — so "completed" stays traceable to the contract actually
+enforced.
+
 ## The control directory
 
 ```

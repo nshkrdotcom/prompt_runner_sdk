@@ -74,6 +74,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `git diff` explicitly labelled as the file's *current state*, never as that
   call's change. Truncation is always marked: a truncated diff that looks
   complete is worse than no diff.
+- Amendment: `PromptRunner.Control.amend/3`, `relax/3`, and `contract/2`, with
+  `mix prompt_runner control amend|relax|contract`. An amendment changes a
+  prompt's verify contract — the one capability here that can make a completed
+  prompt mean something other than what the packet says, so it is governed more
+  tightly than steering, which cannot.
+
+  Timing is part of the meaning: an amendment before any verify attempt is
+  recorded `pre_verify`, the same amendment after a verify failure is recorded
+  `post_failure`, and one after a verify pass is `post_success` — also after
+  the fact, and named honestly rather than folded into either of the others. Claims here are pre-registered by commit timestamp
+  precisely so nobody can decide what they were proving after seeing the
+  result, and weakening a contract after a failure is the move that exists to
+  prevent. It is not forbidden; it is never quiet.
+
+  Asymmetric by design: adding a requirement is `amend`, removing one is
+  `relax` with an explicit `--confirm` — a different verb, never a different
+  argument. `--reason` is mandatory on both and refused when absent.
+
+  Run-local by default: the packet file stays authoritative and a re-run from
+  clean state uses its contract. `--persist` writes back, as a separate
+  explicit act. A prompt completed under an amended contract records `amended`,
+  the amendments, and the path to their log, so "completed" stays traceable to
+  the contract actually enforced.
 - `mix prompt_runner run PACKET --remaining`, and `remaining: true` on
   `PromptRunner.run/2`.
   Runs every prompt whose recorded status is not `completed`, in order,

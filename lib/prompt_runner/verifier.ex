@@ -4,6 +4,7 @@ defmodule PromptRunner.Verifier do
   """
 
   alias PromptRunner.Config
+  alias PromptRunner.Control.Amendment
   alias PromptRunner.Paths
   alias PromptRunner.Plan
   alias PromptRunner.Verifier.Doc
@@ -16,7 +17,8 @@ defmodule PromptRunner.Verifier do
           items: [map()],
           failures: [map()],
           faults: [map()],
-          prompt_id: String.t() | nil
+          prompt_id: String.t() | nil,
+          amendments: [map()]
         }
 
   # Exit codes that say the check never ran, as opposed to ran and disagreed.
@@ -68,10 +70,14 @@ defmodule PromptRunner.Verifier do
   end
 
   @spec verify_prompt(Plan.t(), map(), keyword()) :: report()
-  def verify_prompt(%Plan{} = plan, prompt, _opts \\ []) do
+  def verify_prompt(%Plan{} = plan, prompt, opts \\ []) do
     repo_index = repo_index(plan)
     default_scope = default_scope(plan, prompt, repo_index)
-    contract = normalize_contract(prompt.verify || %{}, prompt.validation_commands || [])
+
+    contract =
+      plan
+      |> enforced_contract(prompt, opts)
+      |> normalize_contract(prompt.validation_commands || [])
 
     items =
       []
@@ -91,9 +97,39 @@ defmodule PromptRunner.Verifier do
       items: items,
       failures: failures,
       faults: Enum.filter(items, &fault_item?/1),
-      prompt_id: prompt.num
+      prompt_id: prompt.num,
+      amendments: amendment_records(plan, prompt, opts)
     }
   end
+
+  @doc """
+  The contract actually enforced for a prompt: the packet's, plus every
+  amendment recorded for it.
+
+  The packet's own contract is never mutated. It is read fresh each time and
+  the amendments are applied on top, so a re-run from clean state — with no
+  amendment log — enforces exactly what the packet says.
+  """
+  @spec enforced_contract(Plan.t(), map(), keyword()) :: map()
+  def enforced_contract(%Plan{} = plan, prompt, opts \\ []) do
+    packet_contract = prompt.verify || %{}
+
+    case amendment_records(plan, prompt, opts) do
+      [] -> packet_contract
+      amendments -> Amendment.enforced_contract(packet_contract, amendments)
+    end
+  end
+
+  defp amendment_records(%Plan{source_root: source_root}, prompt, opts)
+       when is_binary(source_root) do
+    if Keyword.get(opts, :amendments, true) do
+      Amendment.read(source_root, prompt.num)
+    else
+      []
+    end
+  end
+
+  defp amendment_records(_plan, _prompt, _opts), do: []
 
   @doc """
   The items in `report` whose check could not run.

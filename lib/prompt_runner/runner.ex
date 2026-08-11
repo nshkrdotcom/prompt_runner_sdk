@@ -3,6 +3,7 @@ defmodule PromptRunner.Runner do
 
   alias PromptRunner.CommitMessages
   alias PromptRunner.Config
+  alias PromptRunner.Control.Amendment
   alias PromptRunner.Control.Interventions
   alias PromptRunner.Control.Plane
   alias PromptRunner.FailureEnvelope
@@ -2125,14 +2126,13 @@ defmodule PromptRunner.Runner do
       ctx.plan,
       ctx.prompt.num,
       "completed",
-      Map.merge(
-        %{
-          "commit_info" => commit_info,
-          "last_verifier" => report,
-          "failure" => failure
-        },
-        steering_record(ctx)
-      )
+      %{
+        "commit_info" => commit_info,
+        "last_verifier" => report,
+        "failure" => failure
+      }
+      |> Map.merge(steering_record(ctx))
+      |> Map.merge(amendment_record(ctx, report))
     )
 
     emit_observer(ctx.plan, %{
@@ -2156,15 +2156,14 @@ defmodule PromptRunner.Runner do
       ctx.plan,
       ctx.prompt.num,
       "failed",
-      Map.merge(
-        %{
-          "last_verifier" => report,
-          "failure_class" => FailureEnvelope.class_name(failure),
-          "failure" => failure,
-          "reason" => summarize_reason(reason)
-        },
-        steering_record(ctx)
-      )
+      %{
+        "last_verifier" => report,
+        "failure_class" => FailureEnvelope.class_name(failure),
+        "failure" => failure,
+        "reason" => summarize_reason(reason)
+      }
+      |> Map.merge(steering_record(ctx))
+      |> Map.merge(amendment_record(ctx, report))
     )
 
     emit_observer(ctx.plan, %{type: :prompt_failed, prompt: ctx.prompt, reason: reason})
@@ -2196,15 +2195,14 @@ defmodule PromptRunner.Runner do
       ctx.plan,
       ctx.prompt.num,
       "verification_failed",
-      Map.merge(
-        %{
-          "last_verifier" => report,
-          "failure_class" => FailureEnvelope.class_name(failure),
-          "failure" => failure,
-          "reason" => summarize_reason(reason)
-        },
-        steering_record(ctx)
-      )
+      %{
+        "last_verifier" => report,
+        "failure_class" => FailureEnvelope.class_name(failure),
+        "failure" => failure,
+        "reason" => summarize_reason(reason)
+      }
+      |> Map.merge(steering_record(ctx))
+      |> Map.merge(amendment_record(ctx, report))
     )
 
     emit_observer(ctx.plan, %{type: :prompt_failed, prompt: ctx.prompt, reason: reason})
@@ -2234,6 +2232,28 @@ defmodule PromptRunner.Runner do
   # A human-guided result has to be distinguishable from an autonomous one.
   # Flagged, not disqualified: the verifier still saw only what the session
   # produced, and a steer is never evidence about the work.
+  # A prompt completed under an amended contract cannot be reported as
+  # completed without the amendment being visible in its state entry. That is
+  # the whole point of the phase: "completed" has to stay traceable to the
+  # contract actually enforced.
+  defp amendment_record(ctx, report) do
+    case Map.get(report, :amendments, []) do
+      [] ->
+        %{"amended" => false}
+
+      amendments ->
+        %{
+          "amended" => true,
+          "amendments" => amendments,
+          "amendments_file" =>
+            Path.relative_to(
+              Amendment.path(Plane.packet_dir(plane()) || "", ctx.prompt.num),
+              ctx.plan.source_root || ""
+            )
+        }
+    end
+  end
+
   defp steering_record(ctx) do
     case Plane.steer_count(plane()) do
       0 ->

@@ -36,6 +36,57 @@ defmodule PromptRunner.Packets do
     end
   end
 
+  @doc """
+  Writes an amendment back into the packet's own prompt file.
+
+  A separate explicit act, never a side effect of amending a run: the packet is
+  a versioned artifact, and changing what a prompt requires is a commit
+  somebody should be able to review.
+  """
+  @spec amend_prompt_contract(String.t(), String.t(), map()) :: :ok | {:error, term()}
+  def amend_prompt_contract(packet_root, prompt_id, amendment)
+      when is_binary(packet_root) and is_binary(prompt_id) and is_map(amendment) do
+    with {:ok, prompt} <- load_prompt(packet_root, prompt_id),
+         path when is_binary(path) <- prompt_file_path(packet_root, prompt),
+         {:ok, content} <- File.read(path),
+         {:ok, %{attributes: attrs, body: body}} <- FrontMatter.parse(content) do
+      verify =
+        attrs
+        |> Map.get("verify", %{})
+        |> apply_contract_amendment(amendment)
+
+      FrontMatter.write_file(path, Map.put(attrs, "verify", verify), body)
+    else
+      nil -> {:error, {:prompt_file_not_found, prompt_id}}
+      error -> error
+    end
+  end
+
+  defp prompt_file_path(_packet_root, %{origin: %{path: path}}) when is_binary(path), do: path
+
+  defp prompt_file_path(packet_root, %{file: file}) when is_binary(file) do
+    case Packet.load(packet_root) do
+      {:ok, packet} -> Path.join(packet.prompt_path, file)
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp prompt_file_path(_packet_root, _prompt), do: nil
+
+  defp apply_contract_amendment(verify, %{operation: :drop, clause: clause}),
+    do: verify |> stringify_keys() |> Map.delete(clause)
+
+  defp apply_contract_amendment(verify, %{operation: :replace} = amendment),
+    do: verify |> stringify_keys() |> Map.put(amendment.clause, amendment.entries)
+
+  defp apply_contract_amendment(verify, %{operation: :add} = amendment) do
+    verify = stringify_keys(verify)
+    existing = verify |> Map.get(amendment.clause, []) |> List.wrap()
+    Map.put(verify, amendment.clause, existing ++ List.wrap(amendment.entries))
+  end
+
+  defp apply_contract_amendment(verify, _amendment), do: stringify_keys(verify)
+
   @spec sync_checklists(String.t()) ::
           {:ok, %{paths: [String.t()], warnings: [map()]}} | {:error, term()}
   def sync_checklists(packet_root), do: Packet.checklist_sync(packet_root)

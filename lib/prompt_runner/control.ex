@@ -46,7 +46,9 @@ defmodule PromptRunner.Control do
   Events arrive as they were written, so maps with string keys.
   """
 
-  alias PromptRunner.Control.{Entry, Snapshot, Store, Subscriber}
+  alias PromptRunner.Control.{Amendment, Entry, Snapshot, Store, Subscriber}
+  alias PromptRunner.Packets
+  alias PromptRunner.Runtime
 
   @type run_ref :: {packet_dir :: String.t(), run_id :: String.t()}
 
@@ -147,6 +149,154 @@ defmodule PromptRunner.Control do
 
   def pause({packet_dir, run_id}, opts) do
     submit(packet_dir, run_id, "pause", %{}, opts)
+  end
+
+  @doc """
+  Adds a requirement to a prompt's verify contract.
+
+  Amendment changes what "done" means. It is the one capability here that can
+  make a completed prompt mean something other than what the packet says, so it
+  is governed more tightly than steering, which cannot.
+
+  Adding a requirement is the routine direction. Removing or relaxing one takes
+  `relax/4`, a different verb with an explicit confirmation — never a different
+  argument to this one.
+
+  Run-local: the packet file stays authoritative and a future re-run from clean
+  state uses the original contract. `persist: true` writes it back, which is a
+  separate explicit act because a packet is a versioned artifact and editing it
+  is a commit, not a side effect.
+
+  Required options:
+
+  - `:clause` — one of `PromptRunner.Verifier.contract_keys/0`
+  - `:entries` — what to add to that clause
+  - `:reason` — mandatory. An amendment with no stated reason is refused, not
+    defaulted.
+
+  Optional:
+
+  - `:author` — defaults to the OS user
+  - `:persist` — also write the change back to the packet file
+  """
+  @spec amend(run_ref() | String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def amend(target, prompt_id, opts) do
+    {packet_dir, run_id} = amendment_target(target)
+    submit_amendment(packet_dir, run_id, prompt_id, :add, :add, opts)
+  end
+
+  @doc """
+  Removes or weakens a requirement in a prompt's verify contract.
+
+  The risky direction, and deliberately a different verb. Requires
+  `confirm: true`; without it this refuses and says why.
+
+  An amendment that weakens a contract *after* a verify failure is exactly the
+  move pre-registration exists to prevent, so the record says when it happened
+  relative to verification. It is not forbidden — sometimes a requirement was
+  simply wrong — but it is never quiet.
+  """
+  @spec relax(run_ref() | String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def relax(target, prompt_id, opts) do
+    if Keyword.get(opts, :confirm) == true do
+      {packet_dir, run_id} = amendment_target(target)
+      operation = if Keyword.has_key?(opts, :entries), do: :replace, else: :drop
+      submit_amendment(packet_dir, run_id, prompt_id, :relax, operation, opts)
+    else
+      {:error, :confirmation_required}
+    end
+  end
+
+  # An amendment is about a prompt in a packet, not about a run. A packet
+  # between runs is exactly when correcting a contract is most useful, so
+  # requiring a live run would make the verb unavailable when it is wanted. The
+  # run id is provenance where there is one.
+  defp amendment_target({packet_dir, run_id}) when is_binary(packet_dir), do: {packet_dir, run_id}
+
+  defp amendment_target(packet_dir) when is_binary(packet_dir) do
+    case current_run(packet_dir) do
+      {:ok, run_ref} -> run_ref
+      {:error, _reason} -> {packet_dir, nil}
+    end
+  end
+
+  @doc """
+  The packet's contract for a prompt, the contract actually being enforced, and
+  the difference between them.
+
+  If you cannot show the diff, you do not have the audit.
+  """
+  @spec contract(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def contract(packet_dir, prompt_id) when is_binary(packet_dir) and is_binary(prompt_id) do
+    with {:ok, plan} <- PromptRunner.plan(packet_dir, interface: :cli),
+         %{} = prompt <- Enum.find(plan.prompts, &(&1.num == prompt_id)) do
+      packet_contract = prompt.verify || %{}
+      amendments = Amendment.read(packet_dir, prompt_id)
+      enforced = Amendment.enforced_contract(packet_contract, amendments)
+
+      {:ok,
+       %{
+         prompt_id: prompt_id,
+         packet: packet_contract,
+         enforced: enforced,
+         amendments: amendments,
+         diff: Amendment.diff(packet_contract, enforced)
+       }}
+    else
+      nil -> {:error, {:prompt_not_found, prompt_id}}
+      error -> error
+    end
+  end
+
+  defp submit_amendment(packet_dir, run_id, prompt_id, direction, operation, opts) do
+    with {:ok, amendment} <-
+           Amendment.build(
+             prompt_id: prompt_id,
+             clause: Keyword.get(opts, :clause),
+             entries: Keyword.get(opts, :entries, []),
+             reason: Keyword.get(opts, :reason),
+             author: author(opts),
+             direction: direction,
+             operation: operation,
+             phase: amendment_phase(packet_dir, prompt_id),
+             run_id: run_id,
+             persisted: Keyword.get(opts, :persist, false) == true
+           ),
+         :ok <- Amendment.append(packet_dir, amendment) do
+      maybe_persist(packet_dir, prompt_id, amendment, opts)
+    end
+  end
+
+  # An amendment that arrives after verification is a different act from one
+  # that arrives before it, and *which* result it followed is the part that
+  # matters. Recording a `post_failure` for an amendment that followed a pass
+  # would be as wrong as recording a `pre_verify` for one that followed a
+  # failure — the record has to say what actually happened.
+  defp amendment_phase(packet_dir, prompt_id) do
+    {:ok, state} = Runtime.prompt_state(packet_dir, prompt_id)
+
+    case latest_verifier_report(state) do
+      nil -> :pre_verify
+      %{"pass?" => true} -> :post_success
+      _report -> :post_failure
+    end
+  end
+
+  defp latest_verifier_report(state) do
+    state
+    |> Map.get("attempts", [])
+    |> List.wrap()
+    |> Enum.map(&Map.get(&1, "verifier"))
+    |> Enum.filter(&is_map/1)
+    |> List.last()
+  end
+
+  defp maybe_persist(packet_dir, prompt_id, amendment, opts) do
+    if Keyword.get(opts, :persist) == true do
+      Packets.amend_prompt_contract(packet_dir, prompt_id, amendment)
+    else
+      :ok
+    end
   end
 
   @doc """
