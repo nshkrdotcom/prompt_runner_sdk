@@ -12,7 +12,7 @@ defmodule PromptRunner.CLIFlagsTest do
 
   import ExUnit.CaptureIO
 
-  alias PromptRunner.CLI
+  alias PromptRunner.{CLI, RunLifecycle}
   alias PromptRunner.Profile
   alias PromptRunner.Test.FSHelpers
 
@@ -204,6 +204,37 @@ defmodule PromptRunner.CLIFlagsTest do
 
     assert opts[:remaining]
     assert opts[:new_run]
+  end
+
+  test "run forwards --new-run through the CLI into durable run supersession", %{
+    packet_root: packet_root
+  } do
+    assert {:ok, original_plan} = PromptRunner.plan(packet_root, provider: :simulated)
+    assert {:ok, original_run} = RunLifecycle.open(original_plan, ["01"], %{})
+    assert :ok = RunLifecycle.transition(original_run, "failed")
+
+    prompt_path = Path.join([packet_root, "prompts", "01_noop.prompt.md"])
+    File.write!(prompt_path, File.read!(prompt_path) <> "\nNew semantic instruction.\n")
+
+    capture_io(fn ->
+      assert :ok =
+               CLI.main([
+                 "run",
+                 packet_root,
+                 "--remaining",
+                 "--new-run",
+                 "--provider",
+                 "simulated",
+                 "--no-commit"
+               ])
+    end)
+
+    assert {:ok, records} = PromptRunner.RunJournal.read(original_run.journal_path)
+
+    assert %{"type" => "run_superseded", "data" => %{"new_run_id" => new_run_id}} =
+             List.last(records)
+
+    refute new_run_id == original_run.run_id
   end
 
   test "from and through are strict declared run switches" do

@@ -548,6 +548,7 @@ defmodule PromptRunner.CLI do
         opts[:all] || (prompt_ids == [] and not truthy?(opts[:remaining]))
       )
       |> maybe_put(:remaining, opts[:remaining])
+      |> maybe_put(:new_run, opts[:new_run])
       |> maybe_put(:verify_first, opts[:verify_first])
       |> maybe_put(:keep_going, opts[:keep_going])
       |> maybe_put(:phase, opts[:phase])
