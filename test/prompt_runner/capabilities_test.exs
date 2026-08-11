@@ -21,4 +21,12 @@ defmodule PromptRunner.CapabilitiesTest do
     output = capture_io(fn -> assert :ok = CLI.main(["version", "--json"]) end)
     assert Jason.decode!(output) == %{"version" => PromptRunner.version()}
   end
+
+  test "standard version flags do not fall through to unknown-command help" do
+    assert capture_io(fn -> assert :ok = CLI.main(["--version"]) end) ==
+             PromptRunner.version() <> "\n"
+
+    assert capture_io(fn -> assert :ok = CLI.main(["-v"]) end) ==
+             PromptRunner.version() <> "\n"
+  end
 end

@@ -8,6 +8,8 @@ defmodule PromptRunner.Workspace do
   """
 
   alias PromptRunner.Config
+  alias PromptRunner.Control.Store
+  alias PromptRunner.PathRewriter
   alias PromptRunner.Plan, as: RunnerPlan
   alias PromptRunner.RuntimeStore.FileStore
   alias PromptRunner.Workspace.{Doctor, LegacyStateImporter, Manifest, Materializer, Plan, Status}
@@ -28,10 +30,11 @@ defmodule PromptRunner.Workspace do
           {:ok, %{workspace: Plan.t(), runner: RunnerPlan.t(), packet_root: String.t()}}
           | {:error, term()}
   def plan(manifest_path, packet_path, opts \\ []) do
-    packet_root = packet_root(packet_path)
+    source_packet_root = source_packet_root(packet_path)
 
     with {:ok, manifest} <- Manifest.load(manifest_path),
          workspace_plan = Plan.build(manifest),
+         {:ok, packet_root} <- mapped_packet_root(source_packet_root, workspace_plan),
          state_dir = Path.join(workspace_plan.runtime_root, "packet"),
          {:ok, runner_plan} <-
            PromptRunner.plan(
@@ -41,6 +44,26 @@ defmodule PromptRunner.Workspace do
          :ok <- validate_repo_coverage(runner_plan, workspace_plan) do
       runner_plan = overlay_runner_plan(runner_plan, workspace_plan, state_dir)
       {:ok, %{workspace: workspace_plan, runner: runner_plan, packet_root: packet_root}}
+    end
+  end
+
+  @doc "The operator-owned control-store root for a workspace manifest."
+  @spec control_root(String.t()) :: {:ok, Store.root()} | {:error, term()}
+  def control_root(manifest_path) when is_binary(manifest_path) do
+    with {:ok, manifest} <- Manifest.load(manifest_path) do
+      state_dir = manifest |> Plan.build() |> Map.fetch!(:runtime_root) |> Path.join("packet")
+      {:ok, Store.state_root(state_dir)}
+    end
+  end
+
+  @doc "Resolves a packet beneath a declared source repository into its independent clone."
+  @spec packet_root(String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def packet_root(manifest_path, packet_path)
+      when is_binary(manifest_path) and is_binary(packet_path) do
+    source_packet_root = source_packet_root(packet_path)
+
+    with {:ok, manifest} <- Manifest.load(manifest_path) do
+      mapped_packet_root(source_packet_root, Plan.build(manifest))
     end
   end
 
@@ -83,7 +106,13 @@ defmodule PromptRunner.Workspace do
     log_dir = Path.join(state_dir, "logs")
 
     %Config{} = current_config = runner_plan.config
-    config = %Config{current_config | progress_file: progress_file, log_dir: log_dir}
+
+    config = %Config{
+      current_config
+      | project_dir: PathRewriter.text(current_config.project_dir, path_rewrites),
+        progress_file: progress_file,
+        log_dir: log_dir
+    }
 
     artifacts = Map.new(workspace_plan.artifacts, fn {id, artifact} -> {id, artifact.path} end)
 
@@ -112,8 +141,44 @@ defmodule PromptRunner.Workspace do
     end
   end
 
-  defp packet_root(path) do
+  defp source_packet_root(path) do
     path = Path.expand(path)
     if File.dir?(path), do: path, else: Path.dirname(path)
+  end
+
+  defp mapped_packet_root(source_packet_root, %Plan{} = workspace_plan) do
+    candidates =
+      workspace_plan.repositories
+      |> Enum.flat_map(fn {_name, repo} -> packet_candidate(source_packet_root, repo) end)
+
+    case Enum.max_by(candidates, &elem(&1, 0), fn -> nil end) do
+      nil ->
+        {:ok, source_packet_root}
+
+      {_length, source, destination} ->
+        mapped = Path.expand(Path.relative_to(source_packet_root, source), destination)
+
+        if File.dir?(mapped) do
+          {:ok, mapped}
+        else
+          {:error, {:workspace_packet_missing, source_packet_root, mapped}}
+        end
+    end
+  end
+
+  defp packet_candidate(source_packet_root, %{source: source, path: destination})
+       when is_binary(source) do
+    source = Path.expand(source)
+
+    if within?(source_packet_root, source),
+      do: [{byte_size(source), source, destination}],
+      else: []
+  end
+
+  defp packet_candidate(_source_packet_root, _repo), do: []
+
+  defp within?(path, root) do
+    relative = Path.relative_to(Path.expand(path), Path.expand(root))
+    relative == "." or not (relative == ".." or String.starts_with?(relative, "../"))
   end
 end

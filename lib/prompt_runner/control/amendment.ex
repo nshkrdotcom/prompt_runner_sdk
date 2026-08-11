@@ -44,6 +44,7 @@ defmodule PromptRunner.Control.Amendment do
   @amendments "amendments"
 
   @type phase :: :pre_verify | :post_failure | :post_success
+  @type root :: String.t() | {:state_root, String.t()}
 
   @type t :: %{
           required(:at) => DateTime.t(),
@@ -59,20 +60,24 @@ defmodule PromptRunner.Control.Amendment do
           optional(:persisted) => boolean()
         }
 
-  @spec dir(String.t()) :: String.t()
+  @spec dir(root()) :: String.t()
+  def dir({:state_root, state_root}) when is_binary(state_root) do
+    state_root |> Paths.resolve() |> Path.join(@amendments)
+  end
+
   def dir(packet_dir) when is_binary(packet_dir) do
     packet_dir |> Paths.resolve() |> Path.join(@dir) |> Path.join(@amendments)
   end
 
-  @spec path(String.t(), String.t()) :: String.t()
+  @spec path(root(), String.t()) :: String.t()
   def path(packet_dir, prompt_id), do: Path.join(dir(packet_dir), "#{prompt_id}.jsonl")
 
   @doc """
   Appends one amendment to the prompt's amendment log.
   """
-  @spec append(String.t(), t()) :: :ok | {:error, term()}
-  def append(packet_dir, amendment) when is_binary(packet_dir) and is_map(amendment) do
-    file = path(packet_dir, amendment.prompt_id)
+  @spec append(root(), t()) :: :ok | {:error, term()}
+  def append(root, amendment) when is_map(amendment) do
+    file = path(root, amendment.prompt_id)
 
     with :ok <- File.mkdir_p(Path.dirname(file)) do
       File.write(file, Jason.encode!(encode(amendment)) <> "\n", [:append])
@@ -82,9 +87,9 @@ defmodule PromptRunner.Control.Amendment do
   @doc """
   Every amendment recorded for one prompt, oldest first.
   """
-  @spec read(String.t(), String.t()) :: [map()]
-  def read(packet_dir, prompt_id) do
-    packet_dir
+  @spec read(root(), String.t()) :: [map()]
+  def read(root, prompt_id) do
+    root
     |> path(prompt_id)
     |> File.read()
     |> case do

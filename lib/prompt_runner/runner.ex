@@ -2504,8 +2504,8 @@ defmodule PromptRunner.Runner do
           "amendments" => amendments,
           "amendments_file" =>
             Path.relative_to(
-              Amendment.path(Plane.packet_dir(plane()) || "", ctx.prompt.num),
-              ctx.plan.source_root || ""
+              Amendment.path(Plane.store_root(plane()) || "", ctx.prompt.num),
+              ctx.plan.state_dir || ctx.plan.source_root || ""
             )
         }
     end
@@ -2522,8 +2522,8 @@ defmodule PromptRunner.Runner do
           "steer_count" => count,
           "interventions_file" =>
             Path.relative_to(
-              Interventions.path(Plane.packet_dir(plane()), ctx.prompt.num),
-              ctx.plan.source_root || ""
+              Interventions.path(Plane.store_root(plane()), ctx.prompt.num),
+              ctx.plan.state_dir || ctx.plan.source_root || ""
             )
         }
     end

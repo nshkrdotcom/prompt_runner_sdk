@@ -41,12 +41,15 @@ something it hit:
   and run and quietly mean something else
 - `doc:` and `repos_clean:` verify clauses — artifact quality, and repository
   discipline for packets where each session commits its own work
-- `watch` — one line of supervision facts per interval, backed by a pid file
-  the runner now writes
+- workspace `watch` — append-only health evidence reconciled from the run ID,
+  lease identity, journal, progress, and systemd-user containment
 - `plan` honours the same override flags as `run`, and `run --dry-run` is
   reachable from the CLI at last
 - a verification failure with the repair budget spent now fails instead of
   repairing forever
+- workspace control — packet input resolves inside the operator clone while
+  live control, steering, run-local amendments, logs, and state stay under the
+  operator's external runtime
 
 See the [CHANGELOG](CHANGELOG.md) for the full list.
 
@@ -62,7 +65,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 - a static authoring linter for the hazards that do not raise
 - policy-driven retry, repair, and resume based on verifier state plus
   structured recovery envelopes
-- supervision for long unattended runs, by pid file and file mtime
+- cgroup-contained unattended runs with run-ID/lease/journal/progress health
 - zero-dependency simulation for retry, repair, and resume demos
 - public packet/profile/runtime APIs plus matching CLI commands
 - Claude, Codex, Amp, Cursor, and Antigravity support through

@@ -1,6 +1,10 @@
 defmodule PromptRunner.WorkspaceTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureIO
+
+  alias PromptRunner.CLI
+  alias PromptRunner.Control.Plane
   alias PromptRunner.Test.FSHelpers
   alias PromptRunner.Workspace
   alias PromptRunner.Workspace.{Manifest, Watch}
@@ -180,12 +184,161 @@ defmodule PromptRunner.WorkspaceTest do
     state = Path.join([xdg_state, "prompt_runner", "workspaces", "test-workspace", "packet"])
 
     assert [%{name: "app", path: ^clone}] = runner.config.target_repos
-    assert runner.config.project_dir != clone
+    assert runner.config.project_dir == clone
     assert runner.state_dir == state
     assert {PromptRunner.RuntimeStore.FileStore, store} = runner.runtime_store
     assert store.progress_file == Path.join(state, "progress.log")
     refute String.starts_with?(runner.state_dir, packet)
     assert runner.options.path_rewrites[source] == clone
+  end
+
+  test "a packet tracked by a workspace repository is read from the independent clone", %{
+    manifest: manifest,
+    source: source,
+    xdg_data: xdg_data
+  } do
+    packet = Path.join(source, "packets/demo")
+    File.mkdir_p!(Path.join(packet, "prompts"))
+
+    File.write!(Path.join(packet, "prompt_runner_packet.md"), """
+    ---
+    name: "workspace-owned-packet"
+    profile: "simulated-default"
+    provider: "simulated"
+    model: "simulated-demo"
+    repos:
+      app:
+        path: "#{source}"
+        default: true
+    ---
+    # Workspace-owned packet
+    """)
+
+    File.write!(Path.join([packet, "prompts", "01_step.prompt.md"]), """
+    ---
+    id: "01"
+    phase: 1
+    name: "Step"
+    targets: ["app"]
+    ---
+    # Step
+    """)
+
+    {_output, 0} = System.cmd("git", ["add", "packets/demo"], cd: source, stderr_to_stdout: true)
+
+    {_output, 0} =
+      System.cmd("git", ["commit", "-m", "add packet"], cd: source, stderr_to_stdout: true)
+
+    {_output, 0} =
+      System.cmd("git", ["push", "origin", "HEAD"], cd: source, stderr_to_stdout: true)
+
+    assert {:ok, _prepared} = Workspace.prepare(manifest)
+    clone = Path.join([xdg_data, "prompt_runner", "workspaces", "test-workspace", "repos", "app"])
+    expected = Path.join(clone, "packets/demo")
+
+    assert {:ok, ^expected} = Workspace.packet_root(manifest, packet)
+    assert {:ok, %{packet_root: ^expected, runner: runner}} = Workspace.plan(manifest, packet)
+    assert runner.source_root == expected
+    assert runner.config.project_dir == clone
+  end
+
+  test "control commands address workspace-external state through the manifest", %{
+    manifest: manifest,
+    packet: packet,
+    xdg_state: xdg_state
+  } do
+    state = Path.join([xdg_state, "prompt_runner", "workspaces", "test-workspace", "packet"])
+
+    plane =
+      Plane.open(packet,
+        packet: "workspace-packet",
+        state_root: state,
+        max_steers: 1
+      )
+
+    plane =
+      Plane.prompt_started(plane, %{num: "01", name: "Step"}, :run, 1, %{
+        sdk: :simulated,
+        model: "simulated-demo"
+      })
+
+    plane = Plane.record(plane, "test", %{}, outcome: :applied)
+
+    status =
+      capture_io(fn ->
+        assert :ok = CLI.main(["control", "status", "--workspace", manifest, "--json"])
+      end)
+
+    assert Jason.decode!(status)["run_id"] == Plane.run_id(plane)
+
+    log =
+      capture_io(fn ->
+        assert :ok = CLI.main(["control", "log", "--workspace", manifest, "--json"])
+      end)
+
+    assert %{"command" => "test", "outcome" => "applied"} = Jason.decode!(log)
+
+    steer =
+      capture_io(fn ->
+        assert :ok =
+                 CLI.main([
+                   "control",
+                   "steer",
+                   "--workspace",
+                   manifest,
+                   "inspect",
+                   "the",
+                   "workspace"
+                 ])
+      end)
+
+    assert steer =~ "Steer queued"
+    {plane, [{:steer, "inspect the workspace", author}]} = Plane.boundary(plane)
+    assert is_binary(author)
+
+    Plane.steer_delivered(plane, "inspect the workspace", author, :simulated, :delivered)
+
+    assert File.regular?(Path.join([state, "interventions", "01.jsonl"]))
+    refute File.exists?(Path.join([packet, ".prompt_runner", "interventions"]))
+
+    amend =
+      capture_io(fn ->
+        assert :ok =
+                 CLI.main([
+                   "control",
+                   "amend",
+                   "--workspace",
+                   manifest,
+                   "--packet",
+                   packet,
+                   "01",
+                   "--add-file",
+                   "SECOND.md",
+                   "--reason",
+                   "exercise external state"
+                 ])
+      end)
+
+    assert amend =~ "Amended 01"
+    assert File.regular?(Path.join([state, "amendments", "01.jsonl"]))
+    refute File.exists?(Path.join([packet, ".prompt_runner", "amendments"]))
+
+    contract =
+      capture_io(fn ->
+        assert :ok =
+                 CLI.main([
+                   "control",
+                   "contract",
+                   "--workspace",
+                   manifest,
+                   "--packet",
+                   packet,
+                   "01",
+                   "--json"
+                 ])
+      end)
+
+    assert "SECOND.md" in Jason.decode!(contract)["enforced"]["files_exist"]
   end
 
   test "doctor reports dirty state as resumable work rather than blocking restart", %{

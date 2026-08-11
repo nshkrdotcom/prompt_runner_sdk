@@ -52,6 +52,15 @@ defmodule PromptRunner.ControlTest do
 
       root = Store.state_root(state_root)
       assert Plane.store_root(plane) == root
+      assert {:ok, run_ref} = Control.current_run(root)
+
+      assert {:error, :workspace_plan_required} =
+               Control.amend(run_ref, "01",
+                 clause: "files_exist",
+                 entries: ["README.md"],
+                 reason: "test"
+               )
+
       assert File.exists?(Store.snapshot_path(root))
       assert File.exists?(Store.events_path(root))
       refute File.exists?(Path.join(packet_dir, ".prompt_runner/control"))

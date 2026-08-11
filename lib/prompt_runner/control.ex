@@ -48,9 +48,10 @@ defmodule PromptRunner.Control do
 
   alias PromptRunner.Control.{Amendment, Entry, Snapshot, Store, Subscriber}
   alias PromptRunner.Packets
+  alias PromptRunner.Plan
   alias PromptRunner.Runtime
 
-  @type run_ref :: {packet_dir :: String.t(), run_id :: String.t()}
+  @type run_ref :: {store_root :: Store.root(), run_id :: String.t()}
 
   @doc """
   The newest run recorded for `packet_dir`, running or not.
@@ -58,10 +59,15 @@ defmodule PromptRunner.Control do
   Returns `{:error, :no_run}` when the packet has no control directory yet,
   which is the ordinary state of a packet nothing has ever run.
   """
-  @spec current_run(String.t()) :: {:ok, run_ref()} | {:error, term()}
-  def current_run(packet_dir) when is_binary(packet_dir) do
-    case Store.read_snapshot(packet_dir) do
-      {:ok, %Snapshot{run_id: run_id}} when is_binary(run_id) -> {:ok, {packet_dir, run_id}}
+  @spec current_run(Store.root()) :: {:ok, run_ref()} | {:error, term()}
+  def current_run(packet_dir) when is_binary(packet_dir), do: current_run_root(packet_dir)
+
+  def current_run({:state_root, state_root} = root) when is_binary(state_root),
+    do: current_run_root(root)
+
+  defp current_run_root(root) do
+    case Store.read_snapshot(root) do
+      {:ok, %Snapshot{run_id: run_id}} when is_binary(run_id) -> {:ok, {root, run_id}}
       {:ok, %Snapshot{}} -> {:error, :no_run}
       {:error, reason} -> {:error, reason}
     end
@@ -72,8 +78,8 @@ defmodule PromptRunner.Control do
   model, tool count, token totals, and the view settings in force.
   """
   @spec snapshot(run_ref()) :: {:ok, Snapshot.t()} | {:error, term()}
-  def snapshot({packet_dir, run_id}) when is_binary(packet_dir) and is_binary(run_id) do
-    with {:ok, %Snapshot{} = snapshot} <- Store.read_snapshot(packet_dir) do
+  def snapshot({store_root, run_id}) when is_binary(run_id) do
+    with {:ok, %Snapshot{} = snapshot} <- Store.read_snapshot(store_root) do
       if snapshot.run_id == run_id do
         {:ok, snapshot}
       else
@@ -163,10 +169,12 @@ defmodule PromptRunner.Control do
   - `:author` — defaults to the OS user
   - `:persist` — also write the change back to the packet file
   """
-  @spec amend(run_ref() | String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @spec amend(run_ref() | String.t() | Plan.t(), String.t(), keyword()) ::
+          :ok | {:error, term()}
   def amend(target, prompt_id, opts) do
-    {packet_dir, run_id} = amendment_target(target)
-    submit_amendment(packet_dir, run_id, prompt_id, :add, :add, opts)
+    with {:ok, context} <- amendment_target(target) do
+      submit_amendment(context, prompt_id, :add, :add, opts)
+    end
   end
 
   @doc """
@@ -180,12 +188,15 @@ defmodule PromptRunner.Control do
   relative to verification. It is not forbidden — sometimes a requirement was
   simply wrong — but it is never quiet.
   """
-  @spec relax(run_ref() | String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @spec relax(run_ref() | String.t() | Plan.t(), String.t(), keyword()) ::
+          :ok | {:error, term()}
   def relax(target, prompt_id, opts) do
     if Keyword.get(opts, :confirm) == true do
-      {packet_dir, run_id} = amendment_target(target)
       operation = if Keyword.has_key?(opts, :entries), do: :replace, else: :drop
-      submit_amendment(packet_dir, run_id, prompt_id, :relax, operation, opts)
+
+      with {:ok, context} <- amendment_target(target) do
+        submit_amendment(context, prompt_id, :relax, operation, opts)
+      end
     else
       {:error, :confirmation_required}
     end
@@ -195,12 +206,48 @@ defmodule PromptRunner.Control do
   # between runs is exactly when correcting a contract is most useful, so
   # requiring a live run would make the verb unavailable when it is wanted. The
   # run id is provenance where there is one.
-  defp amendment_target({packet_dir, run_id}) when is_binary(packet_dir), do: {packet_dir, run_id}
+  defp amendment_target(%Plan{} = plan) do
+    root = amendment_root(plan)
+
+    {:ok,
+     %{
+       packet_dir: plan.source_root,
+       amendment_root: root,
+       runtime_source: plan,
+       run_id: current_run_id(control_root(plan))
+     }}
+  end
+
+  defp amendment_target({packet_dir, run_id}) when is_binary(packet_dir) do
+    {:ok,
+     %{
+       packet_dir: packet_dir,
+       amendment_root: packet_dir,
+       runtime_source: packet_dir,
+       run_id: run_id
+     }}
+  end
+
+  defp amendment_target({{:state_root, state_root}, _run_id}) when is_binary(state_root) do
+    {:error, :workspace_plan_required}
+  end
 
   defp amendment_target(packet_dir) when is_binary(packet_dir) do
-    case current_run(packet_dir) do
-      {:ok, run_ref} -> run_ref
-      {:error, _reason} -> {packet_dir, nil}
+    {:ok,
+     %{
+       packet_dir: packet_dir,
+       amendment_root: packet_dir,
+       runtime_source: packet_dir,
+       run_id: current_run_id(packet_dir)
+     }}
+  end
+
+  defp current_run_id(nil), do: nil
+
+  defp current_run_id(root) do
+    case current_run(root) do
+      {:ok, {_root, run_id}} -> run_id
+      {:error, _reason} -> nil
     end
   end
 
@@ -210,29 +257,35 @@ defmodule PromptRunner.Control do
 
   If you cannot show the diff, you do not have the audit.
   """
-  @spec contract(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  @spec contract(String.t() | Plan.t(), String.t()) :: {:ok, map()} | {:error, term()}
   def contract(packet_dir, prompt_id) when is_binary(packet_dir) and is_binary(prompt_id) do
-    with {:ok, plan} <- PromptRunner.plan(packet_dir, interface: :cli),
-         %{} = prompt <- Enum.find(plan.prompts, &(&1.num == prompt_id)) do
-      packet_contract = prompt.verify || %{}
-      amendments = Amendment.read(packet_dir, prompt_id)
-      enforced = Amendment.enforced_contract(packet_contract, amendments)
-
-      {:ok,
-       %{
-         prompt_id: prompt_id,
-         packet: packet_contract,
-         enforced: enforced,
-         amendments: amendments,
-         diff: Amendment.diff(packet_contract, enforced)
-       }}
-    else
-      nil -> {:error, {:prompt_not_found, prompt_id}}
-      error -> error
+    with {:ok, plan} <- PromptRunner.plan(packet_dir, interface: :cli) do
+      contract(plan, prompt_id)
     end
   end
 
-  defp submit_amendment(packet_dir, run_id, prompt_id, direction, operation, opts) do
+  def contract(%Plan{} = plan, prompt_id) when is_binary(prompt_id) do
+    case Enum.find(plan.prompts, &(&1.num == prompt_id)) do
+      %{} = prompt ->
+        packet_contract = prompt.verify || %{}
+        amendments = Amendment.read(amendment_root(plan), prompt_id)
+        enforced = Amendment.enforced_contract(packet_contract, amendments)
+
+        {:ok,
+         %{
+           prompt_id: prompt_id,
+           packet: packet_contract,
+           enforced: enforced,
+           amendments: amendments,
+           diff: Amendment.diff(packet_contract, enforced)
+         }}
+
+      nil ->
+        {:error, {:prompt_not_found, prompt_id}}
+    end
+  end
+
+  defp submit_amendment(target, prompt_id, direction, operation, opts) do
     with {:ok, amendment} <-
            Amendment.build(
              prompt_id: prompt_id,
@@ -242,12 +295,12 @@ defmodule PromptRunner.Control do
              author: author(opts),
              direction: direction,
              operation: operation,
-             phase: amendment_phase(packet_dir, prompt_id),
-             run_id: run_id,
+             phase: amendment_phase(target.runtime_source, prompt_id),
+             run_id: target.run_id,
              persisted: Keyword.get(opts, :persist, false) == true
            ),
-         :ok <- Amendment.append(packet_dir, amendment) do
-      maybe_persist(packet_dir, prompt_id, amendment, opts)
+         :ok <- Amendment.append(target.amendment_root, amendment) do
+      maybe_persist(target.packet_dir, prompt_id, amendment, opts)
     end
   end
 
@@ -256,8 +309,8 @@ defmodule PromptRunner.Control do
   # matters. Recording a `post_failure` for an amendment that followed a pass
   # would be as wrong as recording a `pre_verify` for one that followed a
   # failure — the record has to say what actually happened.
-  defp amendment_phase(packet_dir, prompt_id) do
-    {:ok, state} = Runtime.prompt_state(packet_dir, prompt_id)
+  defp amendment_phase(runtime_source, prompt_id) do
+    {:ok, state} = Runtime.prompt_state(runtime_source, prompt_id)
 
     case latest_verifier_report(state) do
       nil -> :pre_verify
@@ -282,6 +335,16 @@ defmodule PromptRunner.Control do
       :ok
     end
   end
+
+  defp amendment_root(%Plan{state_dir: state_dir}) when is_binary(state_dir),
+    do: Store.state_root(state_dir)
+
+  defp amendment_root(%Plan{source_root: source_root}), do: source_root
+
+  defp control_root(%Plan{state_dir: state_dir}) when is_binary(state_dir),
+    do: Store.state_root(state_dir)
+
+  defp control_root(%Plan{source_root: source_root}), do: source_root
 
   @doc """
   Every command the plane has seen for this packet, oldest first.

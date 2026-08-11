@@ -21,6 +21,7 @@ defmodule PromptRunner.Control.Interventions do
 
   @dir ".prompt_runner"
   @interventions "interventions"
+  @type root :: String.t() | {:state_root, String.t()}
 
   @type intervention :: %{
           required(:at) => DateTime.t(),
@@ -33,22 +34,26 @@ defmodule PromptRunner.Control.Interventions do
           optional(:run_id) => String.t() | nil
         }
 
-  @spec dir(String.t()) :: String.t()
+  @spec dir(root()) :: String.t()
+  def dir({:state_root, state_root}) when is_binary(state_root) do
+    state_root |> Paths.resolve() |> Path.join(@interventions)
+  end
+
   def dir(packet_dir) when is_binary(packet_dir) do
     packet_dir |> Paths.resolve() |> Path.join(@dir) |> Path.join(@interventions)
   end
 
-  @spec path(String.t(), String.t()) :: String.t()
-  def path(packet_dir, prompt_id) when is_binary(prompt_id) do
-    Path.join(dir(packet_dir), "#{prompt_id}.jsonl")
+  @spec path(root(), String.t()) :: String.t()
+  def path(root, prompt_id) when is_binary(prompt_id) do
+    Path.join(dir(root), "#{prompt_id}.jsonl")
   end
 
   @doc """
   Appends one steer to the prompt's intervention log.
   """
-  @spec append(String.t(), intervention()) :: :ok | {:error, term()}
-  def append(packet_dir, record) when is_binary(packet_dir) and is_map(record) do
-    file = path(packet_dir, record.prompt_id)
+  @spec append(root(), intervention()) :: :ok | {:error, term()}
+  def append(root, record) when is_map(record) do
+    file = path(root, record.prompt_id)
 
     with :ok <- File.mkdir_p(Path.dirname(file)) do
       File.write(file, Jason.encode!(encode(record)) <> "\n", [:append])
@@ -58,9 +63,9 @@ defmodule PromptRunner.Control.Interventions do
   @doc """
   Every steer recorded for one prompt, oldest first.
   """
-  @spec read(String.t(), String.t()) :: [map()]
-  def read(packet_dir, prompt_id) do
-    packet_dir
+  @spec read(root(), String.t()) :: [map()]
+  def read(root, prompt_id) do
+    root
     |> path(prompt_id)
     |> File.read()
     |> case do
@@ -75,8 +80,8 @@ defmodule PromptRunner.Control.Interventions do
   Read from the committed artifact rather than from run state, so it survives a
   state file being deleted and a resume in a fresh checkout.
   """
-  @spec count(String.t(), String.t()) :: non_neg_integer()
-  def count(packet_dir, prompt_id), do: packet_dir |> read(prompt_id) |> length()
+  @spec count(root(), String.t()) :: non_neg_integer()
+  def count(root, prompt_id), do: root |> read(prompt_id) |> length()
 
   defp encode(record) do
     %{

@@ -14,7 +14,9 @@ same functions.
 
 ## Addressing a run
 
-A `run_ref` is `{packet_dir, run_id}`. Explicit ids rather than an implicit
+A `run_ref` is `{store_root, run_id}`. The store root is a packet directory for
+a legacy local run and a tagged external state root for an operator workspace.
+Explicit ids rather than an implicit
 "current run" cost nothing now and avoid a rewrite if the runner ever goes
 concurrent.
 
@@ -42,6 +44,8 @@ session, so polling them cannot slow, block, or crash the run.
 prompt_runner control status demo
 prompt_runner control status demo --json
 prompt_runner control log demo --follow
+prompt_runner control status --workspace workspace.yml --json
+prompt_runner control log --workspace workspace.yml --follow
 ```
 
 ## Following events
@@ -65,6 +69,7 @@ replays the run from its first event and then follows.
 ```bash
 prompt_runner control events demo
 prompt_runner control events demo --from current --json
+prompt_runner control events --workspace workspace.yml --from current --json
 ```
 
 ## Changing the view, mid-run
@@ -76,6 +81,7 @@ prompt_runner control events demo --from current --json
 ```bash
 prompt_runner control view demo --tool-output full
 prompt_runner control view demo --log-mode studio --thinking hide
+prompt_runner control view --workspace workspace.yml --tool-output full
 ```
 
 | setting | values | what it changes |
@@ -103,6 +109,7 @@ accumulated — counters, an open line — goes with it.
 
 ```bash
 prompt_runner control steer demo "you're down a rabbit hole; check dependency_sources.exs first"
+prompt_runner control steer --workspace workspace.yml "check dependency_sources.exs first"
 ```
 
 Steering changes *how* the agent works toward an **unchanged** definition of
@@ -141,12 +148,12 @@ by a human having said "put X in the doc". The verifier sees what the session
 produced, not what it was told.
 
 **Always recorded**, in two places. On the control log, with its attempt
-number; and as an append-only artifact at
-`packet/.prompt_runner/interventions/<prompt>.jsonl`, one object per steer —
-timestamp, prompt, attempt, author, text, lane, and delivery mechanism. The
-artifact lives with the prompt configuration and is committed alongside the
-work, so a steer is timestamped by a commit rather than by a state file that
-disappears. Run state is runtime detail; this is not.
+number; and as an append-only intervention artifact, one object per steer —
+timestamp, prompt, attempt, author, text, lane, and delivery mechanism. A
+legacy local run stores it at
+`packet/.prompt_runner/interventions/<prompt>.jsonl`. A workspace run stores it
+under the operator's external runtime, so issuing a steer cannot dirty or write
+through to the packet author's checkout.
 
 The prompt's result records `steered`, `steer_count`, and the path to the
 artifact, so a human-guided result is distinguishable from an autonomous one —
@@ -196,6 +203,10 @@ the packet says. So it is governed more tightly.
 prompt_runner control contract demo 03
 prompt_runner control amend demo 03 --add-file lib/nshkr/foo.ex --reason "the work needs a module the packet author did not anticipate"
 prompt_runner control relax demo 03 --drop contains --reason "the requirement was wrong" --confirm
+
+prompt_runner control contract --workspace workspace.yml --packet packet 03
+prompt_runner control amend --workspace workspace.yml --packet packet 03 \
+  --add-file lib/nshkr/foo.ex --reason "the work needs this module"
 ```
 
 ### Timing is part of the meaning

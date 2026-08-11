@@ -134,16 +134,20 @@ defmodule PromptRunner.Verifier do
     end
   end
 
-  defp amendment_records(%Plan{source_root: source_root}, prompt, opts)
-       when is_binary(source_root) do
-    if Keyword.get(opts, :amendments, true) do
-      Amendment.read(source_root, prompt.num)
-    else
-      []
+  defp amendment_records(%Plan{} = plan, prompt, opts) do
+    case {Keyword.get(opts, :amendments, true), amendment_root(plan)} do
+      {true, root} when not is_nil(root) -> Amendment.read(root, prompt.num)
+      _other -> []
     end
   end
 
-  defp amendment_records(_plan, _prompt, _opts), do: []
+  defp amendment_root(%Plan{state_dir: state_dir}) when is_binary(state_dir),
+    do: {:state_root, state_dir}
+
+  defp amendment_root(%Plan{source_root: source_root}) when is_binary(source_root),
+    do: source_root
+
+  defp amendment_root(_plan), do: nil
 
   @doc """
   The items in `report` whose check could not run.

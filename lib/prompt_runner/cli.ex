@@ -693,81 +693,227 @@ defmodule PromptRunner.CLI do
   end
 
   defp run_control(["status" | rest]) do
-    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: [json: :boolean])
-    control_result(CLIControl.status(packet_dir(remaining), opts))
+    {opts, remaining, invalid} =
+      OptionParser.parse(rest, strict: [json: :boolean, workspace: :string, packet: :string])
+
+    with :ok <- valid_options(invalid),
+         {:ok, root} <- live_control_root(opts, remaining) do
+      control_result(CLIControl.status(root, opts))
+    else
+      {:error, reason} -> handle_error(reason)
+    end
   end
 
   defp run_control(["view" | rest]) do
-    {opts, remaining, _invalid} =
+    {opts, remaining, invalid} =
       OptionParser.parse(rest,
-        switches: [log_mode: :string, tool_output: :string, diff: :string]
+        strict: [
+          log_mode: :string,
+          tool_output: :string,
+          diff: :string,
+          workspace: :string,
+          packet: :string
+        ]
       )
 
-    control_result(CLIControl.view(packet_dir(remaining), opts))
+    with :ok <- valid_options(invalid),
+         {:ok, root} <- live_control_root(opts, remaining) do
+      control_result(CLIControl.view(root, opts))
+    else
+      {:error, reason} -> handle_error(reason)
+    end
   end
 
   defp run_control(["steer" | rest]) do
-    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: [author: :string])
+    {opts, remaining, invalid} =
+      OptionParser.parse(rest,
+        strict: [author: :string, workspace: :string, packet: :string]
+      )
 
-    case remaining do
-      [] -> handle_error(:empty_steer)
-      [packet | words] -> steer_target(packet, words, opts)
+    with :ok <- valid_options(invalid),
+         {:ok, root, words} <- steer_control_target(opts, remaining) do
+      control_result(CLIControl.steer(root, words, opts))
+    else
+      {:error, reason} -> handle_error(reason)
     end
   end
 
   defp run_control(["amend" | rest]) do
-    {opts, remaining, _invalid} =
+    {opts, remaining, invalid} =
       OptionParser.parse(rest,
-        switches: [
+        strict: [
           add_file: :string,
           add_command: :string,
           add_path: :string,
           reason: :string,
-          persist: :boolean
+          persist: :boolean,
+          workspace: :string,
+          packet: :string
         ]
       )
 
-    with_prompt_target(remaining, &control_result(CLIControl.amend(&1, &2, opts)))
+    case valid_options(invalid) do
+      :ok ->
+        with_control_prompt_target(
+          opts,
+          remaining,
+          &control_result(CLIControl.amend(&1, &2, opts))
+        )
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
   end
 
   defp run_control(["relax" | rest]) do
-    {opts, remaining, _invalid} =
+    {opts, remaining, invalid} =
       OptionParser.parse(rest,
-        switches: [drop: :string, reason: :string, confirm: :boolean, persist: :boolean]
+        strict: [
+          drop: :string,
+          reason: :string,
+          confirm: :boolean,
+          persist: :boolean,
+          workspace: :string,
+          packet: :string
+        ]
       )
 
-    with_prompt_target(remaining, &control_result(CLIControl.relax(&1, &2, opts)))
+    case valid_options(invalid) do
+      :ok ->
+        with_control_prompt_target(
+          opts,
+          remaining,
+          &control_result(CLIControl.relax(&1, &2, opts))
+        )
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
   end
 
   defp run_control(["contract" | rest]) do
-    {opts, remaining, _invalid} = OptionParser.parse(rest, switches: [json: :boolean])
-    with_prompt_target(remaining, &control_result(CLIControl.contract(&1, &2, opts)))
+    {opts, remaining, invalid} =
+      OptionParser.parse(rest,
+        strict: [json: :boolean, workspace: :string, packet: :string]
+      )
+
+    case valid_options(invalid) do
+      :ok ->
+        with_control_prompt_target(
+          opts,
+          remaining,
+          &control_result(CLIControl.contract(&1, &2, opts))
+        )
+
+      {:error, reason} ->
+        handle_error(reason)
+    end
   end
 
   defp run_control(["log" | rest]) do
-    {opts, remaining, _invalid} =
-      OptionParser.parse(rest, switches: [follow: :boolean, json: :boolean])
+    {opts, remaining, invalid} =
+      OptionParser.parse(rest,
+        strict: [follow: :boolean, json: :boolean, workspace: :string, packet: :string]
+      )
 
-    control_result(CLIControl.log(packet_dir(remaining), opts))
+    with :ok <- valid_options(invalid),
+         {:ok, root} <- live_control_root(opts, remaining) do
+      control_result(CLIControl.log(root, opts))
+    else
+      {:error, reason} -> handle_error(reason)
+    end
   end
 
   defp run_control(["events" | rest]) do
-    {opts, remaining, _invalid} =
-      OptionParser.parse(rest, switches: [json: :boolean, from: :string])
+    {opts, remaining, invalid} =
+      OptionParser.parse(rest,
+        strict: [json: :boolean, from: :string, workspace: :string, packet: :string]
+      )
 
     from = if opts[:from] == "current", do: :current, else: :start
-    control_result(CLIControl.watch(packet_dir(remaining), Keyword.put(opts, :from, from)))
+
+    with :ok <- valid_options(invalid),
+         {:ok, root} <- live_control_root(opts, remaining) do
+      control_result(CLIControl.watch(root, Keyword.put(opts, :from, from)))
+    else
+      {:error, reason} -> handle_error(reason)
+    end
   end
 
   defp run_control(_rest), do: handle_error(:unknown_command)
 
-  # `control steer PACKET some words` and `control steer some words` both have
-  # to work, and only the filesystem can tell them apart.
-  defp steer_target(first, words, opts) do
-    if File.dir?(first) do
-      control_result(CLIControl.steer(first, words, opts))
-    else
-      control_result(CLIControl.steer(File.cwd!(), [first | words], opts))
+  defp valid_options([]), do: :ok
+  defp valid_options(invalid), do: {:error, {:invalid_options, invalid}}
+
+  defp live_control_root(opts, remaining) do
+    case opts[:workspace] do
+      manifest when is_binary(manifest) ->
+        if remaining == [] and is_nil(opts[:packet]) do
+          Workspace.control_root(manifest)
+        else
+          {:error, {:unexpected_control_target, remaining, opts[:packet]}}
+        end
+
+      _other ->
+        control_packet_root(opts[:packet], remaining)
+    end
+  end
+
+  defp control_packet_root(explicit, []) when is_binary(explicit), do: {:ok, explicit}
+  defp control_packet_root(nil, []), do: {:ok, File.cwd!()}
+  defp control_packet_root(nil, [packet]), do: {:ok, packet}
+
+  defp control_packet_root(explicit, remaining),
+    do: {:error, {:unexpected_control_target, remaining, explicit}}
+
+  defp steer_control_target(opts, remaining) do
+    case opts[:workspace] do
+      manifest when is_binary(manifest) ->
+        with true <-
+               is_nil(opts[:packet]) || {:error, {:unexpected_control_target, [], opts[:packet]}},
+             {:ok, root} <- Workspace.control_root(manifest) do
+          {:ok, root, remaining}
+        end
+
+      _other ->
+        steer_packet_target(opts[:packet], remaining, opts)
+    end
+  end
+
+  defp steer_packet_target(packet, words, _opts) when is_binary(packet),
+    do: {:ok, packet, words}
+
+  defp steer_packet_target(nil, [], _opts), do: {:error, :empty_steer}
+
+  defp steer_packet_target(nil, [first | words], _opts) do
+    if File.dir?(first),
+      do: {:ok, first, words},
+      else: {:ok, File.cwd!(), [first | words]}
+  end
+
+  defp with_control_prompt_target(opts, remaining, fun) do
+    case opts[:workspace] do
+      manifest when is_binary(manifest) ->
+        with packet when is_binary(packet) <- opts[:packet] || {:error, :missing_packet},
+             [prompt_id] <- remaining,
+             {:ok, %{runner: plan}} <- Workspace.plan(manifest, packet) do
+          fun.(plan, normalize_id(prompt_id))
+        else
+          {:error, reason} -> handle_error(reason)
+          arguments when is_list(arguments) -> handle_error({:expected_one_prompt_id, arguments})
+        end
+
+      _other ->
+        case {opts[:packet], remaining} do
+          {packet, [prompt_id]} when is_binary(packet) ->
+            fun.(packet, normalize_id(prompt_id))
+
+          {nil, arguments} ->
+            with_prompt_target(arguments, fun)
+
+          {packet, arguments} ->
+            handle_error({:unexpected_control_target, arguments, packet})
+        end
     end
   end
 
@@ -834,6 +980,8 @@ defmodule PromptRunner.CLI do
   end
 
   defp parse_command(["init" | rest]), do: {:init, rest}
+  defp parse_command(["--version" | rest]), do: {:version, rest}
+  defp parse_command(["-v" | rest]), do: {:version, rest}
   defp parse_command(["version" | rest]), do: {:version, rest}
   defp parse_command(["capabilities" | rest]), do: {:capabilities, rest}
   defp parse_command(["workspace", "plan" | rest]), do: {:workspace_plan, rest}
@@ -998,7 +1146,7 @@ defmodule PromptRunner.CLI do
          true <- remaining == [] || {:error, {:unexpected_arguments, remaining}},
          {:ok, report} <- Workspace.doctor(manifest_path),
          true <- report.ready? || {:error, {:workspace_not_ready, report}},
-         {:ok, %{workspace: workspace_plan}} <-
+         {:ok, %{workspace: workspace_plan, packet_root: workspace_packet_root}} <-
            Workspace.plan(manifest_path, packet_path, cli_opts(opts)),
          {:ok, executable} <- installed_executable(),
          unit = Workspace.service_unit(workspace_plan.manifest.id),
@@ -1007,7 +1155,7 @@ defmodule PromptRunner.CLI do
              unit,
              executable,
              detached_run_argv(manifest_path, packet_path, opts),
-             cwd: Path.expand(packet_path),
+             cwd: workspace_packet_root,
              inherit_env: inherited_service_env()
            ) do
       IO.puts(
@@ -1318,14 +1466,17 @@ defmodule PromptRunner.CLI do
       prompt_runner watch [PACKET_DIR] [--interval SECONDS] [--once] [--json]
 
     Control (a live run, from another terminal):
-      prompt_runner control status [PACKET_DIR] [--json]
-      prompt_runner control view [PACKET_DIR] [--log-mode MODE] [--tool-output MODE] [--diff MODE]
-      prompt_runner control log [PACKET_DIR] [--follow] [--json]
-      prompt_runner control events [PACKET_DIR] [--from current] [--json]
-      prompt_runner control steer [PACKET_DIR] TEXT... [--author NAME]
+      prompt_runner control status [PACKET_DIR | --workspace MANIFEST] [--json]
+      prompt_runner control view [PACKET_DIR | --workspace MANIFEST] [--log-mode MODE] [--tool-output MODE] [--diff MODE]
+      prompt_runner control log [PACKET_DIR | --workspace MANIFEST] [--follow] [--json]
+      prompt_runner control events [PACKET_DIR | --workspace MANIFEST] [--from current] [--json]
+      prompt_runner control steer [PACKET_DIR | --workspace MANIFEST] TEXT... [--author NAME]
       prompt_runner control contract [PACKET_DIR] PROMPT_ID [--json]
+      prompt_runner control contract --workspace MANIFEST --packet PACKET_DIR PROMPT_ID [--json]
       prompt_runner control amend [PACKET_DIR] PROMPT_ID --add-file PATH --reason "..." [--persist]
+      prompt_runner control amend --workspace MANIFEST --packet PACKET_DIR PROMPT_ID --add-file PATH --reason "..."
       prompt_runner control relax [PACKET_DIR] PROMPT_ID --drop CLAUSE --reason "..." --confirm
+      prompt_runner control relax --workspace MANIFEST --packet PACKET_DIR PROMPT_ID --drop CLAUSE --reason "..." --confirm
 
     `plan` and `run` accept the same override flags, so `plan` shows exactly
     what `run` would resolve.

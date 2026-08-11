@@ -16,6 +16,8 @@ prompt_runner workspace import-state workspace.yml packet
 prompt_runner verify --workspace workspace.yml --packet packet 01
 prompt_runner start --workspace workspace.yml --packet packet --remaining --no-commit
 prompt_runner status --workspace workspace.yml
+prompt_runner control status --workspace workspace.yml --json
+prompt_runner control log --workspace workspace.yml --follow
 prompt_runner watch --workspace workspace.yml --for 240m --every 10m \
   --require-running --require-progress --progress-timeout 60m
 prompt_runner stop --workspace workspace.yml
@@ -39,6 +41,15 @@ complete. Use `--source PROGRESS_FILE` when the old state is elsewhere.
 `systemd --user` service with `KillMode=control-group`. Environment names are
 inherited without placing their values in argv. `stop` succeeds only after the
 unit is inactive and its cgroup is unpopulated.
+
+When the packet itself is tracked beneath a declared repository `source`, the
+runner resolves and reads that packet from the corresponding independent clone
+before launch. Its process working directory, default project directory,
+control inbox, run-local amendments, steering records, logs, and state therefore
+cannot fall back to the author's checkout. The `control` commands use
+`--workspace MANIFEST` to address that external runtime directly; contract and
+amendment commands also take `--packet PACKET_DIR` so their versioned packet
+input is unambiguous.
 
 `watch` writes an append-only JSONL sample stream and a final JSON report under
 the operator runtime's `acceptance/` directory. Violations are structured

@@ -52,6 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Workspace starts now read tracked packets and choose the default project
+  directory from the operator-owned clone. Live control, steering records,
+  run-local amendments, and contract inspection address the external workspace
+  runtime through `--workspace`; none falls back to the author's checkout.
+- `--version` and `-v` now use the version surface instead of falling through
+  to unknown-command help, and JSON contract inspection serializes diff entries
+  as structured objects instead of crashing on tuples.
 - Workspace status now serializes containment-manager faults as structured
   JSON instead of crashing when an operator shell cannot reach its systemd user
   bus.

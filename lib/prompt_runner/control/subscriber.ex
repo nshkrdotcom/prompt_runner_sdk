@@ -25,7 +25,7 @@ defmodule PromptRunner.Control.Subscriber do
   @default_interval_ms 200
 
   @type opts :: [
-          packet_dir: String.t(),
+          packet_dir: Store.root(),
           run_id: String.t(),
           target: pid(),
           ref: reference(),

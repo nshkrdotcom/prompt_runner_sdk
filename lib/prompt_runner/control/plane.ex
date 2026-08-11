@@ -321,7 +321,7 @@ defmodule PromptRunner.Control.Plane do
     do: plane
 
   def steer_delivered(%__MODULE__{} = plane, text, author, lane, delivery) do
-    Interventions.append(plane.packet_dir, %{
+    Interventions.append(plane.store_root, %{
       at: DateTime.utc_now(),
       prompt_id: plane.snapshot.prompt_id,
       attempt: plane.snapshot.attempt,

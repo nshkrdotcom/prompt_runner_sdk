@@ -12,11 +12,13 @@ defmodule PromptRunner.CLI.Control do
   alias PromptRunner.Control
   alias PromptRunner.Control.Entry
   alias PromptRunner.Control.Snapshot
+  alias PromptRunner.Control.Store
+  alias PromptRunner.Plan
   alias PromptRunner.UI
 
   @follow_interval_ms 500
 
-  @spec status(String.t(), keyword()) :: :ok | {:error, term()}
+  @spec status(Store.root(), keyword()) :: :ok | {:error, term()}
   def status(packet_dir, opts \\ []) do
     with {:ok, run_ref} <- Control.current_run(packet_dir),
          {:ok, snapshot} <- Control.snapshot(run_ref) do
@@ -30,7 +32,7 @@ defmodule PromptRunner.CLI.Control do
     end
   end
 
-  @spec view(String.t(), keyword()) :: :ok | {:error, term()}
+  @spec view(Store.root(), keyword()) :: :ok | {:error, term()}
   def view(packet_dir, opts) do
     settings =
       opts
@@ -56,7 +58,7 @@ defmodule PromptRunner.CLI.Control do
     end
   end
 
-  @spec steer(String.t(), [String.t()], keyword()) :: :ok | {:error, term()}
+  @spec steer(Store.root(), [String.t()], keyword()) :: :ok | {:error, term()}
   def steer(packet_dir, words, opts \\ []) do
     case Enum.join(words, " ") |> String.trim() do
       "" ->
@@ -77,7 +79,7 @@ defmodule PromptRunner.CLI.Control do
     end
   end
 
-  @spec amend(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @spec amend(String.t() | Plan.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def amend(packet_dir, prompt_id, opts) do
     with {:ok, clause, entries} <- amendment_clause(opts),
          :ok <-
@@ -93,7 +95,7 @@ defmodule PromptRunner.CLI.Control do
     end
   end
 
-  @spec relax(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @spec relax(String.t() | Plan.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def relax(packet_dir, prompt_id, opts) do
     with {:ok, clause} <- relax_clause(opts),
          :ok <-
@@ -109,17 +111,25 @@ defmodule PromptRunner.CLI.Control do
     end
   end
 
-  @spec contract(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @spec contract(String.t() | Plan.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def contract(packet_dir, prompt_id, opts \\ []) do
     with {:ok, report} <- Control.contract(packet_dir, prompt_id) do
       if opts[:json] do
-        IO.puts(Jason.encode!(report, pretty: true))
+        IO.puts(Jason.encode!(json_contract(report), pretty: true))
       else
         print_contract(report)
       end
 
       :ok
     end
+  end
+
+  defp json_contract(report) do
+    Map.update!(report, :diff, fn diff ->
+      Enum.map(diff, fn {change, clause, entry} ->
+        %{change: change, clause: clause, entry: entry}
+      end)
+    end)
   end
 
   defp amendment_clause(opts) do
@@ -178,7 +188,7 @@ defmodule PromptRunner.CLI.Control do
   defp print_diff_line({:added, clause, entry}),
     do: IO.puts(UI.green("  + #{clause}: #{entry}"))
 
-  @spec log(String.t(), keyword()) :: :ok | {:error, term()}
+  @spec log(Store.root(), keyword()) :: :ok | {:error, term()}
   def log(packet_dir, opts \\ []) do
     with {:ok, run_ref} <- Control.current_run(packet_dir),
          {:ok, entries} <- Control.log(run_ref) do
@@ -192,7 +202,7 @@ defmodule PromptRunner.CLI.Control do
     end
   end
 
-  @spec watch(String.t(), keyword()) :: :ok | {:error, term()}
+  @spec watch(Store.root(), keyword()) :: :ok | {:error, term()}
   def watch(packet_dir, opts \\ []) do
     with {:ok, run_ref} <- Control.current_run(packet_dir),
          {:ok, ref} <- Control.subscribe(run_ref, self(), from: Keyword.get(opts, :from, :start)) do
