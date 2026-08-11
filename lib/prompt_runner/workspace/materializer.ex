@@ -74,8 +74,25 @@ defmodule PromptRunner.Workspace.Materializer do
   end
 
   defp clone_repository(repo, repos_root, opts) do
+    sources =
+      [repo.source, repo.remote]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    Enum.reduce_while(sources, {:error, {:clone_sources_failed, []}}, fn source, result ->
+      case clone_from_source(repo, repos_root, source, opts) do
+        {:ok, _record} = success ->
+          {:halt, success}
+
+        {:error, reason} ->
+          {:error, {:clone_sources_failed, failures}} = result
+          {:cont, {:error, {:clone_sources_failed, failures ++ [{source, reason}]}}}
+      end
+    end)
+  end
+
+  defp clone_from_source(repo, repos_root, source, opts) do
     temp = Path.join(repos_root, ".#{repo.name}.tmp-#{System.unique_integer([:positive])}")
-    source = repo.source || repo.remote
     clone_args = ["clone", "--no-hardlinks", "--no-checkout", source, temp]
 
     result =

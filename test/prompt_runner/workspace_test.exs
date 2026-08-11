@@ -144,6 +144,28 @@ defmodule PromptRunner.WorkspaceTest do
     assert lock["schema"] == "prompt_runner.workspace.lock/v1"
   end
 
+  test "prepare falls back to the canonical remote when bootstrap source is unusable", %{
+    manifest: manifest,
+    remote: remote,
+    root: root,
+    xdg_data: xdg_data
+  } do
+    unusable_source = Path.join(root, "missing-bootstrap-source")
+    manifest_contents = File.read!(manifest)
+
+    File.write!(
+      manifest,
+      String.replace(manifest_contents, ~r/source: .+/, "source: #{unusable_source}")
+    )
+
+    assert {:ok, report} = Workspace.prepare(manifest)
+    clone = Path.join([xdg_data, "prompt_runner", "workspaces", "test-workspace", "repos", "app"])
+
+    assert report.repositories["app"].path == clone
+    assert File.dir?(Path.join(clone, ".git"))
+    assert PromptRunner.Git.value(clone, ["remote", "get-url", "origin"]) == remote
+  end
+
   test "workspace plan overlays logical repos and relocates all runner state", %{
     manifest: manifest,
     packet: packet,
