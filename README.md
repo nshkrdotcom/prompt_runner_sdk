@@ -36,8 +36,9 @@ sequence. An agent can continue, repeat the current prompt in a fresh session,
 request verified early finish, or stop as blocked. The runner authenticates
 each iteration-scoped request, retains deterministic ownership of successful
 completion, rejects a premature finish with the unmet contract, and enforces a
-per-prompt iteration cap. No duplicated prompt slots, shell loop, process kill,
-or workflow graph is required.
+per-prompt iteration cap. A failed provider launch never counts as a controlled
+iteration even when the ordinary repository contract was already green. No
+duplicated prompt slots, shell loop, process kill, or workflow graph is required.
 
 See the [CHANGELOG](CHANGELOG.md) for the full list.
 

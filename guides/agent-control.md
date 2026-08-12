@@ -85,6 +85,8 @@ before acting on the request.
    control command.
 3. The provider finishes. The prompt's ordinary `verify` contract must pass,
    and any runner-owned commit must succeed, before a directive is consumed.
+   A failed provider launch or turn is never accepted as a controlled iteration,
+   even if the ordinary contract independently passes.
 4. `continue` records the prompt complete and advances.
 5. `repeat` records the verified iteration but does not mark the prompt
    complete. A fresh provider session receives the original prompt plus the
@@ -126,6 +128,7 @@ commits and pushes, and requests `finish`.
 The safety properties do not depend on the agent choosing correctly:
 
 - premature `finish` is rejected by `completion_verify`;
+- provider failure cannot fall through to the declared default action;
 - forgotten directives use the declared default;
 - repeated work stops at the iteration cap;
 - an emergency operator stop remains `prompt_runner stop --workspace ...` and

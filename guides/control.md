@@ -48,6 +48,17 @@ prompt_runner control status --workspace workspace.yml --json
 prompt_runner control log --workspace workspace.yml --follow
 ```
 
+`control status` is the run snapshot. `control events` is the live/replayed
+provider event stream. `control log` is narrower: it records operator control
+requests such as view changes and steering, so it can legitimately print
+nothing during an autonomous run.
+
+To watch provider activity rather than operator requests:
+
+```bash
+prompt_runner control events --workspace workspace.yml
+```
+
 ## Following events
 
 ```elixir

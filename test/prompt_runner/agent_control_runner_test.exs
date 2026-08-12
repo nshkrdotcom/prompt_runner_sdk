@@ -176,6 +176,23 @@ defmodule PromptRunner.AgentControlRunnerTest do
     assert get_in(state, ["prompts", "02"]) == nil
   end
 
+  test "a provider launch failure cannot become a successful controlled iteration", %{
+    root: root
+  } do
+    expect(PromptRunner.LLMMock, :start_stream, fn llm, _prompt -> failed_stream(llm) end)
+
+    capture_io(fn ->
+      assert {:error, reason} = PromptRunner.run(root, interface: :cli, no_commit: true)
+      assert inspect(reason) =~ "invalid provider CLI arguments"
+    end)
+
+    {:ok, plan} = PromptRunner.plan(root, interface: :cli)
+    assert Progress.statuses(plan)["01"].status == "failed"
+
+    {:ok, state} = PromptRunner.status(root)
+    assert Enum.map(state["prompts"]["01"]["attempts"], & &1["status"]) == ["failed"]
+  end
+
   defp packet(repo) do
     FSHelpers.packet!(
       "prompt_runner_agent_control_packet",
@@ -230,6 +247,33 @@ defmodule PromptRunner.AgentControlRunnerTest do
       %{type: :run_started, data: %{model: llm.model}},
       %{type: :message_streamed, data: %{delta: "ok"}},
       %{type: :run_completed, data: %{stop_reason: "end_turn"}}
+    ]
+
+    {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}
+  end
+
+  defp failed_stream(llm) do
+    stream = [
+      %{type: :run_started, data: %{model: llm.model}},
+      %{
+        type: :run_failed,
+        data: %{
+          error_message: "invalid provider CLI arguments",
+          provider_error: %{
+            provider: :claude,
+            kind: :config_invalid,
+            message: "invalid provider CLI arguments",
+            recovery: %{
+              class: :provider_config_claim,
+              retryable?: false,
+              repairable?: false,
+              resumeable?: false,
+              local_deterministic?: true,
+              remote_claim?: false
+            }
+          }
+        }
+      }
     ]
 
     {:ok, stream, fn -> :ok end, %{sdk: llm.sdk, model: llm.model, cwd: llm.cwd}}

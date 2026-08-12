@@ -1296,10 +1296,14 @@ defmodule PromptRunner.Runner do
     {:error, reason}
   end
 
-  defp attempt_status(:ok, report),
+  defp attempt_status(:ok, report, _agent_control_invocation),
     do: if(report.pass?, do: "completed", else: "verification_failed")
 
-  defp attempt_status({:error, _reason} = stream_result, report) do
+  defp attempt_status({:error, _reason}, _report, agent_control_invocation)
+       when is_map(agent_control_invocation),
+       do: "failed"
+
+  defp attempt_status({:error, _reason} = stream_result, report, _agent_control_invocation) do
     cond do
       report.pass? and verification_override_allowed?(stream_result, report) ->
         "completed"
@@ -2638,7 +2642,7 @@ defmodule PromptRunner.Runner do
 
   defp record_verified_attempt(stream_result, ctx, report) do
     Runtime.record_attempt_result(ctx.plan, ctx.prompt.num, ctx.attempt, %{
-      "status" => attempt_status(stream_result, report),
+      "status" => attempt_status(stream_result, report, ctx.agent_control_invocation),
       "verifier" => report,
       "failure_class" => stream_failure_class(stream_result),
       "failure" => failure_for_stream_result(stream_result),

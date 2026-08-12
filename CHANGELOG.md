@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A failed provider launch can no longer become a successful agent-controlled
+  iteration merely because the prompt's ordinary repository contract already
+  passed. Provider failure is recorded as failure and never reaches the
+  directive/default-action decision.
 - Structured verifier executables now resolve `@repo:name/path` references as
   documented, matching the existing logical-path resolution for argv entries.
 - Agent-control request preparation now carries only the run-scoped values it

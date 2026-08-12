@@ -57,6 +57,7 @@ defmodule PromptRunner.RecoveryPolicy do
       mode: mode,
       retry_count: attempts.retry,
       repair_count: attempts.repair,
+      agent_control?: agent_control?(prompt),
       workspace_changed?: workspace_changed?(plan, prompt, report),
       retry_exhausted?: attempts.retry >= retry_limit(recovery, failure)
     }
@@ -67,8 +68,15 @@ defmodule PromptRunner.RecoveryPolicy do
   defp decide_final_action(:ok, %{report: %{pass?: true}, failure: failure}),
     do: {:complete, false, failure}
 
-  defp decide_final_action({:error, reason}, %{report: %{pass?: true} = report, failure: failure}) do
-    if verification_override_allowed?(failure, report) do
+  defp decide_final_action(
+         {:error, reason},
+         %{
+           report: %{pass?: true} = report,
+           failure: failure,
+           agent_control?: agent_control?
+         }
+       ) do
+    if not agent_control? and verification_override_allowed?(failure, report) do
       {:complete, true, failure}
     else
       provider_failure_result(reason, failure)
@@ -277,4 +285,9 @@ defmodule PromptRunner.RecoveryPolicy do
   end
 
   defp prompt_recovery(_prompt), do: nil
+
+  defp agent_control?(%{metadata: metadata}) when is_map(metadata),
+    do: is_map(Map.get(metadata, "agent_control_invocation"))
+
+  defp agent_control?(_prompt), do: false
 end

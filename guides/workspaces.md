@@ -17,7 +17,8 @@ prompt_runner verify --workspace workspace.yml --packet packet 01
 prompt_runner start --workspace workspace.yml --packet packet --remaining --no-commit
 prompt_runner status --workspace workspace.yml
 prompt_runner control status --workspace workspace.yml --json
-prompt_runner control log --workspace workspace.yml --follow
+prompt_runner control events --workspace workspace.yml
+prompt_runner control log --workspace workspace.yml --follow # operator requests only
 prompt_runner watch --workspace workspace.yml --for 240m --every 10m \
   --require-running --require-progress --progress-timeout 60m
 prompt_runner stop --workspace workspace.yml
