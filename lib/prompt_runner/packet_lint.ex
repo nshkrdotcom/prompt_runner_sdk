@@ -29,6 +29,12 @@ defmodule PromptRunner.PacketLint do
     the target expands to nothing.
   - `unknown_verify_clause` — an unrecognized key under `verify:` is parsed,
     stored, and never evaluated, so the contract is weaker than it reads.
+  - `invalid_execution_policy` — the packet's completion ownership policy is
+    not one of the supported combinations.
+  - `agent_owned_verify_commands` — an agent-owned packet configured executable
+    post-session verifier commands.
+  - `agent_owned_structural_evidence_required` — an agent-owned prompt has no
+    prompt-specific structural completion evidence.
 
   ## Warnings
 
@@ -65,6 +71,7 @@ defmodule PromptRunner.PacketLint do
   """
 
   alias PromptRunner.AgentControl
+  alias PromptRunner.CompletionPolicy
   alias PromptRunner.Packet
   alias PromptRunner.Prompt
   alias PromptRunner.Source.PacketSource
@@ -115,11 +122,13 @@ defmodule PromptRunner.PacketLint do
   defp build_report(packet, prompts, opts) do
     strict? = opts[:strict] == true
     scope = packet_scope(packet)
+    completion_policy = completion_policy(packet)
 
     findings =
-      agent_control_findings(packet, scope)
+      execution_policy_findings(packet)
+      |> Kernel.++(agent_control_findings(packet, scope))
       |> Kernel.++(duplicate_id_findings(prompts))
-      |> Kernel.++(Enum.flat_map(prompts, &prompt_findings(&1, scope)))
+      |> Kernel.++(Enum.flat_map(prompts, &prompt_findings(&1, scope, completion_policy)))
       |> Enum.map(&promote(&1, strict?))
       |> Enum.sort_by(&{&1.file || "", &1.kind, &1.message})
 
@@ -134,6 +143,31 @@ defmodule PromptRunner.PacketLint do
       warnings: length(findings) - errors,
       pass?: errors == 0
     }
+  end
+
+  defp completion_policy(packet) do
+    case CompletionPolicy.from_options(packet.options) do
+      {:ok, policy} -> policy
+      {:error, _reason} -> %{completion: :verifier_owned, incomplete: :fail}
+    end
+  end
+
+  defp execution_policy_findings(packet) do
+    case CompletionPolicy.from_options(packet.options) do
+      {:ok, _policy} ->
+        []
+
+      {:error, reason} ->
+        [
+          %{
+            kind: "invalid_execution_policy",
+            severity: "error",
+            prompt_id: nil,
+            file: "prompt_runner_packet.md",
+            message: "execution policy is invalid: #{inspect(reason)}"
+          }
+        ]
+    end
   end
 
   defp promote(finding, true), do: %{finding | severity: "error"}
@@ -190,12 +224,44 @@ defmodule PromptRunner.PacketLint do
     }
   end
 
-  defp prompt_findings(prompt, scope) do
+  defp prompt_findings(prompt, scope, completion_policy) do
     filename_findings(prompt) ++
       target_findings(prompt, scope.repo_names) ++
       contract_findings(prompt, scope) ++
+      agent_owned_findings(prompt, completion_policy) ++
       inert_key_findings(prompt)
   end
+
+  defp agent_owned_findings(_prompt, %{completion: :verifier_owned}), do: []
+
+  defp agent_owned_findings(prompt, %{completion: :agent_owned}) do
+    contract = prompt.verify || %{}
+
+    []
+    |> maybe_add_agent_owned_finding(
+      CompletionPolicy.command_contract?(contract, prompt.validation_commands),
+      finding(
+        "error",
+        "agent_owned_verify_commands",
+        prompt,
+        "agent-owned completion forbids verify.commands and validation_commands; " <>
+          "put executable quality-control commands in the agent instructions"
+      )
+    )
+    |> maybe_add_agent_owned_finding(
+      not CompletionPolicy.structural_contract?(contract),
+      finding(
+        "error",
+        "agent_owned_structural_evidence_required",
+        prompt,
+        "agent-owned completion requires prompt-specific structural evidence; " <>
+          "repos_clean or changed_paths_only alone cannot prove this prompt completed"
+      )
+    )
+  end
+
+  defp maybe_add_agent_owned_finding(findings, true, finding), do: findings ++ [finding]
+  defp maybe_add_agent_owned_finding(findings, false, _finding), do: findings
 
   # -- identity and ordering
 

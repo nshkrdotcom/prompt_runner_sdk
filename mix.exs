@@ -12,7 +12,7 @@ defmodule PromptRunner.MixProject do
 
   @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
 
-  @version "0.12.1"
+  @version "0.13.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
   @homepage_url "https://hex.pm/packages/prompt_runner_sdk"
   @docs_url "https://hexdocs.pm/prompt_runner_sdk"
@@ -75,8 +75,8 @@ defmodule PromptRunner.MixProject do
   defp description do
     """
     Prompt Runner SDK - packet-first prompt execution for Elixir and CLI
-    workflows with verifier-owned completion, retry, repair, and git-aware
-    repository orchestration.
+    workflows with verifier-owned or agent-owned completion, retry, repair,
+    and git-aware repository orchestration.
     """
   end
 
@@ -174,6 +174,7 @@ defmodule PromptRunner.MixProject do
         "Core API": [
           PromptRunner,
           PromptRunner.Packet,
+          PromptRunner.CompletionPolicy,
           PromptRunner.AgentControl,
           PromptRunner.PacketLint,
           PromptRunner.Packets,

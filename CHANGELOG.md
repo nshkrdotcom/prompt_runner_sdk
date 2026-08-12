@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-12
+
+### Added
+
+- Opt-in packet-level agent-owned completion through `execution.completion:
+  agent_owned` and `execution.incomplete: repeat`. Executable quality control
+  remains inside the coding-agent prompt, while Prompt Runner owns structural
+  evidence, durable state, ordering, and workspace supervision.
+- Fresh-session repetition of a normally returned but structurally incomplete
+  agent-owned prompt. Each incomplete iteration and diagnostic verifier report
+  is durable, and the prompt is not terminally failed or dependency-blocked
+  between sessions.
+- The `completion.agent_owned` installed capability.
+
+### Fixed
+
+- Agent-owned `--remaining` runs no longer preflight-complete an unrecorded
+  prompt merely because stale structural artifacts happen to pass its contract.
+  Previously completed prompt records are still preserved and excluded.
+- Provider errors in agent-owned mode cannot be reclassified as completion from
+  stale passing structural evidence.
+
+### Changed
+
+- Packet plan construction and lint reject `verify.commands`, legacy
+  `validation_commands`, and clean-only contracts when agent-owned completion
+  is selected. Existing packets retain verifier-owned behavior without a
+  migration.
+- Verifier reports now support a structural-only projection used by
+  agent-owned completion; ordinary verification remains unchanged.
+
 ## [0.12.1] - 2026-08-12
 
 ### Added

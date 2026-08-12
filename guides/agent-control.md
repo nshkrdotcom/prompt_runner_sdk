@@ -1,6 +1,6 @@
 # Agent-Controlled Linear Runs
 
-Prompt Runner 0.12.1 lets an agent control movement through an ordinary ordered
+Prompt Runner 0.13.0 lets an agent control movement through an ordinary ordered
 prompt sequence without introducing a workflow graph.
 
 The runner still owns scheduling and completion. The agent can request one of
@@ -150,7 +150,7 @@ Require the feature in the workspace manifest:
 
 ```yaml
 requires:
-  prompt_runner: ">= 0.12.1 and < 0.13.0"
+  prompt_runner: ">= 0.13.0 and < 0.14.0"
   capabilities:
     - agent_control.linear
     - verifier.argv
@@ -195,6 +195,6 @@ The JSON field is `agent_control.progress` and contains `run_id`, `prompt_id`,
 Records from another run or prompt are ignored. Retained prior-iteration
 progress is explicitly stale; it is never presented as a fresh heartbeat.
 
-The installed escript that starts the workspace must be 0.12.1 or newer for
+The installed escript that starts the workspace must be 0.13.0 or newer for
 live progress and concise workspace addressing. The
 provider invokes that same installed command through its inherited `PATH`.

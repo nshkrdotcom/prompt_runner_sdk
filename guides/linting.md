@@ -1,7 +1,7 @@
 # Packet Linting
 
 `mix prompt_runner packet lint` is the static authoring gate added in Prompt
-Runner 0.12.1. It is the sibling of `packet doctor`, and the difference between
+Runner 0.13.0. It is the sibling of `packet doctor`, and the difference between
 them is worth stating precisely:
 
 - **`packet doctor` reports gaps.** A packet with no prompts, a packet with no
@@ -68,6 +68,15 @@ An unrecognized key under `verify:` is parsed, stored, and never evaluated. A
 contract with `file_exists:` (singular) reads like a gate and is not one. The
 known clause list comes from `PromptRunner.Verifier.contract_keys/0`, so lint
 and the verifier cannot drift.
+
+### Agent-owned completion errors
+
+`invalid_execution_policy` rejects unsupported completion ownership values.
+`agent_owned_verify_commands` rejects `verify.commands` and legacy
+`validation_commands`, because executable QC belongs in the prompt agent in
+that mode. `agent_owned_structural_evidence_required` rejects an empty or
+clean-only completion contract; a clean checkout does not prove a particular
+prompt ran.
 
 ## Warnings
 

@@ -6,6 +6,7 @@ defmodule PromptRunner.Plan do
   alias PromptRunner.Committer.GitCommitter
   alias PromptRunner.Committer.NoopCommitter
   alias PromptRunner.Config
+  alias PromptRunner.CompletionPolicy
   alias PromptRunner.LLMFacade
   alias PromptRunner.Paths
   alias PromptRunner.PermissionMode
@@ -62,6 +63,8 @@ defmodule PromptRunner.Plan do
   def build(%RunSpec{} = run_spec) do
     with {:ok, %Result{} = result} <- run_spec.source.load(run_spec.input, run_spec.opts),
          merged_opts <- merged_opts(run_spec, result),
+         {:ok, completion_policy} <- CompletionPolicy.from_options(merged_opts),
+         :ok <- CompletionPolicy.validate_prompts(completion_policy, result.prompts),
          {:ok, config} <- build_config(run_spec, result, merged_opts),
          {:ok, runtime_store} <- build_runtime_store(run_spec, config),
          {:ok, committer} <- build_committer(run_spec) do
@@ -526,6 +529,7 @@ defmodule PromptRunner.Plan do
     "diff" => :diff,
     "recovery" => :recovery,
     "agent_control" => :agent_control,
+    "execution" => :execution,
     "prompt_overrides" => :prompt_overrides,
     "target" => :target,
     "targets" => :targets,
@@ -579,6 +583,9 @@ defmodule PromptRunner.Plan do
   end
 
   defp normalize_option_value(:agent_control, value) when is_map(value),
+    do: stringify_keys(value)
+
+  defp normalize_option_value(:execution, value) when is_map(value),
     do: stringify_keys(value)
 
   defp normalize_option_value(_key, value), do: value

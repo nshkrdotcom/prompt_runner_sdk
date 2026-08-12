@@ -88,6 +88,7 @@ defmodule PromptRunner.Verifier do
       plan
       |> enforced_contract(prompt, opts)
       |> normalize_contract(prompt.validation_commands || [])
+      |> maybe_without_commands(opts)
 
     items =
       []
@@ -114,6 +115,10 @@ defmodule PromptRunner.Verifier do
       prompt_id: prompt.num,
       amendments: amendment_records(plan, prompt, opts)
     }
+  end
+
+  defp maybe_without_commands(contract, opts) do
+    if Keyword.get(opts, :executable, true), do: contract, else: Map.delete(contract, "commands")
   end
 
   @doc """

@@ -205,6 +205,8 @@ Once the packet structure is stable:
   front-matter keys
 - make prompt boundaries correspond to reviewable outputs
 - treat `verify:` as part of the prompt, not cleanup work
-- wrap every `verify.commands` entry in `timeout`
+- in verifier-owned packets, use structured `verify.commands` with
+  `timeout_ms`; in agent-owned packets, put executable QC in the prompt and use
+  prompt-specific structural verification
 - use packet-local templates for shared team authoring patterns
 - use the authoring example in `examples/authoring_packet/` as a reference

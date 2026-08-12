@@ -374,7 +374,8 @@ defmodule PromptRunner.Packet do
         "thinking",
         "diff",
         "recovery",
-        "agent_control"
+        "agent_control",
+        "execution"
       ])
 
     profile_options

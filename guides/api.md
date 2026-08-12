@@ -1,6 +1,6 @@
 # API Guide
 
-The 0.12.1 API is packet-first. The CLI is a convenience layer over these
+The 0.13.0 API is packet-first. The CLI is a convenience layer over these
 modules.
 
 ## Packet And Profile APIs

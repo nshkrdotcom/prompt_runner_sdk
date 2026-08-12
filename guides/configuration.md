@@ -1,6 +1,6 @@
 # Packet Manifest Reference
 
-Prompt Runner 0.12.1 uses two primary authoring files:
+Prompt Runner 0.13.0 uses two primary authoring files:
 
 - `prompt_runner_packet.md`
 - `*.prompt.md`
@@ -48,6 +48,9 @@ recovery:
     trigger_on_nominal_success_with_failed_verifier: true
     trigger_on_provider_failure_with_workspace_changes: true
     trigger_on_retry_exhaustion_with_workspace_changes: true
+execution:
+  completion: "verifier_owned"
+  incomplete: "fail"
 agent_control:
   enabled: true
   default_action: "repeat"
@@ -78,6 +81,7 @@ Core keys:
 - `repos`
 - `phases`
 - `recovery`
+- `execution`
 - `agent_control`
 
 Shared execution keys:
@@ -126,6 +130,38 @@ after each verified iteration:
 `default_action` is `continue` or `repeat`, `max_iterations` is a positive
 per-prompt cap, and `completion_verify` is a non-empty ordinary verifier
 contract. See [Agent-Controlled Linear Runs](agent-control.md).
+
+### `execution`
+
+Completion is verifier-owned by default. Prompt Runner executes the complete
+`verify` contract after the provider returns, including `verify.commands`, and
+uses the configured bounded repair policy when that contract is incomplete.
+
+Packets whose coding agent must own executable quality control can opt in to:
+
+```yaml
+execution:
+  completion: "agent_owned"
+  incomplete: "repeat"
+```
+
+In this mode:
+
+- `verify.commands` and legacy `validation_commands` are invalid;
+- every prompt must declare prompt-specific structural evidence in addition to
+  any `repos_clean` or `changed_paths_only` clauses;
+- the prompt body must tell the agent which executable QC commands to run and
+  repair;
+- Prompt Runner evaluates structural clauses only after a normal agent return;
+- incomplete structural evidence starts the same prompt in a fresh session
+  with the failed checks attached;
+- an unrecorded prompt is never preflight-completed from stale structural
+  files; completed IDs in durable progress remain excluded by `--remaining`.
+
+The supported 0.13.0 combinations are omitted/`verifier_owned` plus `fail`, or
+`agent_owned` plus `repeat`. Packet plan construction and strict lint reject
+other values, executable verifier commands in agent-owned mode, and clean-only
+completion.
 
 ### `timeout` And The Run Deadline
 
@@ -279,7 +315,7 @@ recovery:
 
 ## Completion Contract Keys
 
-Prompt Runner 0.12.1 supports:
+Prompt Runner 0.13.0 supports:
 
 - `files_exist`
 - `files_absent`

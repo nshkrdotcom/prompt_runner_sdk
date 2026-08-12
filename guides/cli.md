@@ -203,6 +203,12 @@ Two contracts are never pre-flighted:
 a prompt id is a request to run it, so pre-flight is off for explicit ids
 unless `--verify-first` is given.
 
+An agent-owned packet never preflight-completes an unrecorded prompt from its
+structural contract. `--remaining` still excludes IDs already recorded as
+completed, but stale files alone cannot prevent the coding agent from running.
+After a normal incomplete return, the runner opens a fresh session for the same
+prompt until its structural evidence passes.
+
 ### `--continue`
 
 `--continue` is an API option, not a CLI switch. It resumes from

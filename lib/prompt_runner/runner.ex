@@ -3,6 +3,7 @@ defmodule PromptRunner.Runner do
 
   alias PromptRunner.AgentControl
   alias PromptRunner.CommitMessages
+  alias PromptRunner.CompletionPolicy
   alias PromptRunner.Config
   alias PromptRunner.Control.Amendment
   alias PromptRunner.Control.Interventions
@@ -815,10 +816,70 @@ defmodule PromptRunner.Runner do
        do: run_agent_control_iterations(plan, prompt, skip_commit, context, 1, nil)
 
   defp run_selected_prompt(plan, prompt, skip_commit, context) do
+    if CompletionPolicy.agent_owned?(plan) do
+      run_agent_owned_iterations(plan, prompt, skip_commit, context, 1, nil)
+    else
+      run_verifier_owned_prompt(plan, prompt, skip_commit, context)
+    end
+  end
+
+  defp run_verifier_owned_prompt(plan, prompt, skip_commit, context) do
     case preflight_verify(plan, prompt, context) do
       :run -> run_prompt_attempts(plan, prompt, skip_commit, :run, 1)
       {:satisfied, report} -> complete_without_session(plan, prompt, report)
       {:fault, report} -> halt_on_verifier_fault(plan, prompt, report, :preflight)
+    end
+  end
+
+  defp run_agent_owned_iterations(
+         plan,
+         original_prompt,
+         skip_commit,
+         context,
+         iteration,
+         previous_report
+       ) do
+    prompt =
+      if previous_report do
+        build_agent_owned_repeat_prompt(original_prompt, previous_report, iteration)
+      else
+        original_prompt
+      end
+
+    mode = if iteration == 1, do: :run, else: :agent_owned_repeat
+
+    case run_prompt_attempts(plan, prompt, skip_commit, mode, iteration) do
+      {:agent_owned_incomplete, report} ->
+        Runtime.mark_status(plan, original_prompt.num, "agent_owned_incomplete", %{
+          "iteration" => iteration,
+          "last_verifier" => report,
+          "reason" => verifier_failure_summary(report)
+        })
+
+        emit_observer(plan, %{
+          type: :prompt_incomplete,
+          prompt: original_prompt,
+          iteration: iteration,
+          verifier: report
+        })
+
+        IO.puts(
+          UI.yellow(
+            "Prompt #{original_prompt.num} is structurally incomplete; starting a fresh session."
+          )
+        )
+
+        run_agent_owned_iterations(
+          plan,
+          original_prompt,
+          skip_commit,
+          context,
+          iteration + 1,
+          report
+        )
+
+      other ->
+        other
     end
   end
 
@@ -1062,6 +1123,14 @@ defmodule PromptRunner.Runner do
   defp preflight_verify(_plan, _prompt, %{verify_first?: false}), do: :run
 
   defp preflight_verify(plan, prompt, _context) do
+    if CompletionPolicy.agent_owned?(plan) do
+      :run
+    else
+      verifier_owned_preflight(plan, prompt)
+    end
+  end
+
+  defp verifier_owned_preflight(plan, prompt) do
     if changed_paths_only?(prompt.verify) do
       :run
     else
@@ -1296,15 +1365,23 @@ defmodule PromptRunner.Runner do
     {:error, reason}
   end
 
-  defp attempt_status(:ok, report, _agent_control_invocation),
-    do: if(report.pass?, do: "completed", else: "verification_failed")
+  defp attempt_status(:ok, report, ctx) do
+    cond do
+      report.pass? -> "completed"
+      CompletionPolicy.agent_owned?(ctx.plan) -> "incomplete"
+      true -> "verification_failed"
+    end
+  end
 
-  defp attempt_status({:error, _reason}, _report, agent_control_invocation)
-       when is_map(agent_control_invocation),
+  defp attempt_status({:error, _reason}, _report, %{agent_control_invocation: invocation})
+       when is_map(invocation),
        do: "failed"
 
-  defp attempt_status({:error, _reason} = stream_result, report, _agent_control_invocation) do
+  defp attempt_status({:error, _reason} = stream_result, report, ctx) do
     cond do
+      CompletionPolicy.agent_owned?(ctx.plan) ->
+        "failed"
+
       report.pass? and verification_override_allowed?(stream_result, report) ->
         "completed"
 
@@ -1398,6 +1475,31 @@ defmodule PromptRunner.Runner do
         #{last_error || "n/a"}
 
         Remaining verifier failures:
+
+        #{failures}
+        """
+    }
+  end
+
+  defp build_agent_owned_repeat_prompt(prompt, report, iteration) do
+    failures = report |> Map.get(:failures, []) |> render_failure_blocks()
+    body = prompt.body || ""
+
+    %{
+      prompt
+      | body: """
+        #{body}
+
+        ## Agent-Owned Completion — Fresh Session #{iteration}
+
+        Continue the original prompt from the current workspace state. The
+        previous session returned normally, but the required structural
+        completion evidence below is still missing. Run and repair every
+        executable quality-control command required by the original prompt,
+        then produce and commit its completion evidence. Do not merely describe
+        what remains and do not redo work that is already correct.
+
+        Remaining structural completion failures:
 
         #{failures}
         """
@@ -2582,13 +2684,21 @@ defmodule PromptRunner.Runner do
   end
 
   defp finalize_stream_result(stream_result, ctx) do
-    report = Verifier.verify_prompt(ctx.plan, ctx.prompt)
+    report = completion_report(ctx)
 
     if Verifier.fault?(report) do
       record_verifier_fault_attempt(ctx, report)
       halt_on_verifier_fault(ctx.plan, ctx.prompt, report, :post_session)
     else
       record_verified_attempt(stream_result, ctx, report)
+    end
+  end
+
+  defp completion_report(ctx) do
+    if CompletionPolicy.agent_owned?(ctx.plan) do
+      Verifier.verify_prompt(ctx.plan, ctx.prompt, executable: false)
+    else
+      Verifier.verify_prompt(ctx.plan, ctx.prompt)
     end
   end
 
@@ -2642,14 +2752,14 @@ defmodule PromptRunner.Runner do
 
   defp record_verified_attempt(stream_result, ctx, report) do
     Runtime.record_attempt_result(ctx.plan, ctx.prompt.num, ctx.attempt, %{
-      "status" => attempt_status(stream_result, report, ctx.agent_control_invocation),
+      "status" => attempt_status(stream_result, report, ctx),
       "verifier" => report,
       "failure_class" => stream_failure_class(stream_result),
       "failure" => failure_for_stream_result(stream_result),
       "reason" => stream_reason(stream_result)
     })
 
-    case RecoveryPolicy.final_action(ctx.plan, ctx.prompt, ctx.mode, stream_result, report) do
+    case completion_action(stream_result, ctx, report) do
       {:complete, override?, failure} ->
         complete_prompt_attempt(ctx, report, override?, failure)
 
@@ -2664,7 +2774,22 @@ defmodule PromptRunner.Runner do
 
       {:repair, report, reason, failure} ->
         request_prompt_repair(ctx, report, reason, failure)
+
+      {:agent_owned_incomplete, report} ->
+        {:agent_owned_incomplete, report}
     end
+  end
+
+  defp completion_action(:ok, ctx, %{pass?: false} = report) do
+    if CompletionPolicy.agent_owned?(ctx.plan) do
+      {:agent_owned_incomplete, report}
+    else
+      RecoveryPolicy.final_action(ctx.plan, ctx.prompt, ctx.mode, :ok, report)
+    end
+  end
+
+  defp completion_action(stream_result, ctx, report) do
+    RecoveryPolicy.final_action(ctx.plan, ctx.prompt, ctx.mode, stream_result, report)
   end
 
   defp complete_prompt_attempt(ctx, report, override?, failure) do

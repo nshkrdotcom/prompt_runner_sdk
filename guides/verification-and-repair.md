@@ -1,7 +1,36 @@
 # Verification And Repair
 
-Prompt Runner 0.12.1 treats deterministic verification as the source of truth
-for prompt completion. A provider reporting success is evidence, not a verdict.
+Prompt Runner 0.13.0 supports two explicit completion owners. Verifier-owned
+completion remains the default. Agent-owned completion keeps executable quality
+control in the coding-agent session and uses deterministic structural evidence
+as the runner's completion boundary.
+
+## Completion Ownership
+
+In the default verifier-owned mode, a provider reporting success is evidence,
+not a verdict. Prompt Runner executes the whole contract after the session and
+uses bounded retry/repair policy.
+
+In agent-owned mode:
+
+```yaml
+execution:
+  completion: agent_owned
+  incomplete: repeat
+```
+
+the agent prompt owns compile, test, lint, documentation, and other executable
+QC. `verify.commands` is forbidden. Prompt Runner checks only prompt-specific
+structural clauses and repository clean/pushed state. A normal return with
+missing structural evidence is recorded as an incomplete iteration and starts
+a fresh provider session for the same original prompt with focused diagnostics.
+It does not mark the prompt failed between those sessions, so dependent prompts
+are not blocked while the current prompt remains executable.
+
+Agent-owned repeat is not generic provider retry. Provider authentication,
+quota, launch, policy, and verifier-infrastructure failures retain their normal
+classification. Completed prompt records still govern `--remaining`; passing
+stale files cannot preflight-complete an unrecorded agent-owned prompt.
 
 ## Contract Keys
 
@@ -247,6 +276,12 @@ reports the unmet items:
 ERROR: verification failed: file_exists docs/report.md: missing
 ```
 
+For agent-owned completion, provider success plus structural failure instead
+means a fresh `agent_owned_repeat` session. Provider success plus structural
+pass completes normally. The executable QC that justified the evidence was run
+and repaired by the agent under the original prompt, not by a second runner
+process.
+
 ## Retry, Resume, And Repair
 
 Retry is for remote/provider-claimed failures that may be flaky or mislabeled,
@@ -311,7 +346,8 @@ Packet-local state is stored in:
 It records:
 
 - prompt status
-- attempt history, with the mode of each attempt (`run`, `retry`, `repair`)
+- attempt history, with the mode of each attempt (`run`, `retry`, `repair`, or
+  `agent_owned_repeat`)
 - verifier results
 - failure class
 - repair/retry progression

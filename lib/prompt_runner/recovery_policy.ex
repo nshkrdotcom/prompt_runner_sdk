@@ -4,6 +4,7 @@ defmodule PromptRunner.RecoveryPolicy do
   """
 
   alias PromptRunner.FailureEnvelope
+  alias PromptRunner.CompletionPolicy
   alias PromptRunner.Plan
   alias PromptRunner.RecoveryConfig
   alias PromptRunner.Runtime
@@ -57,6 +58,7 @@ defmodule PromptRunner.RecoveryPolicy do
       mode: mode,
       retry_count: attempts.retry,
       repair_count: attempts.repair,
+      agent_owned?: CompletionPolicy.agent_owned?(plan),
       agent_control?: agent_control?(prompt),
       workspace_changed?: workspace_changed?(plan, prompt, report),
       retry_exhausted?: attempts.retry >= retry_limit(recovery, failure)
@@ -73,13 +75,24 @@ defmodule PromptRunner.RecoveryPolicy do
          %{
            report: %{pass?: true} = report,
            failure: failure,
+           recovery: recovery,
+           retry_count: retry_count,
+           agent_owned?: agent_owned?,
            agent_control?: agent_control?
          }
        ) do
-    if not agent_control? and verification_override_allowed?(failure, report) do
-      {:complete, true, failure}
-    else
-      provider_failure_result(reason, failure)
+    cond do
+      agent_owned? and retry_candidate?(failure, report, retry_count, recovery) ->
+        {:retry, reason, failure, retry_delay_ms(recovery, failure, retry_count + 1)}
+
+      agent_owned? ->
+        provider_failure_result(reason, failure)
+
+      not agent_control? and verification_override_allowed?(failure, report) ->
+        {:complete, true, failure}
+
+      true ->
+        provider_failure_result(reason, failure)
     end
   end
 

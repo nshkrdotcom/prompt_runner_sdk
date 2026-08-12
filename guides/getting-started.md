@@ -1,13 +1,13 @@
 # Getting Started
 
-This guide targets `prompt_runner_sdk ~> 0.12.1`.
+This guide targets `prompt_runner_sdk ~> 0.13.0`.
 
 ## Install
 
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.12.1"}
+    {:prompt_runner_sdk, "~> 0.13.0"}
   ]
 end
 ```

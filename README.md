@@ -14,7 +14,7 @@
 </p>
 
 Prompt Runner SDK executes packetized prompt workflows against local
-repositories. This README targets `prompt_runner_sdk ~> 0.12.1`.
+repositories. This README targets `prompt_runner_sdk ~> 0.13.0`.
 
 For unattended or multi-operator packets, use an installed escript plus an
 operator [workspace](guides/workspaces.md). Workspaces replace PID files,
@@ -22,11 +22,12 @@ supervisor shell loops, permission handoffs, shared builds, and verifier shell
 pipelines with independent clones, durable state, structured contracts, and
 systemd-user cgroup containment.
 
-The packet-first design introduced in `0.7.0` carries forward unchanged:
+The packet-first design introduced in `0.7.0` remains the default:
 
 - packets replace duplicated control files
 - profiles replace ad hoc global defaults
-- completion is verifier-owned, not provider-owned
+- completion is verifier-owned unless a packet deliberately opts into
+  agent-owned completion
 - policy-driven retry, repair, and resume are built into the runtime
 - a built-in simulated provider can prove recovery behavior without any
   external provider CLI
@@ -40,8 +41,9 @@ per-prompt iteration cap. A failed provider launch never counts as a controlled
 iteration even when the ordinary repository contract was already green. No
 duplicated prompt slots, shell loop, process kill, or workflow graph is required.
 
-In 0.12.1, the agent can also publish a durable nonterminal project cursor while
-it is working. Workspace status is an operator-facing summary instead of a wall of JSON.
+The 0.12.1 agent-control cursor remains available: an agent can publish durable
+nonterminal project progress while it is working. Workspace status is an
+operator-facing summary instead of a wall of JSON.
 It resolves a prepared workspace by stable id, or from a related manifest,
 source checkout, or independent clone when the current directory identifies one
 workspace unambiguously. The summary adapts to the run: prompt counts appear for
@@ -50,6 +52,19 @@ looping is relevant, and retry/repair details appear only when they need
 attention. `--json` retains the full machine-readable status.
 Prepared workspace ids now address monitoring and control commands consistently;
 an optional strict manifest packet binding also makes `plan` and `start` concise.
+
+In 0.13.0, a packet may instead declare agent-owned completion:
+
+```yaml
+execution:
+  completion: agent_owned
+  incomplete: repeat
+```
+
+Executable quality control then stays inside the coding-agent prompt. Prompt
+Runner performs structural completion checks only and starts a fresh session
+for the same prompt when that evidence is incomplete. Existing packets retain
+the verifier-owned post-session command behavior.
 
 See the [CHANGELOG](CHANGELOG.md) for the full list.
 
@@ -62,6 +77,8 @@ The same runtime is exposed through public Elixir modules and the CLI.
 - template-based prompt scaffolding with home-scoped and packet-local templates
 - home-scoped profiles under `~/.config/prompt_runner/`
 - deterministic completion contracts plus generated checklist views
+- opt-in agent-owned executable QC with structural completion and fresh-session
+  repeat
 - a static authoring linter for the hazards that do not raise
 - policy-driven retry, repair, and resume based on verifier state plus
   structured recovery envelopes
@@ -83,7 +100,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.12.1"}
+    {:prompt_runner_sdk, "~> 0.13.0"}
   ]
 end
 ```

@@ -13,3 +13,4 @@ workspace.independent_clone
 workspace.operator_owned_artifact
 workspace.legacy_state_import
 agent_control.linear
+completion.agent_owned

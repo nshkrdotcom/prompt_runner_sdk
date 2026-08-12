@@ -1,6 +1,6 @@
 # Architecture
 
-Prompt Runner 0.12.1 is organized around one packet runtime with both CLI and
+Prompt Runner 0.13.0 is organized around one packet runtime with both CLI and
 SDK entry points.
 
 ## Runtime Flow
@@ -27,6 +27,8 @@ packet dir
   prompt creation and checklist sync
 - `PromptRunner.Plan`
   fully resolved execution plan
+- `PromptRunner.CompletionPolicy`
+  packet-level verifier-owned or agent-owned completion semantics
 - internal runner pipeline
   preflight, execution, retry, repair, and completion logic
 - `PromptRunner.AgentControl`
@@ -43,9 +45,9 @@ packet dir
 
 ## Completion Model
 
-Prompt Runner no longer treats provider success as completion.
+Prompt Runner does not treat an unqualified provider success as completion.
 
-Completion is owned by the verifier:
+Verifier-owned completion remains the backward-compatible default:
 
 - provider success + verifier pass => complete
 - provider success + verifier fail => repair, while the repair budget lasts
@@ -56,6 +58,16 @@ Completion is owned by the verifier:
 Every branch terminates. Repair is bounded by `recovery.repair.max_attempts`,
 and the exhausted case fails with the unmet verifier items rather than
 starting another attempt.
+
+Agent-owned completion is an explicit packet alternative. The coding agent
+runs and repairs executable QC inside its session; `verify.commands` is invalid
+for the packet. Prompt Runner evaluates structural evidence only. A normal
+return with incomplete structural evidence creates a durable incomplete
+iteration and opens a fresh session for the same prompt with the unmet evidence
+attached. The prompt is not terminally failed between sessions, so the
+scheduler does not dependency-block its descendants prematurely. Completed IDs
+remain durable resume facts, while structural files cannot preflight-complete
+an unrecorded prompt.
 
 An agent-controlled packet adds one linear transition after an ordinary prompt
 iteration verifies: continue, repeat, finish, or blocked. Repeat opens a fresh
