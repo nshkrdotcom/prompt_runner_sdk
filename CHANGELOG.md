@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Structured verifier executables now resolve `@repo:name/path` references as
+  documented, matching the existing logical-path resolution for argv entries.
+- Agent-control request preparation now carries only the run-scoped values it
+  consumes, and synced request-write failures are returned as typed errors.
 - Agent directives written before an ordinary verifier failure are discarded
   before repair or retry, so stale control input cannot decide the repaired
   iteration.

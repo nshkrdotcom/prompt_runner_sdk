@@ -105,34 +105,29 @@ defmodule PromptRunner.AgentControl do
   end
 
   @doc "Creates one fresh request scope for a prompt iteration."
-  @spec prepare(Plan.t(), map(), map(), pos_integer()) ::
+  @spec prepare(String.t(), String.t(), String.t(), pos_integer()) ::
           {:ok, invocation()} | {:error, term()}
-  def prepare(%Plan{} = plan, run, prompt, iteration)
-      when is_map(run) and is_map(prompt) and is_integer(iteration) and iteration > 0 do
-    with run_dir when is_binary(run_dir) <- Map.get(run, :run_dir),
-         run_id when is_binary(run_id) <- Map.get(run, :run_id) do
-      token = random_token()
-      request_dir = Path.join(run_dir, "agent-control")
+  def prepare(run_dir, run_id, prompt_id, iteration)
+      when is_binary(run_dir) and is_binary(run_id) and is_binary(prompt_id) and
+             is_integer(iteration) and iteration > 0 do
+    token = random_token()
+    request_dir = Path.join(run_dir, "agent-control")
 
-      request_file =
-        Path.join(
-          request_dir,
-          "#{safe_segment(prompt.num)}-#{iteration}-#{binary_part(token, 0, 12)}.json"
-        )
+    request_file =
+      Path.join(
+        request_dir,
+        "#{safe_segment(prompt_id)}-#{iteration}-#{binary_part(token, 0, 12)}.json"
+      )
 
-      with :ok <- File.mkdir_p(request_dir) do
-        {:ok,
-         %{
-           request_file: request_file,
-           token: token,
-           run_id: run_id,
-           prompt_id: prompt.num,
-           iteration: iteration,
-           packet: plan.source_root
-         }}
-      end
-    else
-      _other -> {:error, :agent_control_requires_durable_run_state}
+    with :ok <- File.mkdir_p(request_dir) do
+      {:ok,
+       %{
+         request_file: request_file,
+         token: token,
+         run_id: run_id,
+         prompt_id: prompt_id,
+         iteration: iteration
+       }}
     end
   end
 
@@ -344,14 +339,13 @@ defmodule PromptRunner.AgentControl do
   defp write_request_file(path, request) do
     result =
       File.open(path, [:write, :exclusive, :binary], fn io ->
-        case IO.binwrite(io, Jason.encode!(request, pretty: true)) do
-          :ok -> :file.sync(io)
-          error -> error
-        end
+        :ok = IO.binwrite(io, Jason.encode!(request, pretty: true))
+        :file.sync(io)
       end)
 
     case result do
       {:ok, :ok} -> :ok
+      {:ok, {:error, reason}} -> {:error, {:agent_control_request_write_failed, reason}}
       {:error, :eexist} -> {:error, :agent_control_request_already_exists}
       {:error, reason} -> {:error, {:agent_control_request_write_failed, reason}}
     end

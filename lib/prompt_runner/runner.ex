@@ -829,8 +829,11 @@ defmodule PromptRunner.Runner do
          context,
          iteration,
          finish_failure
-       ) do
-    with {:ok, invocation} <- AgentControl.prepare(plan, context.run, prompt, iteration) do
+       )
+       when is_integer(iteration) and iteration > 0 do
+    with run_dir when is_binary(run_dir) <- context.run.run_dir,
+         run_id when is_binary(run_id) <- context.run.run_id,
+         {:ok, invocation} <- AgentControl.prepare(run_dir, run_id, prompt.num, iteration) do
       controlled_prompt =
         agent_control_prompt(prompt, invocation, context.agent_control, finish_failure)
 
@@ -848,6 +851,9 @@ defmodule PromptRunner.Runner do
         other ->
           other
       end
+    else
+      {:error, _reason} = error -> error
+      _other -> {:error, :agent_control_requires_durable_run_state}
     end
   end
 

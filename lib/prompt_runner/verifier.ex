@@ -837,7 +837,7 @@ defmodule PromptRunner.Verifier do
 
   defp resolved_command(entry, repo_index, repo, root, cwd, program)
        when is_binary(program) and program != "" do
-    program = Map.get(repo_index, program, program)
+    program = Map.get(repo_index, program, resolve_argv_entry(program, repo_index))
 
     argv =
       entry

@@ -228,6 +228,52 @@ defmodule PromptRunner.VerifierTest do
     assert [%{mode: :structured, pass?: true}] = report.items
   end
 
+  test "structured command executable resolves a logical repository path" do
+    packet_root = FSHelpers.tmp_dir("prompt_runner_logical_exec_packet")
+    repo = FSHelpers.git_repo!("prompt_runner_logical_exec_repo")
+
+    on_exit(fn -> File.rm_rf!(packet_root) end)
+    on_exit(fn -> File.rm_rf!(repo) end)
+    File.mkdir_p!(Path.join(packet_root, "prompts"))
+    File.mkdir_p!(Path.join(repo, "scripts"))
+
+    executable = Path.join(repo, "scripts/verify")
+    File.write!(executable, "#!/bin/sh\nexit 0\n")
+    File.chmod!(executable, 0o755)
+
+    File.write!(Path.join(packet_root, "prompt_runner_packet.md"), """
+    ---
+    name: "logical-exec-verifier"
+    profile: "codex-default"
+    repos:
+      app:
+        path: "#{repo}"
+        default: true
+    ---
+    # Logical executable verifier
+    """)
+
+    File.write!(Path.join(packet_root, "prompts/01_verify.prompt.md"), """
+    ---
+    id: "01"
+    phase: 1
+    name: "Logical executable"
+    targets: ["app"]
+    verify:
+      commands:
+        - exec: "@repo:app/scripts/verify"
+          args: []
+    ---
+    # Logical executable
+    """)
+
+    assert {:ok, plan} = PromptRunner.plan(packet_root)
+    report = Verifier.verify_prompt(plan, hd(plan.prompts))
+
+    assert report.pass?
+    assert [%{mode: :structured, pass?: true}] = report.items
+  end
+
   test "a structured command timeout is an infrastructure fault, not exit folklore" do
     packet_root = FSHelpers.tmp_dir("prompt_runner_timeout_verifier_packet")
     repo = FSHelpers.git_repo!("prompt_runner_timeout_verifier_repo")
