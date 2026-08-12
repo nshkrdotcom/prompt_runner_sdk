@@ -4,7 +4,7 @@ defmodule PromptRunner.WorkspaceTest do
   import ExUnit.CaptureIO
 
   alias PromptRunner.CLI
-  alias PromptRunner.Control.Plane
+  alias PromptRunner.Control.{Plane, Snapshot, Store}
   alias PromptRunner.Test.FSHelpers
   alias PromptRunner.Workspace
   alias PromptRunner.Workspace.{Manifest, Watch}
@@ -146,6 +146,96 @@ defmodule PromptRunner.WorkspaceTest do
 
     assert {:ok, lock} = report.lock_path |> File.read!() |> Jason.decode()
     assert lock["schema"] == "prompt_runner.workspace.lock/v1"
+
+    reference_path =
+      Path.join([
+        xdg_data,
+        "prompt_runner",
+        "workspace-references",
+        "test-workspace.json"
+      ])
+
+    assert {:ok, reference_record} = reference_path |> File.read!() |> Jason.decode()
+    assert reference_record["schema"] == "prompt_runner.workspace.reference/v1"
+    assert reference_record["workspace"] == "test-workspace"
+    assert reference_record["lock"] == report.lock_path
+  end
+
+  test "prepared workspaces resolve by id and related current directory", %{
+    manifest: manifest,
+    source: source
+  } do
+    assert {:ok, _prepared} = Workspace.prepare(manifest)
+    assert {:ok, resolved} = Workspace.resolve("test-workspace")
+    assert resolved == Path.expand(manifest)
+    assert {:ok, ^resolved} = Workspace.resolve(nil, cwd: source)
+  end
+
+  test "prepared workspace ids remain discoverable with custom operator roots", %{
+    manifest: manifest,
+    root: root
+  } do
+    custom_workspace = Path.join(root, "custom-workspace")
+    custom_runtime = Path.join(root, "custom-runtime")
+
+    manifest
+    |> File.read!()
+    |> String.replace("workspace_root: auto", "workspace_root: #{custom_workspace}")
+    |> String.replace("runtime_root: auto", "runtime_root: #{custom_runtime}")
+    |> then(&File.write!(manifest, &1))
+
+    assert {:ok, _prepared} = Workspace.prepare(manifest)
+    assert {:ok, resolved} = Workspace.resolve("test-workspace")
+    assert resolved == Path.expand(manifest)
+  end
+
+  test "current-directory discovery rejects ambiguous prepared workspace identities", %{
+    manifest: manifest,
+    source: source,
+    root: root
+  } do
+    other_manifest = Path.join(root, "other-workspace.yml")
+
+    manifest
+    |> File.read!()
+    |> String.replace("id: test-workspace", "id: other-workspace")
+    |> then(&File.write!(other_manifest, &1))
+
+    assert {:ok, _prepared} = Workspace.prepare(manifest)
+    assert {:ok, _prepared} = Workspace.prepare(other_manifest)
+
+    assert {:error, {:workspace_discovery_ambiguous, cwd, ids}} =
+             Workspace.resolve(nil, cwd: source)
+
+    assert cwd == Path.expand(source)
+    assert Enum.sort(ids) == ["other-workspace", "test-workspace"]
+  end
+
+  test "status CLI accepts an id or related current directory and defaults to a human report", %{
+    manifest: manifest,
+    source: source
+  } do
+    assert {:ok, _prepared} = Workspace.prepare(manifest)
+
+    output = capture_io(fn -> assert :ok = CLI.main(["status", "test-workspace"]) end)
+
+    assert output =~ "test-workspace — NOT_STARTED"
+    assert output =~ "service"
+    refute output =~ "\"schema\""
+
+    discovered =
+      File.cd!(source, fn ->
+        capture_io(fn -> assert :ok = CLI.main(["status"]) end)
+      end)
+
+    assert discovered =~ "test-workspace — NOT_STARTED"
+
+    json =
+      capture_io(fn -> assert :ok = CLI.main(["status", "test-workspace", "--json"]) end)
+      |> Jason.decode!()
+
+    assert json["workspace"] == "test-workspace"
+    assert json["schema"] == "prompt_runner.workspace.status/v1"
   end
 
   test "prepare falls back to the canonical remote when bootstrap source is unusable", %{
@@ -396,6 +486,107 @@ defmodule PromptRunner.WorkspaceTest do
            }
 
     assert is_binary(Jason.encode!(status))
+  end
+
+  test "status combines selected prompt progress with conditional agent iteration data", %{
+    manifest: manifest,
+    packet: packet,
+    xdg_state: xdg_state
+  } do
+    packet_manifest = Path.join(packet, "prompt_runner_packet.md")
+
+    File.write!(
+      packet_manifest,
+      String.replace(
+        File.read!(packet_manifest),
+        "repos:",
+        """
+        agent_control:
+          enabled: true
+          default_action: repeat
+          max_iterations: 7
+          completion_verify:
+            files_exist: [README.md]
+        repos:
+        """
+      )
+    )
+
+    state_dir =
+      Path.join([xdg_state, "prompt_runner", "workspaces", "test-workspace", "packet"])
+
+    File.mkdir_p!(Path.join(state_dir, "runs"))
+
+    File.write!(
+      Path.join([state_dir, "runs", "current.json"]),
+      Jason.encode!(%{
+        "run_id" => "run-1",
+        "state" => "running",
+        "selection" => %{"targets" => ["01"]},
+        "updated_at" => "2026-08-12T04:00:00Z"
+      })
+    )
+
+    File.write!(
+      Path.join(state_dir, "state.json"),
+      Jason.encode!(%{
+        "prompts" => %{
+          "01" => %{
+            "status" => "running",
+            "iteration" => 1,
+            "agent_control" => %{
+              "action" => "repeat",
+              "iteration" => 1,
+              "reason" => "more work remains"
+            },
+            "last_verifier" => %{"pass?" => true}
+          }
+        }
+      })
+    )
+
+    control_root = Store.state_root(state_dir)
+    assert :ok = Store.init(control_root)
+
+    assert :ok =
+             Store.write_snapshot(control_root, %Snapshot{
+               run_id: "run-1",
+               packet_dir: packet,
+               packet: "workspace-packet",
+               status: :running,
+               prompt_id: "01",
+               prompt_name: "Step",
+               attempt: 1,
+               mode: :run,
+               provider: :simulated,
+               model: "simulated-demo"
+             })
+
+    command_runner = fn "systemctl", _argv, _opts -> {"no user bus", 1} end
+    assert {:ok, status} = Workspace.status(manifest, command_runner: command_runner)
+
+    assert status.progress == %{
+             selected: 1,
+             completed: 0,
+             running: 1,
+             failed: 0,
+             blocked: 0,
+             pending: 0,
+             current_position: 1,
+             last_verifier: "passed",
+             reason: nil,
+             error: nil
+           }
+
+    assert status.agent_control == %{
+             enabled: true,
+             looping: true,
+             current_iteration: 2,
+             completed_iterations: 1,
+             max_iterations: 7,
+             last_action: "repeat",
+             last_reason: "more work remains"
+           }
   end
 
   test "watch persists a structured failure report when running state is required", %{

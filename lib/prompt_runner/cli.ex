@@ -8,6 +8,7 @@ defmodule PromptRunner.CLI do
   alias PromptRunner.AgentControl
   alias PromptRunner.Capabilities
   alias PromptRunner.CLI.Control, as: CLIControl
+  alias PromptRunner.CLI.Status, as: CLIStatus
   alias PromptRunner.Packet
   alias PromptRunner.PacketLint
   alias PromptRunner.Packets
@@ -604,19 +605,63 @@ defmodule PromptRunner.CLI do
 
     if invalid != [], do: handle_error({:invalid_options, invalid})
 
-    result =
-      case opts[:workspace] do
-        nil -> PromptRunner.status(packet_dir(remaining, opts[:packet]))
-        manifest_path -> Workspace.status(manifest_path)
-      end
+    {kind, result} = status_result(opts, remaining)
 
     case result do
       {:ok, status} ->
-        IO.puts(Jason.encode!(status, pretty: opts[:json] != true))
+        if opts[:json] == true or kind == :packet do
+          IO.puts(Jason.encode!(status, pretty: opts[:json] != true))
+        else
+          CLIStatus.print_workspace(status)
+        end
+
         :ok
 
       {:error, reason} ->
         handle_error(reason)
+    end
+  end
+
+  defp status_result(opts, remaining) do
+    case opts[:workspace] do
+      workspace when is_binary(workspace) -> {:workspace, Workspace.status(workspace)}
+      nil -> status_without_workspace(opts[:packet], remaining)
+    end
+  end
+
+  defp status_without_workspace(packet, remaining) when is_binary(packet),
+    do: {:packet, PromptRunner.status(packet_dir(remaining, packet))}
+
+  defp status_without_workspace(nil, remaining), do: inferred_status(remaining)
+
+  defp inferred_status([]) do
+    case Workspace.resolve() do
+      {:ok, manifest_path} ->
+        {:workspace, Workspace.status(manifest_path)}
+
+      {:error, {:workspace_not_discovered, _cwd}} ->
+        {:packet, PromptRunner.status(packet_dir([], nil))}
+
+      {:error, reason} ->
+        {:workspace, {:error, reason}}
+    end
+  end
+
+  defp inferred_status([reference]) do
+    if File.dir?(reference) do
+      {:packet, PromptRunner.status(packet_dir([reference], nil))}
+    else
+      resolved_workspace_status(reference)
+    end
+  end
+
+  defp inferred_status(remaining),
+    do: {:packet, PromptRunner.status(packet_dir(remaining, nil))}
+
+  defp resolved_workspace_status(reference) do
+    case Workspace.resolve(reference) do
+      {:ok, manifest_path} -> {:workspace, Workspace.status(manifest_path)}
+      {:error, reason} -> {:workspace, {:error, reason}}
     end
   end
 
@@ -1447,6 +1492,18 @@ defmodule PromptRunner.CLI do
     System.halt(1)
   end
 
+  defp handle_error({:workspace_discovery_ambiguous, cwd, ids}) do
+    IO.puts(UI.red("ERROR: more than one prepared workspace matches #{cwd}"))
+    IO.puts("Choose one by id: prompt_runner status #{Enum.join(ids, " | ")}")
+    System.halt(1)
+  end
+
+  defp handle_error({:workspace_not_prepared, id}) do
+    IO.puts(UI.red("ERROR: workspace #{id} has not been prepared for this operator"))
+    IO.puts("Prepare its manifest with: prompt_runner workspace prepare MANIFEST")
+    System.halt(1)
+  end
+
   defp handle_error(reason) do
     IO.puts(UI.red("ERROR: #{inspect(reason)}"))
     System.halt(1)
@@ -1480,7 +1537,7 @@ defmodule PromptRunner.CLI do
       prompt_runner workspace doctor MANIFEST
       prompt_runner workspace import-state MANIFEST PACKET_DIR [--source PROGRESS_FILE]
       prompt_runner start --workspace MANIFEST --packet PACKET_DIR --remaining [--new-run] [--from ID] [--through ID]
-      prompt_runner status --workspace MANIFEST [--json]
+      prompt_runner status [WORKSPACE_ID | --workspace MANIFEST] [--json]
       prompt_runner watch --workspace MANIFEST [--for 240m] [--every 10m]
         [--require-running] [--require-progress] [--progress-timeout 60m] [--json]
       prompt_runner stop --workspace MANIFEST

@@ -12,7 +12,16 @@ defmodule PromptRunner.Workspace do
   alias PromptRunner.PathRewriter
   alias PromptRunner.Plan, as: RunnerPlan
   alias PromptRunner.RuntimeStore.FileStore
-  alias PromptRunner.Workspace.{Doctor, LegacyStateImporter, Manifest, Materializer, Plan, Status}
+
+  alias PromptRunner.Workspace.{
+    Doctor,
+    LegacyStateImporter,
+    Manifest,
+    Materializer,
+    Plan,
+    Reference,
+    Status
+  }
 
   @doc "Deterministic transient user-service unit for a workspace."
   @spec service_unit(String.t()) :: String.t()
@@ -23,8 +32,15 @@ defmodule PromptRunner.Workspace do
   end
 
   @spec status(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def status(manifest_path, opts \\ []),
-    do: Status.read(manifest_path, opts)
+  def status(reference, opts \\ []) do
+    with {:ok, manifest_path} <- Reference.resolve(reference, opts) do
+      Status.read(manifest_path, opts)
+    end
+  end
+
+  @doc "Resolves a prepared workspace by manifest path, workspace id, or current directory."
+  @spec resolve(String.t() | nil, keyword()) :: {:ok, String.t()} | {:error, term()}
+  def resolve(reference \\ nil, opts \\ []), do: Reference.resolve(reference, opts)
 
   @spec plan(String.t(), String.t(), keyword()) ::
           {:ok, %{workspace: Plan.t(), runner: RunnerPlan.t(), packet_root: String.t()}}

@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider.
 - The `agent_control.linear` installed capability and the
   `prompt_runner agent-control ...` CLI surface used inside provider sessions.
+- A context-sensitive human workspace-status summary with prompt progress,
+  relevant agent-loop or retry state, verifier result, provider activity, and
+  service/process health. Iteration and attempt detail stays hidden when it is
+  not meaningful.
+- Ergonomic status addressing by prepared workspace id or unambiguous related
+  current directory. Versioned operator-owned workspace references support both
+  automatic and custom roots; explicit manifests and `--json` remain available
+  for automation.
 
 ### Fixed
 

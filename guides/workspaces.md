@@ -15,7 +15,7 @@ prompt_runner packet lint packet --strict
 prompt_runner workspace import-state workspace.yml packet
 prompt_runner verify --workspace workspace.yml --packet packet 01
 prompt_runner start --workspace workspace.yml --packet packet --remaining --no-commit
-prompt_runner status --workspace workspace.yml
+prompt_runner status operator-packet
 prompt_runner control status --workspace workspace.yml --json
 prompt_runner control events --workspace workspace.yml
 prompt_runner control log --workspace workspace.yml --follow # operator requests only
@@ -32,7 +32,11 @@ closed.
 
 `prepare` is the only materializing operation. It clones without hardlinks or
 Git alternates, refuses dirty existing clones, fast-forwards only, and builds
-declared contract escripts into the operator's workspace. `doctor` is read-only:
+declared contract escripts into the operator's workspace. It also registers the
+workspace id and lock location in versioned operator-owned XDG data, including
+when the manifest selects custom workspace roots. That small reference is what
+makes the id an ergonomic address; project files and shell configuration remain
+untouched. `doctor` is read-only:
 it probes exact `.tool-versions` from their project directories and never runs
 Mix or a login shell. Dirty clones are reported as resumable work, since a crash
 must not make unfinished work impossible to resume.
@@ -72,6 +76,40 @@ The escript embeds erlexec's compiled native port and materializes it once into
 a version-, architecture-, and digest-addressed directory under the current
 operator's XDG cache. The cached file is never shared across users, and a
 digest mismatch or non-regular path fails startup instead of being overwritten.
+
+## Human Status And Machine Status
+
+The default workspace status is designed for a person checking an unattended
+run:
+
+```bash
+prompt_runner status operator-packet
+```
+
+When the current directory belongs unambiguously to one prepared workspace,
+the shorter form is equivalent:
+
+```bash
+prompt_runner status
+```
+
+Discovery matches the prepared manifest tree, declared source checkout, and
+independent clone. Multiple matches fail with the candidate ids instead of
+guessing. The report adapts to the workflow: ordinary multi-prompt runs show
+prompt progress; an agent-controlled run shows iteration progress only when it
+is actually looping; attempts appear for retry/repair; verifier, provider,
+activity, service, and process health appear when known.
+
+Automation should request the stable versioned schema explicitly:
+
+```bash
+prompt_runner status operator-packet --json
+prompt_runner status --workspace workspace.yml --json
+```
+
+The JSON response retains the full control snapshot and adds structured
+`progress` and `agent_control` summaries. The manifest form remains available
+when a caller must not use discovery.
 
 ## Manifest
 

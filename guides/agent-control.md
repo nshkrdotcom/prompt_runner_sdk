@@ -157,5 +157,17 @@ prompt_runner packet lint packet --strict
 prompt_runner start --workspace workspace.yml --packet packet --remaining --no-commit
 ```
 
+Check the run by workspace id:
+
+```bash
+prompt_runner status operator-packet
+```
+
+The human report includes an iteration counter only when the controlled prompt
+is actually using loop semantics—for example, after `repeat`, on a later
+iteration, or when `default_action` is `repeat`. Linear controlled prompts that
+simply continue do not acquire loop noise. Use `--json` for the complete
+structured `agent_control` record.
+
 The installed escript that starts the workspace must be 0.12.0 or newer. The
 provider invokes that same installed command through its inherited `PATH`.

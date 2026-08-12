@@ -179,6 +179,22 @@ For deterministic recovery demos:
 `PromptRunner.status/1` returns the packet runtime state from
 `.prompt_runner/state.json`.
 
+For a prepared operator workspace, resolve its stable id or infer it from a
+related current directory, then read the full reconciliation status:
+
+```elixir
+{:ok, manifest_path} = PromptRunner.Workspace.resolve("operator-packet")
+{:ok, same_path} = PromptRunner.Workspace.resolve(nil, cwd: "/path/to/declared/source")
+{:ok, workspace_status} = PromptRunner.Workspace.status("operator-packet")
+```
+
+`Workspace.status/2` accepts either an id or manifest path and returns the
+versioned workspace status map. Its `progress` and `agent_control` fields are
+structured data for callers; the concise conditional presentation belongs to
+the CLI renderer. Resolution reads only versioned operator-owned references and
+prepared locks. A current directory that matches zero or multiple workspaces
+returns an explicit error rather than guessing.
+
 ## Supervision
 
 `PromptRunner.Watch.sample/2` collects one measurement of a packet's

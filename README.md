@@ -40,6 +40,14 @@ per-prompt iteration cap. A failed provider launch never counts as a controlled
 iteration even when the ordinary repository contract was already green. No
 duplicated prompt slots, shell loop, process kill, or workflow graph is required.
 
+Workspace status is now an operator-facing summary instead of a wall of JSON.
+It resolves a prepared workspace by stable id, or from a related manifest,
+source checkout, or independent clone when the current directory identifies one
+workspace unambiguously. The summary adapts to the run: prompt counts appear for
+multi-prompt sequences, iteration counts appear only after agent-controlled
+looping is relevant, and retry/repair details appear only when they need
+attention. `--json` retains the full machine-readable status.
+
 See the [CHANGELOG](CHANGELOG.md) for the full list.
 
 The same runtime is exposed through public Elixir modules and the CLI.
@@ -57,6 +65,8 @@ The same runtime is exposed through public Elixir modules and the CLI.
 - agent-controlled `continue`, `repeat`, verified `finish`, and explicit
   `blocked` for linear prompt sequences
 - cgroup-contained unattended runs with run-ID/lease/journal/progress health
+- concise workspace status by id or related current directory, with full JSON
+  available for automation
 - zero-dependency simulation for retry, repair, and resume demos
 - public packet/profile/runtime APIs plus matching CLI commands
 - Claude, Codex, Amp, Cursor, and Antigravity support through
@@ -216,6 +226,35 @@ mix prompt_runner watch demo
 
 For a ready-made authoring walkthrough from ADRs/docs to finished prompts, see
 [`examples/authoring_packet/`](examples/authoring_packet/README.md).
+
+## Operator Workspace Status
+
+After `workspace prepare`, the ordinary status command accepts the workspace's
+manifest id:
+
+```bash
+prompt_runner status operator-packet
+```
+
+From a directory related to exactly one prepared workspace—the manifest tree,
+a declared source checkout, or its independent clone—the id is optional:
+
+```bash
+prompt_runner status
+```
+
+The default is a compact human report. Use JSON or an explicit manifest for
+scripts and integrations:
+
+```bash
+prompt_runner status operator-packet --json
+prompt_runner status --workspace /path/to/workspace.yml --json
+```
+
+Workspace discovery uses versioned operator-owned records written by
+`workspace prepare`; it does not depend on shell aliases, project-specific
+configuration, or scanning arbitrary directories. Packet-local
+`mix prompt_runner status demo` remains JSON.
 
 ## Packet Model
 

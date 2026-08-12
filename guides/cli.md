@@ -206,11 +206,37 @@ Repair a failed prompt from stored verifier state:
 mix prompt_runner repair --packet demo 02
 ```
 
-Print runtime status JSON:
+Print packet-local runtime status JSON:
 
 ```bash
 mix prompt_runner status demo
 ```
+
+For a prepared operator workspace, address it by manifest id and get a compact
+human summary:
+
+```bash
+prompt_runner status operator-packet
+```
+
+`prompt_runner status` with no argument discovers the workspace when the
+current directory is related to exactly one prepared manifest, declared source
+checkout, or independent clone. It refuses an ambiguous match and asks for the
+id. The report shows only relevant dimensions: prompt counts for multi-prompt
+runs, iteration progress for an agent-controlled loop, and attempt details for
+retry or repair.
+
+Use the structured form for automation:
+
+```bash
+prompt_runner status operator-packet --json
+prompt_runner status --workspace /path/to/workspace.yml --json
+```
+
+The explicit `--workspace` form remains the deterministic interface for
+service scripts. Workspace ids and current-directory discovery come from
+operator-owned reference records written by `workspace prepare`, not from
+environment-specific aliases or recursive filesystem search.
 
 ## Agent-Controlled Linear Runs
 

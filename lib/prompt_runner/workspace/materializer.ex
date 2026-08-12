@@ -5,6 +5,7 @@ defmodule PromptRunner.Workspace.Materializer do
   alias CliSubprocessCore.Command.RunResult
   alias PromptRunner.Workspace.ArtifactBuilder
   alias PromptRunner.Workspace.Plan
+  alias PromptRunner.Workspace.Reference
 
   @clone_timeout_ms 600_000
 
@@ -13,7 +14,8 @@ defmodule PromptRunner.Workspace.Materializer do
     with :ok <- File.mkdir_p(plan.repos_root),
          {:ok, repos} <- prepare_repositories(plan, opts),
          {:ok, artifacts} <- ArtifactBuilder.prepare(plan, opts),
-         :ok <- write_lock(plan, repos, artifacts) do
+         :ok <- write_lock(plan, repos, artifacts),
+         :ok <- Reference.register(plan.manifest.id, plan.manifest.path, plan.lock_path) do
       {:ok,
        %{
          workspace: plan.manifest.id,

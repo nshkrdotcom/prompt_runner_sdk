@@ -53,6 +53,20 @@ provider event stream. `control log` is narrower: it records operator control
 requests such as view changes and steering, so it can legitimately print
 nothing during an autonomous run.
 
+For the normal human check, use the workspace rollup instead:
+
+```bash
+prompt_runner status operator-packet
+# or, from a directory related to one prepared workspace:
+prompt_runner status
+```
+
+That command combines run, selected-prompt progress, relevant loop/attempt
+state, verifier result, provider activity, service state, and process lease in
+one quiet report. `control status --json` remains the lower-level live snapshot
+for dashboards and debugging; `prompt_runner status ... --json` is the complete
+workspace reconciliation schema.
+
 To watch provider activity rather than operator requests:
 
 ```bash
