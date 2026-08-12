@@ -5,6 +5,7 @@ defmodule PromptRunner.CLI do
 
   alias ExecutionPlane.Process.Containment.SystemdUser
   alias PromptRunner
+  alias PromptRunner.AgentControl
   alias PromptRunner.Capabilities
   alias PromptRunner.CLI.Control, as: CLIControl
   alias PromptRunner.Packet
@@ -986,6 +987,7 @@ defmodule PromptRunner.CLI do
   defp parse_command(["-v" | rest]), do: {:version, rest}
   defp parse_command(["version" | rest]), do: {:version, rest}
   defp parse_command(["capabilities" | rest]), do: {:capabilities, rest}
+  defp parse_command(["agent-control", action | rest]), do: {:agent_control, action, rest}
   defp parse_command(["workspace", "plan" | rest]), do: {:workspace_plan, rest}
   defp parse_command(["workspace", "prepare" | rest]), do: {:workspace_prepare, rest}
   defp parse_command(["workspace", "doctor" | rest]), do: {:workspace_doctor, rest}
@@ -1020,6 +1022,7 @@ defmodule PromptRunner.CLI do
   defp dispatch_command({:init, rest}), do: run_init(rest)
   defp dispatch_command({:version, rest}), do: run_version(rest)
   defp dispatch_command({:capabilities, rest}), do: run_capabilities(rest)
+  defp dispatch_command({:agent_control, action, rest}), do: run_agent_control(action, rest)
   defp dispatch_command({:workspace_plan, rest}), do: run_workspace_plan(rest)
   defp dispatch_command({:workspace_prepare, rest}), do: run_workspace_prepare(rest)
   defp dispatch_command({:workspace_doctor, rest}), do: run_workspace_doctor(rest)
@@ -1068,6 +1071,31 @@ defmodule PromptRunner.CLI do
       else: Enum.each(Capabilities.list(), &IO.puts/1)
 
     :ok
+  end
+
+  defp run_agent_control(action, rest) do
+    {opts, remaining, invalid} = OptionParser.parse(rest, strict: [reason: :string])
+
+    with true <- invalid == [] || {:error, {:invalid_options, invalid}},
+         true <- remaining == [] || {:error, {:unexpected_arguments, remaining}},
+         {:ok, receipt} <- AgentControl.request(action, reason: opts[:reason]) do
+      IO.puts(
+        Jason.encode!(
+          %{
+            schema: "prompt_runner.agent_control/receipt/v1",
+            action: receipt.action,
+            prompt_id: receipt.prompt_id,
+            iteration: receipt.iteration,
+            state: "accepted"
+          },
+          pretty: true
+        )
+      )
+
+      :ok
+    else
+      {:error, reason} -> handle_error(reason)
+    end
   end
 
   defp run_workspace_plan(rest) do
@@ -1466,6 +1494,12 @@ defmodule PromptRunner.CLI do
       prompt_runner repair [--packet PACKET_DIR] PROMPT_ID
       prompt_runner status [PACKET_DIR]
       prompt_runner watch [PACKET_DIR] [--interval SECONDS] [--once] [--json]
+
+    Agent control (inside an enabled provider session):
+      prompt_runner agent-control continue
+      prompt_runner agent-control repeat [--reason "..."]
+      prompt_runner agent-control finish --reason "..."
+      prompt_runner agent-control blocked --reason "..."
 
     Control (a live run, from another terminal):
       prompt_runner control status [PACKET_DIR | --workspace MANIFEST] [--json]

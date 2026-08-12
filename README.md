@@ -14,7 +14,7 @@
 </p>
 
 Prompt Runner SDK executes packetized prompt workflows against local
-repositories. This README targets `prompt_runner_sdk ~> 0.11.0`.
+repositories. This README targets `prompt_runner_sdk ~> 0.12.0`.
 
 For unattended or multi-operator packets, use an installed escript plus an
 operator [workspace](guides/workspaces.md). Workspaces replace PID files,
@@ -31,25 +31,13 @@ The packet-first design introduced in `0.7.0` carries forward unchanged:
 - a built-in simulated provider can prove recovery behavior without any
   external provider CLI
 
-`0.11.0` is shaped by two real unattended packet programs and removes the shell
-layer that made operator identity, verification, resumption, and containment
-implicit. Every
-addition is something that program had to build for itself, and every fix is
-something it hit:
-
-- `packet lint` — a static gate for authoring hazards, the constructs that load
-  and run and quietly mean something else
-- `doc:` and `repos_clean:` verify clauses — artifact quality, and repository
-  discipline for packets where each session commits its own work
-- workspace `watch` — append-only health evidence reconciled from the run ID,
-  lease identity, journal, progress, and systemd-user containment
-- `plan` honours the same override flags as `run`, and `run --dry-run` is
-  reachable from the CLI at last
-- a verification failure with the repair budget spent now fails instead of
-  repairing forever
-- workspace control — packet input resolves inside the operator clone while
-  live control, steering, run-local amendments, logs, and state stay under the
-  operator's external runtime
+`0.12.0` adds agent-controlled movement through an ordinary linear prompt
+sequence. An agent can continue, repeat the current prompt in a fresh session,
+request verified early finish, or stop as blocked. The runner authenticates
+each iteration-scoped request, retains deterministic ownership of successful
+completion, rejects a premature finish with the unmet contract, and enforces a
+per-prompt iteration cap. No duplicated prompt slots, shell loop, process kill,
+or workflow graph is required.
 
 See the [CHANGELOG](CHANGELOG.md) for the full list.
 
@@ -65,6 +53,8 @@ The same runtime is exposed through public Elixir modules and the CLI.
 - a static authoring linter for the hazards that do not raise
 - policy-driven retry, repair, and resume based on verifier state plus
   structured recovery envelopes
+- agent-controlled `continue`, `repeat`, verified `finish`, and explicit
+  `blocked` for linear prompt sequences
 - cgroup-contained unattended runs with run-ID/lease/journal/progress health
 - zero-dependency simulation for retry, repair, and resume demos
 - public packet/profile/runtime APIs plus matching CLI commands
@@ -77,7 +67,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.11.0"}
+    {:prompt_runner_sdk, "~> 0.12.0"}
   ]
 end
 ```
@@ -424,6 +414,7 @@ Use any of these:
 - [Verification And Repair](guides/verification-and-repair.md)
 - [Packet Linting](guides/linting.md)
 - [Supervising A Long Run](guides/supervision.md)
+- [Agent-Controlled Linear Runs](guides/agent-control.md)
 - [Multi-Repository Packets](guides/multi-repo.md)
 - [Rendering Modes](guides/rendering.md)
 - [Architecture](guides/architecture.md)
@@ -449,7 +440,7 @@ they exist next to this repository, then GitHub, then Hex:
 ```bash
 mix deps.sources
 # dependency sources:
-#   agent_session_manager -> path (../agent_session_manager) -> 0.14.0
+#   agent_session_manager -> path (../agent_session_manager) -> 0.15.0
 #   cli_subprocess_core -> path (../cli_subprocess_core) -> 0.7.0
 ```
 

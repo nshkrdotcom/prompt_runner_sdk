@@ -212,6 +212,23 @@ Print runtime status JSON:
 mix prompt_runner status demo
 ```
 
+## Agent-Controlled Linear Runs
+
+When the packet enables `agent_control`, the running provider receives these
+iteration-scoped commands:
+
+```bash
+prompt_runner agent-control continue
+prompt_runner agent-control repeat --reason "work remains"
+prompt_runner agent-control finish --reason "the packet objective is complete"
+prompt_runner agent-control blocked --reason "exact external blocker"
+```
+
+The commands are rejected outside a live controlled invocation. `finish` does
+not trust the provider's claim: Prompt Runner runs the packet-level
+`completion_verify` contract and starts a fresh iteration with its failures if
+the request was premature. See [Agent-Controlled Linear Runs](agent-control.md).
+
 ## Supervision
 
 ```bash

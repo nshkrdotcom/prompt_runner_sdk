@@ -525,6 +525,7 @@ defmodule PromptRunner.Plan do
     "thinking" => :thinking,
     "diff" => :diff,
     "recovery" => :recovery,
+    "agent_control" => :agent_control,
     "prompt_overrides" => :prompt_overrides,
     "target" => :target,
     "targets" => :targets,
@@ -576,6 +577,9 @@ defmodule PromptRunner.Plan do
   defp normalize_option_value(:recovery, value) when is_map(value) do
     RecoveryConfig.normalize(%{"recovery" => value})
   end
+
+  defp normalize_option_value(:agent_control, value) when is_map(value),
+    do: stringify_keys(value)
 
   defp normalize_option_value(_key, value), do: value
 

@@ -1,6 +1,6 @@
 # Architecture
 
-Prompt Runner 0.11.0 is organized around one packet runtime with both CLI and
+Prompt Runner 0.12.0 is organized around one packet runtime with both CLI and
 SDK entry points.
 
 ## Runtime Flow
@@ -29,6 +29,9 @@ packet dir
   fully resolved execution plan
 - internal runner pipeline
   preflight, execution, retry, repair, and completion logic
+- `PromptRunner.AgentControl`
+  authenticated per-iteration directives for movement through a linear prompt
+  sequence
 - `PromptRunner.Verifier`
   deterministic completion contracts, with `Verifier.Doc` and
   `Verifier.ReposClean` implementing the artifact-quality and
@@ -53,6 +56,12 @@ Completion is owned by the verifier:
 Every branch terminates. Repair is bounded by `recovery.repair.max_attempts`,
 and the exhausted case fails with the unmet verifier items rather than
 starting another attempt.
+
+An agent-controlled packet adds one linear transition after an ordinary prompt
+iteration verifies: continue, repeat, finish, or blocked. Repeat opens a fresh
+provider session on the same prompt. Finish is accepted only when the separate
+packet-level completion contract passes. The agent never marks its own work
+complete and never terminates the runner process.
 
 ## Recovery Model
 

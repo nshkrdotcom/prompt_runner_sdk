@@ -12,7 +12,7 @@ defmodule PromptRunner.MixProject do
 
   @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
 
-  @version "0.11.0"
+  @version "0.12.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
   @homepage_url "https://hex.pm/packages/prompt_runner_sdk"
   @docs_url "https://hexdocs.pm/prompt_runner_sdk"
@@ -48,7 +48,7 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      workspace_dep(:agent_session_manager, "~> 0.14.0"),
+      workspace_dep(:agent_session_manager, "~> 0.15.0"),
       workspace_dep(:cli_subprocess_core, "~> 0.7.0"),
       workspace_dep(:execution_plane_process, "~> 0.3.0"),
       {:jason, "~> 1.4"},
@@ -121,6 +121,8 @@ defmodule PromptRunner.MixProject do
         {"guides/workspaces.md", filename: "workspaces", title: "Operator Workspaces"},
         {"guides/rendering.md", filename: "rendering", title: "Rendering Modes"},
         {"guides/control.md", filename: "control", title: "Watching And Steering A Live Run"},
+        {"guides/agent-control.md",
+         filename: "agent-control", title: "Agent-Controlled Linear Runs"},
         {"guides/multi-repo.md", filename: "multi-repo", title: "Multi-Repository Packets"},
         {"guides/architecture.md", filename: "architecture", title: "Architecture"},
         {"examples/README.md", filename: "examples", title: "Examples Overview"},
@@ -152,7 +154,7 @@ defmodule PromptRunner.MixProject do
           "verification-and-repair",
           "rendering"
         ],
-        Operations: ["supervision", "workspaces", "control"],
+        Operations: ["supervision", "workspaces", "control", "agent-control"],
         Embedding: ["api"],
         Architecture: ["architecture"],
         Examples: [
@@ -172,6 +174,7 @@ defmodule PromptRunner.MixProject do
         "Core API": [
           PromptRunner,
           PromptRunner.Packet,
+          PromptRunner.AgentControl,
           PromptRunner.PacketLint,
           PromptRunner.Packets,
           PromptRunner.Profile,

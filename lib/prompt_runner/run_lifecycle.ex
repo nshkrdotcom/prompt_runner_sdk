@@ -224,10 +224,16 @@ defmodule PromptRunner.RunLifecycle do
 
   defp packet_fingerprint(plan) do
     payload =
-      {:prompt_runner_packet_fingerprint_v2,
-       Enum.map(plan.prompts, fn prompt ->
-         prompt |> Map.from_struct() |> Map.take(@fingerprint_prompt_fields)
-       end)}
+      {:prompt_runner_packet_fingerprint_v3,
+       %{
+         prompts:
+           Enum.map(plan.prompts, fn prompt ->
+             prompt |> Map.from_struct() |> Map.take(@fingerprint_prompt_fields)
+           end),
+         agent_control:
+           Map.get(plan.options || %{}, :agent_control) ||
+             Map.get(plan.options || %{}, "agent_control")
+       }}
 
     :crypto.hash(:sha256, :erlang.term_to_binary(payload)) |> Base.encode16(case: :lower)
   end

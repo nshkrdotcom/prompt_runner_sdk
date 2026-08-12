@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-11
+
+### Added
+
+- Agent-controlled linear execution through iteration-scoped `continue`,
+  `repeat`, `finish`, and `blocked` directives. Requests are authenticated to
+  one run, prompt, and iteration; the first accepted directive wins.
+- Packet-level `agent_control` configuration with a per-prompt iteration cap,
+  declared default action, and deterministic `completion_verify` contract.
+- Verifier-owned early finish. A premature `finish` request is rejected and
+  its unmet completion items are supplied to a fresh prompt iteration; a
+  passing request closes the selected linear sequence without duplicate prompt
+  slots or a process kill.
+- Completion preflight for agent-controlled packets. A non-explicit run whose
+  packet-level completion contract already passes exits without launching a
+  provider.
+- The `agent_control.linear` installed capability and the
+  `prompt_runner agent-control ...` CLI surface used inside provider sessions.
+
+### Fixed
+
+- Agent directives written before an ordinary verifier failure are discarded
+  before repair or retry, so stale control input cannot decide the repaired
+  iteration.
+- Agent-control configuration now participates in the durable packet
+  fingerprint, preventing a resume from silently changing iteration or
+  completion semantics.
+
+### Changed
+
+- `agent_session_manager` now requires `~> 0.15.0`.
+
 ## [0.11.0] - 2026-08-10
 
 ### Added
@@ -906,7 +938,8 @@ paid in provider tokens for as long as nobody is watching.
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
-[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.9.0...v0.9.1

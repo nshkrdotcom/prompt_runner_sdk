@@ -64,7 +64,9 @@ defmodule PromptRunner.PacketLint do
   deciding the latter needs a shell parser.
   """
 
+  alias PromptRunner.AgentControl
   alias PromptRunner.Packet
+  alias PromptRunner.Prompt
   alias PromptRunner.Source.PacketSource
   alias PromptRunner.Verifier
 
@@ -115,7 +117,8 @@ defmodule PromptRunner.PacketLint do
     scope = packet_scope(packet)
 
     findings =
-      duplicate_id_findings(prompts)
+      agent_control_findings(packet, scope)
+      |> Kernel.++(duplicate_id_findings(prompts))
       |> Kernel.++(Enum.flat_map(prompts, &prompt_findings(&1, scope)))
       |> Enum.map(&promote(&1, strict?))
       |> Enum.sort_by(&{&1.file || "", &1.kind, &1.message})
@@ -135,6 +138,39 @@ defmodule PromptRunner.PacketLint do
 
   defp promote(finding, true), do: %{finding | severity: "error"}
   defp promote(finding, false), do: finding
+
+  defp agent_control_findings(packet, scope) do
+    case AgentControl.config(
+           Map.get(packet.options, "agent_control", Map.get(packet.options, :agent_control))
+         ) do
+      {:ok, %{enabled?: false}} ->
+        []
+
+      {:ok, %{completion_verify: contract}} ->
+        prompt = %Prompt{
+          num: "agent-control-finish",
+          name: "Agent-control completion",
+          file: "prompt_runner_packet.md",
+          target_repos: Enum.map(packet.repos, & &1.name),
+          verify: contract,
+          validation_commands: [],
+          metadata: %{}
+        }
+
+        contract_findings(prompt, scope)
+
+      {:error, reason} ->
+        [
+          %{
+            kind: "invalid_agent_control",
+            severity: "error",
+            prompt_id: nil,
+            file: "prompt_runner_packet.md",
+            message: "agent_control is invalid: #{inspect(reason)}"
+          }
+        ]
+    end
+  end
 
   # Everything the lint needs to answer "where would the runner have run this",
   # mirroring `PromptRunner.Config.llm_for_prompt/2`: a prompt's working

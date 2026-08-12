@@ -3,7 +3,7 @@
     agent_session_manager: %{
       path: "../agent_session_manager",
       github: %{repo: "nshkrdotcom/agent_session_manager", branch: "main"},
-      hex: "~> 0.14.0",
+      hex: "~> 0.15.0",
       default_order: [:path, :github, :hex],
       publish_order: [:hex]
     },

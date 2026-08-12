@@ -206,6 +206,50 @@ defmodule PromptRunner.CLIFlagsTest do
     assert opts[:new_run]
   end
 
+  test "agent-control CLI writes a scoped directive" do
+    root = FSHelpers.tmp_dir("prompt_runner_cli_agent_control")
+    request_file = Path.join(root, "request.json")
+
+    previous =
+      ~w(
+        PROMPT_RUNNER_AGENT_CONTROL_FILE
+        PROMPT_RUNNER_AGENT_CONTROL_TOKEN
+        PROMPT_RUNNER_RUN_ID
+        PROMPT_RUNNER_PROMPT_ID
+        PROMPT_RUNNER_PROMPT_ITERATION
+      )
+      |> Map.new(&{&1, System.get_env(&1)})
+
+    System.put_env("PROMPT_RUNNER_AGENT_CONTROL_FILE", request_file)
+    System.put_env("PROMPT_RUNNER_AGENT_CONTROL_TOKEN", "cli-test-token")
+    System.put_env("PROMPT_RUNNER_RUN_ID", "cli-run")
+    System.put_env("PROMPT_RUNNER_PROMPT_ID", "01")
+    System.put_env("PROMPT_RUNNER_PROMPT_ITERATION", "2")
+
+    on_exit(fn ->
+      Enum.each(previous, fn
+        {name, nil} -> System.delete_env(name)
+        {name, value} -> System.put_env(name, value)
+      end)
+
+      File.rm_rf!(root)
+    end)
+
+    output =
+      capture_io(fn ->
+        assert :ok =
+                 CLI.main([
+                   "agent-control",
+                   "finish",
+                   "--reason",
+                   "the packet is complete"
+                 ])
+      end)
+
+    assert %{"action" => "finish", "iteration" => 2, "state" => "accepted"} =
+             Jason.decode!(output)
+  end
+
   test "run forwards --new-run through the CLI into durable run supersession", %{
     packet_root: packet_root
   } do

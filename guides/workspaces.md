@@ -1,6 +1,6 @@
 # Operator Workspaces
 
-Prompt Runner 0.11.0 replaces packet-specific shell orchestration with a strict
+Prompt Runner 0.12.0 replaces packet-specific shell orchestration with a strict
 workspace manifest and an installed escript. A workspace gives one operator
 full independent clones, ordinary in-clone `_build` and `deps`, external runtime
 state, installed contract artifacts, and cgroup-backed process containment.
@@ -78,9 +78,10 @@ digest mismatch or non-regular path fails startup instead of being overwritten.
 schema: prompt_runner.workspace/v1
 id: operator-packet
 requires:
-  prompt_runner: ">= 0.11.0 and < 0.12.0"
+  prompt_runner: ">= 0.12.0 and < 0.13.0"
   capabilities:
     - verifier.argv
+    - agent_control.linear
     - containment.systemd_user
     - workspace.independent_clone
 repositories:

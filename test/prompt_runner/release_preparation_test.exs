@@ -12,7 +12,7 @@ defmodule PromptRunner.ReleasePreparationTest do
     assert "examples/authoring_packet/templates/*.md" in files
   end
 
-  test "release metadata follows the ASM 0.14, process 0.3, and Elixir 1.19 boundary" do
+  test "release metadata follows the ASM 0.15, process 0.3, and Elixir 1.19 boundary" do
     project = Mix.Project.config()
 
     assert project[:elixir] == "~> 1.19"
@@ -24,7 +24,7 @@ defmodule PromptRunner.ReleasePreparationTest do
     # into a failing suite in this repository.
     config = DependencySources.config!(Path.expand("../..", __DIR__))
 
-    assert config[:deps][:agent_session_manager][:hex] =~ ~r/^~> 0\.14\./
+    assert config[:deps][:agent_session_manager][:hex] =~ ~r/^~> 0\.15\./
     assert config[:deps][:cli_subprocess_core][:hex] =~ ~r/^~> 0\.7\./
     assert config[:deps][:execution_plane_process][:hex] =~ ~r/^~> 0\.3\./
 

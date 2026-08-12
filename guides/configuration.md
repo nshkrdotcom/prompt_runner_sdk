@@ -1,6 +1,6 @@
 # Packet Manifest Reference
 
-Prompt Runner 0.11.0 uses two primary authoring files:
+Prompt Runner 0.12.0 uses two primary authoring files:
 
 - `prompt_runner_packet.md`
 - `*.prompt.md`
@@ -48,6 +48,15 @@ recovery:
     trigger_on_nominal_success_with_failed_verifier: true
     trigger_on_provider_failure_with_workspace_changes: true
     trigger_on_retry_exhaustion_with_workspace_changes: true
+agent_control:
+  enabled: true
+  default_action: "repeat"
+  max_iterations: 20
+  completion_verify:
+    commands:
+      - exec: "@repo:app/scripts/verify_complete"
+        args: []
+        timeout_ms: 600000
 repos:
   app:
     path: "./workspace"
@@ -69,6 +78,7 @@ Core keys:
 - `repos`
 - `phases`
 - `recovery`
+- `agent_control`
 
 Shared execution keys:
 
@@ -102,6 +112,20 @@ Every provider option map also accepts the normalized common options
 `transport_headless_timeout_ms`). See the
 [Provider Guide](providers.md) for which providers support each one at
 runtime.
+
+### `agent_control`
+
+`agent_control` lets a provider control an ordinary linear prompt sequence
+after each verified iteration:
+
+- `continue` completes the current prompt and advances;
+- `repeat` runs the current prompt again in a fresh provider session;
+- `finish` closes the sequence only after `completion_verify` passes;
+- `blocked` stops incomplete and records the stated reason.
+
+`default_action` is `continue` or `repeat`, `max_iterations` is a positive
+per-prompt cap, and `completion_verify` is a non-empty ordinary verifier
+contract. See [Agent-Controlled Linear Runs](agent-control.md).
 
 ### `timeout` And The Run Deadline
 
@@ -255,7 +279,7 @@ recovery:
 
 ## Completion Contract Keys
 
-Prompt Runner 0.11.0 supports:
+Prompt Runner 0.12.0 supports:
 
 - `files_exist`
 - `files_absent`

@@ -1,6 +1,7 @@
 defmodule PromptRunner.Runner do
   @moduledoc false
 
+  alias PromptRunner.AgentControl
   alias PromptRunner.CommitMessages
   alias PromptRunner.Config
   alias PromptRunner.Control.Amendment
@@ -106,17 +107,16 @@ defmodule PromptRunner.Runner do
         end
 
       opts[:run] ->
-        with :ok <- Scheduler.validate(plan),
+        with {:ok, agent_control} <- AgentControl.config(plan),
+             :ok <- Scheduler.validate(plan),
              {:ok, _report} <- maybe_preflight_plan(plan, opts),
              {:ok, targets} <- build_targets(plan, opts, remaining) do
-          announce_empty_selection(targets, opts)
+          context =
+            plan
+            |> run_context(opts, remaining)
+            |> Map.put(:agent_control, agent_control)
 
-          run_supervised(
-            plan,
-            targets,
-            opts[:no_commit] || false,
-            run_context(plan, opts, remaining)
-          )
+          run_selected_targets(plan, targets, opts, context)
         end
 
       true ->
@@ -136,6 +136,47 @@ defmodule PromptRunner.Runner do
   end
 
   defp announce_empty_selection(_targets, _opts), do: :ok
+
+  defp run_selected_targets(plan, targets, opts, context) do
+    case agent_control_preflight(plan, context) do
+      {:complete, report} ->
+        IO.puts("")
+        IO.puts(UI.green("Packet completion contract already passes — no session was run."))
+        emit_observer(plan, %{type: :agent_control_preflight_completed, report: report})
+        :ok
+
+      :continue ->
+        announce_empty_selection(targets, opts)
+
+        run_supervised(
+          plan,
+          targets,
+          opts[:no_commit] || false,
+          context
+        )
+
+      {:fault, report} ->
+        {:error, {:agent_control_completion_verifier_fault, Verifier.faults(report)}}
+    end
+  end
+
+  defp agent_control_preflight(_plan, %{agent_control: %{enabled?: false}}), do: :continue
+
+  # Naming prompt ids is an explicit request to run them even when the packet's
+  # overall completion contract already passes.
+  defp agent_control_preflight(_plan, %{selection: %{explicit: explicit}})
+       when explicit != [],
+       do: :continue
+
+  defp agent_control_preflight(plan, %{agent_control: config}) do
+    report = AgentControl.completion_report(plan, config)
+
+    cond do
+      Verifier.fault?(report) -> {:fault, report}
+      report.pass? and report.items != [] -> {:complete, report}
+      true -> :continue
+    end
+  end
 
   # Naming a prompt explicitly is a request to run it, so pre-flight verification
   # is off for explicit ids and on for `--remaining`, where the whole point is to
@@ -177,10 +218,15 @@ defmodule PromptRunner.Runner do
   defp finish_supervised_run(plan, run, skip_commit, context) do
     result =
       with_control_plane(plan, run, fn ->
-        run_targets(plan, run.targets, skip_commit, context)
+        run_targets(plan, run.targets, skip_commit, Map.put(context, :run, run))
       end)
 
-    terminal_state = if match?({:error, _reason}, result), do: "failed", else: "completed"
+    terminal_state =
+      case result do
+        {:error, {:agent_control_blocked, _prompt, _reason}} -> "blocked"
+        {:error, _reason} -> "failed"
+        _other -> "completed"
+      end
 
     case RunLifecycle.transition(run, terminal_state, %{result: inspect(result)}) do
       :ok -> result
@@ -292,6 +338,7 @@ defmodule PromptRunner.Runner do
     end)
     |> case do
       {:ok, _outcomes} -> :ok
+      {:finished, _details} -> :ok
       {:error, _reason} = error -> error
     end
   end
@@ -306,6 +353,7 @@ defmodule PromptRunner.Runner do
   defp fail_fast_prompt(plan, num, outcomes, skip_commit, context) do
     case run_prompt(plan, num, skip_commit, context) do
       :ok -> {:cont, {:ok, Map.put(outcomes, num, :completed)}}
+      {:agent_control_finish, details} -> {:halt, {:finished, details}}
       {:error, reason} -> {:halt, {:error, reason}}
     end
   end
@@ -324,6 +372,9 @@ defmodule PromptRunner.Runner do
     case result do
       {:infrastructure_error, reason} ->
         {:error, reason}
+
+      {:finished, _details} ->
+        :ok
 
       {[], _outcomes} ->
         :ok
@@ -352,6 +403,9 @@ defmodule PromptRunner.Runner do
     case run_prompt(plan, num, skip_commit, context) do
       :ok ->
         {:cont, {failures, Map.put(outcomes, num, :completed)}}
+
+      {:agent_control_finish, details} ->
+        {:halt, {:finished, details}}
 
       # A verifier fault means the contract did not execute. It is usually
       # shared infrastructure, so keep-going must stop rather than repeat it.
@@ -748,12 +802,246 @@ defmodule PromptRunner.Runner do
         {:error, {:prompt_not_found, num}}
 
       prompt ->
-        case preflight_verify(plan, prompt, context) do
-          :run -> run_prompt_attempts(plan, prompt, skip_commit, :run, 1)
-          {:satisfied, report} -> complete_without_session(plan, prompt, report)
-          {:fault, report} -> halt_on_verifier_fault(plan, prompt, report, :preflight)
-        end
+        run_selected_prompt(plan, prompt, skip_commit, context)
     end
+  end
+
+  defp run_selected_prompt(
+         plan,
+         prompt,
+         skip_commit,
+         %{agent_control: %{enabled?: true}} = context
+       ),
+       do: run_agent_control_iterations(plan, prompt, skip_commit, context, 1, nil)
+
+  defp run_selected_prompt(plan, prompt, skip_commit, context) do
+    case preflight_verify(plan, prompt, context) do
+      :run -> run_prompt_attempts(plan, prompt, skip_commit, :run, 1)
+      {:satisfied, report} -> complete_without_session(plan, prompt, report)
+      {:fault, report} -> halt_on_verifier_fault(plan, prompt, report, :preflight)
+    end
+  end
+
+  defp run_agent_control_iterations(
+         plan,
+         prompt,
+         skip_commit,
+         context,
+         iteration,
+         finish_failure
+       ) do
+    with {:ok, invocation} <- AgentControl.prepare(plan, context.run, prompt, iteration) do
+      controlled_prompt =
+        agent_control_prompt(prompt, invocation, context.agent_control, finish_failure)
+
+      case run_prompt_attempts(plan, controlled_prompt, skip_commit, :run, 1) do
+        {:agent_control_iteration_complete, completion} ->
+          handle_agent_control_iteration(
+            completion,
+            invocation,
+            prompt,
+            skip_commit,
+            context,
+            iteration
+          )
+
+        other ->
+          other
+      end
+    end
+  end
+
+  defp agent_control_prompt(prompt, invocation, config, finish_failure) do
+    metadata =
+      prompt.metadata
+      |> Map.put("agent_control_invocation", invocation)
+
+    %{
+      prompt
+      | body: AgentControl.decorate_prompt(prompt.body || "", invocation, config, finish_failure),
+        metadata: metadata
+    }
+  end
+
+  defp handle_agent_control_iteration(
+         completion,
+         invocation,
+         original_prompt,
+         skip_commit,
+         context,
+         iteration
+       ) do
+    case AgentControl.consume(invocation) do
+      {:ok, request} ->
+        action = AgentControl.requested_action(request, context.agent_control)
+
+        apply_agent_control_action(
+          action,
+          request,
+          completion,
+          original_prompt,
+          skip_commit,
+          context,
+          iteration
+        )
+
+      {:error, reason} ->
+        fail_agent_control_iteration(completion, "invalid_request", reason)
+    end
+  end
+
+  defp apply_agent_control_action(
+         :continue,
+         request,
+         completion,
+         _prompt,
+         _skip_commit,
+         _context,
+         _iteration
+       ) do
+    finalize_deferred_completion(completion, agent_control_record(request, :continue))
+  end
+
+  defp apply_agent_control_action(
+         :repeat,
+         request,
+         completion,
+         prompt,
+         skip_commit,
+         context,
+         iteration
+       ) do
+    record_agent_control_iteration(completion, request, :repeat)
+
+    if iteration < context.agent_control.max_iterations do
+      run_agent_control_iterations(
+        completion.ctx.plan,
+        prompt,
+        skip_commit,
+        context,
+        iteration + 1,
+        nil
+      )
+    else
+      fail_agent_control_iteration(
+        completion,
+        "iteration_limit",
+        {:agent_control_iteration_limit, prompt.num, context.agent_control.max_iterations}
+      )
+    end
+  end
+
+  defp apply_agent_control_action(
+         :finish,
+         request,
+         completion,
+         prompt,
+         skip_commit,
+         context,
+         iteration
+       ) do
+    report = AgentControl.completion_report(completion.ctx.plan, context.agent_control)
+
+    cond do
+      Verifier.fault?(report) ->
+        fail_agent_control_iteration(
+          completion,
+          "completion_verifier_fault",
+          {:agent_control_completion_verifier_fault, Verifier.faults(report)}
+        )
+
+      report.pass? and report.items != [] ->
+        :ok = finalize_deferred_completion(completion, agent_control_record(request, :finish))
+        IO.puts(UI.green("Agent requested finish; packet completion verification passed."))
+        {:agent_control_finish, %{prompt: prompt.num, request: request, verifier: report}}
+
+      iteration < context.agent_control.max_iterations ->
+        record_agent_control_finish_rejected(completion, request, report)
+
+        run_agent_control_iterations(
+          completion.ctx.plan,
+          prompt,
+          skip_commit,
+          context,
+          iteration + 1,
+          report
+        )
+
+      true ->
+        fail_agent_control_iteration(
+          completion,
+          "finish_rejected",
+          {:agent_control_finish_rejected, prompt.num, report}
+        )
+    end
+  end
+
+  defp apply_agent_control_action(
+         :blocked,
+         request,
+         completion,
+         prompt,
+         _skip_commit,
+         _context,
+         _iteration
+       ) do
+    reason = request && request.reason
+    Progress.mark_failed(completion.ctx.plan, prompt.num)
+
+    Runtime.mark_status(completion.ctx.plan, prompt.num, "agent_control_blocked", %{
+      "agent_control" => agent_control_record(request, :blocked),
+      "reason" => reason
+    })
+
+    {:error, {:agent_control_blocked, prompt.num, reason}}
+  end
+
+  defp record_agent_control_iteration(completion, request, action) do
+    Runtime.mark_status(completion.ctx.plan, completion.ctx.prompt.num, "iteration_completed", %{
+      "agent_control" => agent_control_record(request, action),
+      "iteration" => completion.iteration,
+      "last_verifier" => completion.report
+    })
+  end
+
+  defp record_agent_control_finish_rejected(completion, request, report) do
+    Runtime.mark_status(
+      completion.ctx.plan,
+      completion.ctx.prompt.num,
+      "agent_control_finish_rejected",
+      %{
+        "agent_control" => agent_control_record(request, :finish),
+        "iteration" => completion.iteration,
+        "completion_verifier" => report
+      }
+    )
+
+    IO.puts(UI.yellow("Agent finish request rejected; completion verification did not pass."))
+  end
+
+  defp fail_agent_control_iteration(completion, status, reason) do
+    Progress.mark_failed(completion.ctx.plan, completion.ctx.prompt.num)
+
+    Runtime.mark_status(completion.ctx.plan, completion.ctx.prompt.num, status, %{
+      "iteration" => completion.iteration,
+      "reason" => summarize_reason(reason)
+    })
+
+    return_error(completion.ctx.plan, completion.ctx.prompt.num, reason, false)
+  end
+
+  defp agent_control_record(nil, action),
+    do: %{"action" => Atom.to_string(action), "source" => "default"}
+
+  defp agent_control_record(request, action) do
+    %{
+      "action" => Atom.to_string(action),
+      "source" => "agent",
+      "reason" => request.reason,
+      "request_file" => request.request_file,
+      "requested_at" => request.requested_at,
+      "iteration" => request.iteration
+    }
   end
 
   # A prompt whose contract already passes has nothing for a provider to do.
@@ -1180,6 +1468,8 @@ defmodule PromptRunner.Runner do
   defp handle_attempt_outcome(other, _ctx), do: other
 
   defp maybe_schedule_retry(ctx, reason, failure, delay_ms) do
+    :ok = AgentControl.reset_request(ctx.agent_control_invocation)
+
     Runtime.mark_status(ctx.plan, ctx.prompt.num, "retry_scheduled", %{
       "failure_class" => FailureEnvelope.class_name(failure),
       "failure" => failure,
@@ -1192,6 +1482,8 @@ defmodule PromptRunner.Runner do
   end
 
   defp maybe_run_repair(ctx, report, reason, failure) do
+    :ok = AgentControl.reset_request(ctx.agent_control_invocation)
+
     Runtime.mark_status(ctx.plan, ctx.prompt.num, "repairing", %{
       "last_verifier" => report,
       "failure_class" => FailureEnvelope.class_name(failure),
@@ -1214,26 +1506,36 @@ defmodule PromptRunner.Runner do
 
   defp prompt_attempt_context(plan, prompt, skip_commit, mode, attempt) do
     prompt_metadata = prompt.metadata
+    invocation = Map.get(prompt_metadata, "agent_control_invocation")
+
+    llm =
+      plan.config
+      |> Config.llm_for_prompt(prompt)
+      |> PromptRunner.PathRewriter.deep(workspace_path_rewrites(plan))
+      |> maybe_attach_agent_control(invocation)
+      |> Map.put(:attempt, attempt)
+      |> Map.put(:mode, mode)
+      |> Map.put(:prompt_id, prompt.num)
+      |> Map.put(:prompt_metadata, prompt_metadata)
+      |> Map.put(:simulation, Map.get(prompt_metadata, "simulate", %{}))
+      |> Map.put(:repo_paths, repo_paths(plan))
 
     %{
       plan: plan,
       prompt: prompt,
       prompt_path: prompt_path(plan, prompt),
-      llm:
-        plan.config
-        |> Config.llm_for_prompt(prompt)
-        |> PromptRunner.PathRewriter.deep(workspace_path_rewrites(plan))
-        |> Map.put(:attempt, attempt)
-        |> Map.put(:mode, mode)
-        |> Map.put(:prompt_id, prompt.num)
-        |> Map.put(:prompt_metadata, prompt_metadata)
-        |> Map.put(:simulation, Map.get(prompt_metadata, "simulate", %{}))
-        |> Map.put(:repo_paths, repo_paths(plan)),
+      llm: llm,
       skip_commit: skip_commit,
       mode: mode,
-      attempt: attempt
+      attempt: attempt,
+      agent_control_invocation: invocation
     }
   end
+
+  defp maybe_attach_agent_control(llm, invocation) when is_map(invocation),
+    do: AgentControl.attach_llm(llm, invocation)
+
+  defp maybe_attach_agent_control(llm, _invocation), do: llm
 
   defp recovery_context(ctx, llm_meta, log_ctx) do
     %{
@@ -2378,34 +2680,80 @@ defmodule PromptRunner.Runner do
   end
 
   defp finish_completed_attempt(ctx, report, override?, failure, commit_info) do
-    Progress.mark_completed(ctx.plan, ctx.prompt.num, commit_info)
+    completion = %{
+      ctx: ctx,
+      report: report,
+      override?: override?,
+      failure: failure,
+      commit_info: commit_info,
+      iteration: agent_control_iteration(ctx)
+    }
 
-    Runtime.mark_status(
-      ctx.plan,
-      ctx.prompt.num,
-      "completed",
-      %{
+    if is_map(ctx.agent_control_invocation) do
+      Runtime.mark_status(ctx.plan, ctx.prompt.num, "iteration_completed", %{
         "commit_info" => commit_info,
         "last_verifier" => report,
-        "failure" => failure
+        "failure" => failure,
+        "iteration" => completion.iteration
+      })
+
+      emit_observer(ctx.plan, %{
+        type: :prompt_iteration_completed,
+        prompt: ctx.prompt,
+        iteration: completion.iteration,
+        commit_info: commit_info
+      })
+
+      IO.puts(
+        UI.green(
+          "Prompt #{ctx.prompt.num} iteration #{completion.iteration} verified successfully"
+        )
+      )
+
+      {:agent_control_iteration_complete, completion}
+    else
+      finalize_deferred_completion(completion, nil)
+    end
+  end
+
+  defp finalize_deferred_completion(completion, agent_control) do
+    ctx = completion.ctx
+    Progress.mark_completed(ctx.plan, ctx.prompt.num, completion.commit_info)
+
+    status =
+      %{
+        "commit_info" => completion.commit_info,
+        "last_verifier" => completion.report,
+        "failure" => completion.failure
       }
+      |> maybe_put_agent_control(agent_control)
       |> Map.merge(steering_record(ctx))
-      |> Map.merge(amendment_record(ctx, report))
-    )
+      |> Map.merge(amendment_record(ctx, completion.report))
+
+    Runtime.mark_status(ctx.plan, ctx.prompt.num, "completed", status)
 
     emit_observer(ctx.plan, %{
       type: :prompt_completed,
       prompt: ctx.prompt,
-      commit_info: commit_info
+      commit_info: completion.commit_info,
+      agent_control: agent_control
     })
 
-    if override? do
+    if completion.override? do
       IO.puts(UI.yellow("Provider reported an error, but verification passed."))
     end
 
     print_completion_success(ctx.plan, ctx.prompt)
     :ok
   end
+
+  defp maybe_put_agent_control(status, nil), do: status
+  defp maybe_put_agent_control(status, record), do: Map.put(status, "agent_control", record)
+
+  defp agent_control_iteration(%{agent_control_invocation: %{iteration: iteration}}),
+    do: iteration
+
+  defp agent_control_iteration(_ctx), do: nil
 
   defp fail_prompt_attempt(ctx, report, reason, failure) do
     Progress.mark_failed(ctx.plan, ctx.prompt.num)

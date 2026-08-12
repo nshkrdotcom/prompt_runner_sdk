@@ -14,6 +14,7 @@ defmodule PromptRunner.CapabilitiesTest do
     assert decoded["version"] == PromptRunner.version()
     assert "selector.upper_bound" in decoded["capabilities"]
     assert "containment.systemd_user" in decoded["capabilities"]
+    assert "agent_control.linear" in decoded["capabilities"]
     assert decoded["capabilities"] == Capabilities.list()
   end
 
