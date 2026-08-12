@@ -44,8 +44,8 @@ session, so polling them cannot slow, block, or crash the run.
 prompt_runner control status demo
 prompt_runner control status demo --json
 prompt_runner control log demo --follow
-prompt_runner control status --workspace workspace.yml --json
-prompt_runner control log --workspace workspace.yml --follow
+prompt_runner control status operator-packet --json
+prompt_runner control log operator-packet --follow
 ```
 
 `control status` is the run snapshot. `control events` is the live/replayed
@@ -70,7 +70,7 @@ workspace reconciliation schema.
 To watch provider activity rather than operator requests:
 
 ```bash
-prompt_runner control events --workspace workspace.yml
+prompt_runner control events operator-packet
 ```
 
 ## Following events
@@ -94,7 +94,7 @@ replays the run from its first event and then follows.
 ```bash
 prompt_runner control events demo
 prompt_runner control events demo --from current --json
-prompt_runner control events --workspace workspace.yml --from current --json
+prompt_runner control events operator-packet --from current --json
 ```
 
 ## Changing the view, mid-run
@@ -106,7 +106,7 @@ prompt_runner control events --workspace workspace.yml --from current --json
 ```bash
 prompt_runner control view demo --tool-output full
 prompt_runner control view demo --log-mode studio --thinking hide
-prompt_runner control view --workspace workspace.yml --tool-output full
+prompt_runner control view operator-packet --tool-output full
 ```
 
 | setting | values | what it changes |
@@ -134,7 +134,7 @@ accumulated — counters, an open line — goes with it.
 
 ```bash
 prompt_runner control steer demo "you're down a rabbit hole; check dependency_sources.exs first"
-prompt_runner control steer --workspace workspace.yml "check dependency_sources.exs first"
+prompt_runner control steer operator-packet "check dependency_sources.exs first"
 ```
 
 Steering changes *how* the agent works toward an **unchanged** definition of
@@ -229,10 +229,15 @@ prompt_runner control contract demo 03
 prompt_runner control amend demo 03 --add-file lib/nshkr/foo.ex --reason "the work needs a module the packet author did not anticipate"
 prompt_runner control relax demo 03 --drop contains --reason "the requirement was wrong" --confirm
 
-prompt_runner control contract --workspace workspace.yml --packet packet 03
-prompt_runner control amend --workspace workspace.yml --packet packet 03 \
+prompt_runner control contract operator-packet 03
+prompt_runner control amend operator-packet 03 \
   --add-file lib/nshkr/foo.ex --reason "the work needs this module"
 ```
+
+Workspace-id contract commands require the manifest's optional default packet
+binding. The explicit `--workspace workspace.yml --packet packet` forms remain
+available and are required when no binding is declared. Other workspace control
+reads and actions need only a prepared id and do not require a packet binding.
 
 ### Timing is part of the meaning
 

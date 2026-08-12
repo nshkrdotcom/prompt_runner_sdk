@@ -12,7 +12,7 @@ defmodule PromptRunner.MixProject do
 
   @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
 
-  @version "0.12.0"
+  @version "0.12.1"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
   @homepage_url "https://hex.pm/packages/prompt_runner_sdk"
   @docs_url "https://hexdocs.pm/prompt_runner_sdk"

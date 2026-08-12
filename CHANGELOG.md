@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-08-12
+
+### Added
+
+- Durable, authenticated, nonterminal `agent-control progress` reports with a
+  project cursor, optional unit, summary, iteration, and timestamp. Workspace
+  status exposes the current report while the provider is still running and
+  labels a retained prior-iteration report explicitly.
+- Optional strict workspace-manifest `packet.repo` and repository-relative
+  `packet.path` bindings for concise first-run planning, verification, and
+  service startup by prepared workspace id.
+- Prepared workspace-id and unambiguous current-directory addressing across
+  status, watch, stop, control, planning, running, and verification commands.
+
+### Fixed
+
+- Generated agent instructions no longer recommend the information-free
+  `repeat --reason "work remains"` handoff. They require live progress reports
+  and a terminal reason that names the completed cursor and exact next action.
+- Workspace-aware CLI commands no longer interpret a prepared workspace id as
+  a filesystem path, eliminating long manifest paths and fragile wrapped shell
+  commands from normal operator use.
+
+### Changed
+
+- Workspace status JSON retains `last_action` and `last_reason` and adds the
+  structured `agent_control.progress` record. Progress storage is separate
+  from the first-wins terminal request, so repeated updates never consume or
+  replace the terminal directive.
+- Operator help and guides use concise, single-line workspace commands while
+  retaining every explicit 0.12.0 manifest/packet form for compatibility.
+
 ## [0.12.0] - 2026-08-11
 
 ### Added
@@ -954,7 +986,8 @@ paid in provider tokens for as long as nobody is watching.
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
-[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.9.1...v0.10.0

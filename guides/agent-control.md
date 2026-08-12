@@ -1,6 +1,6 @@
 # Agent-Controlled Linear Runs
 
-Prompt Runner 0.12.0 lets an agent control movement through an ordinary ordered
+Prompt Runner 0.12.1 lets an agent control movement through an ordinary ordered
 prompt sequence without introducing a workflow graph.
 
 The runner still owns scheduling and completion. The agent can request one of
@@ -61,19 +61,26 @@ During an enabled provider session, Prompt Runner adds the exact commands to
 the prompt and scopes them to that run, prompt, and iteration:
 
 ```bash
+prompt_runner agent-control progress --cursor P09R.2 --unit C --summary "generic runtime ownership is in progress"
 prompt_runner agent-control continue
-prompt_runner agent-control repeat --reason "work remains"
+prompt_runner agent-control repeat --reason "P09R.2 unit B is complete; next is unit C runtime ownership"
 prompt_runner agent-control finish --reason "the full packet objective is complete"
 prompt_runner agent-control blocked --reason "missing deployment credentials"
 ```
 
-`finish` and `blocked` require `--reason`. The first accepted directive wins;
-a second directive from the same iteration is rejected.
+The agent should publish progress after discovering its current project cursor,
+after each coherent milestone, and immediately before its terminal directive.
+Progress is a separate atomic record and can be refreshed repeatedly; it never
+consumes or replaces terminal control. `finish` and `blocked` require
+`--reason`. The first accepted terminal directive wins; a second terminal
+directive from the same iteration is rejected. A `repeat` reason should name
+the cursor and completed unit plus the exact next action, not merely say that
+work exists.
 
 The command is unavailable outside a live controlled invocation. Prompt Runner
-passes a private request path, opaque token, run id, prompt id, and iteration in
-the provider subprocess environment. The runner authenticates all five fields
-before acting on the request.
+passes private terminal and progress paths, an opaque token, run id, prompt id,
+and iteration in the provider subprocess environment. The runner authenticates
+the full invocation before accepting either kind of record.
 
 ## Exact Execution Semantics
 
@@ -103,6 +110,9 @@ before acting on the request.
 Provider retry and repair stay inside one iteration. If a provider wrote a
 directive before the ordinary verifier failed, Prompt Runner discards that
 request before the repair session so the repaired iteration must choose again.
+The most recent valid progress is retained for audit. Workspace status marks it
+as prior-iteration progress until the repaired or repeated iteration refreshes
+the cursor.
 
 ## Repeat-Until-Complete
 
@@ -140,7 +150,7 @@ Require the feature in the workspace manifest:
 
 ```yaml
 requires:
-  prompt_runner: ">= 0.12.0 and < 0.13.0"
+  prompt_runner: ">= 0.12.1 and < 0.13.0"
   capabilities:
     - agent_control.linear
     - verifier.argv
@@ -154,8 +164,13 @@ Then use the normal workspace lifecycle:
 prompt_runner workspace prepare workspace.yml
 prompt_runner workspace doctor workspace.yml
 prompt_runner packet lint packet --strict
-prompt_runner start --workspace workspace.yml --packet packet --remaining --no-commit
+prompt_runner start operator-packet --remaining --no-commit
 ```
+
+The concise `start` requires the optional workspace manifest packet binding
+documented in [Operator Workspaces](workspaces.md). The explicit
+`prompt_runner start --workspace workspace.yml --packet packet ...` form remains
+available when a manifest intentionally has no default packet.
 
 Check the run by workspace id:
 
@@ -169,5 +184,17 @@ iteration, or when `default_action` is `repeat`. Linear controlled prompts that
 simply continue do not acquire loop noise. Use `--json` for the complete
 structured `agent_control` record.
 
-The installed escript that starts the workspace must be 0.12.0 or newer. The
+While the provider is running, a valid report adds a compact cursor line:
+
+```text
+cursor     P09R.2 · unit C — generic runtime ownership is in progress
+```
+
+The JSON field is `agent_control.progress` and contains `run_id`, `prompt_id`,
+`iteration`, `cursor`, optional `unit`, `summary`, `updated_at`, and `stale`.
+Records from another run or prompt are ignored. Retained prior-iteration
+progress is explicitly stale; it is never presented as a fresh heartbeat.
+
+The installed escript that starts the workspace must be 0.12.1 or newer for
+live progress and concise workspace addressing. The
 provider invokes that same installed command through its inherited `PATH`.

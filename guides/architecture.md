@@ -1,6 +1,6 @@
 # Architecture
 
-Prompt Runner 0.12.0 is organized around one packet runtime with both CLI and
+Prompt Runner 0.12.1 is organized around one packet runtime with both CLI and
 SDK entry points.
 
 ## Runtime Flow
@@ -31,7 +31,7 @@ packet dir
   preflight, execution, retry, repair, and completion logic
 - `PromptRunner.AgentControl`
   authenticated per-iteration directives for movement through a linear prompt
-  sequence
+  sequence, plus an independent repeatable nonterminal progress record
 - `PromptRunner.Verifier`
   deterministic completion contracts, with `Verifier.Doc` and
   `Verifier.ReposClean` implementing the artifact-quality and
@@ -62,6 +62,13 @@ iteration verifies: continue, repeat, finish, or blocked. Repeat opens a fresh
 provider session on the same prompt. Finish is accepted only when the separate
 packet-level completion contract passes. The agent never marks its own work
 complete and never terminates the runner process.
+
+Live project progress is deliberately not a fifth transition. Each controlled
+invocation receives a separate authenticated progress path and may atomically
+replace its own cursor record many times. Terminal request storage stays
+exclusive and first-wins. Workspace status accepts only a record matching the
+current durable run and prompt, and identifies a retained prior-iteration
+record as stale.
 
 ## Recovery Model
 

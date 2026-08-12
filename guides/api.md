@@ -1,6 +1,6 @@
 # API Guide
 
-The 0.12.0 API is packet-first. The CLI is a convenience layer over these
+The 0.12.1 API is packet-first. The CLI is a convenience layer over these
 modules.
 
 ## Packet And Profile APIs
@@ -194,6 +194,35 @@ structured data for callers; the concise conditional presentation belongs to
 the CLI renderer. Resolution reads only versioned operator-owned references and
 prepared locks. A current directory that matches zero or multiple workspaces
 returns an explicit error rather than guessing.
+
+A manifest may declare a strict default packet binding. After preparation,
+embedded callers can plan through the independent clone without repeating its
+paths:
+
+```elixir
+{:ok, packet_root} = PromptRunner.Workspace.bound_packet_root("operator-packet")
+{:ok, %{runner: plan}} = PromptRunner.Workspace.plan("operator-packet", nil)
+```
+
+The binding is `%{repo: logical_repository, path: repository_relative_path}`.
+Missing bindings return `:workspace_packet_binding_required`; paths that escape
+or resolve through symlinks are rejected.
+
+Inside an enabled provider invocation, `PromptRunner.AgentControl.progress/3`
+updates a separate nonterminal record:
+
+```elixir
+{:ok, receipt} =
+  PromptRunner.AgentControl.progress("P09R.2", "runtime ownership is in progress",
+    unit: "C"
+  )
+```
+
+The provider subprocess supplies the authenticated context. Ordinary callers
+must not synthesize it. Multiple progress updates are allowed and do not affect
+the first-wins terminal request. In workspace status JSON the public record is
+`workspace_status.agent_control.progress`; it contains `run_id`, `prompt_id`,
+`iteration`, `cursor`, optional `unit`, `summary`, `updated_at`, and `stale`.
 
 ## Supervision
 

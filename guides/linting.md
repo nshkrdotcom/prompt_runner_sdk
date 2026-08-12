@@ -1,7 +1,7 @@
 # Packet Linting
 
 `mix prompt_runner packet lint` is the static authoring gate added in Prompt
-Runner 0.12.0. It is the sibling of `packet doctor`, and the difference between
+Runner 0.12.1. It is the sibling of `packet doctor`, and the difference between
 them is worth stating precisely:
 
 - **`packet doctor` reports gaps.** A packet with no prompts, a packet with no

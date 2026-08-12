@@ -42,13 +42,14 @@ defmodule PromptRunner.Workspace do
   @spec resolve(String.t() | nil, keyword()) :: {:ok, String.t()} | {:error, term()}
   def resolve(reference \\ nil, opts \\ []), do: Reference.resolve(reference, opts)
 
-  @spec plan(String.t(), String.t(), keyword()) ::
+  @spec plan(String.t(), String.t() | nil, keyword()) ::
           {:ok, %{workspace: Plan.t(), runner: RunnerPlan.t(), packet_root: String.t()}}
           | {:error, term()}
   def plan(manifest_path, packet_path, opts \\ []) do
-    source_packet_root = source_packet_root(packet_path)
-
-    with {:ok, manifest} <- Manifest.load(manifest_path),
+    with {:ok, manifest_path} <- Reference.resolve(manifest_path),
+         {:ok, manifest} <- Manifest.load(manifest_path),
+         {:ok, packet_path} <- packet_path(manifest, packet_path),
+         source_packet_root = source_packet_root(packet_path),
          workspace_plan = Plan.build(manifest),
          {:ok, packet_root} <- mapped_packet_root(source_packet_root, workspace_plan),
          state_dir = Path.join(workspace_plan.runtime_root, "packet"),
@@ -66,20 +67,32 @@ defmodule PromptRunner.Workspace do
   @doc "The operator-owned control-store root for a workspace manifest."
   @spec control_root(String.t()) :: {:ok, Store.root()} | {:error, term()}
   def control_root(manifest_path) when is_binary(manifest_path) do
-    with {:ok, manifest} <- Manifest.load(manifest_path) do
+    with {:ok, manifest_path} <- Reference.resolve(manifest_path),
+         {:ok, manifest} <- Manifest.load(manifest_path) do
       state_dir = manifest |> Plan.build() |> Map.fetch!(:runtime_root) |> Path.join("packet")
       {:ok, Store.state_root(state_dir)}
     end
   end
 
   @doc "Resolves a packet beneath a declared source repository into its independent clone."
-  @spec packet_root(String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec packet_root(String.t(), String.t() | nil) :: {:ok, String.t()} | {:error, term()}
   def packet_root(manifest_path, packet_path)
-      when is_binary(manifest_path) and is_binary(packet_path) do
-    source_packet_root = source_packet_root(packet_path)
-
-    with {:ok, manifest} <- Manifest.load(manifest_path) do
+      when is_binary(manifest_path) do
+    with {:ok, manifest_path} <- Reference.resolve(manifest_path),
+         {:ok, manifest} <- Manifest.load(manifest_path),
+         {:ok, packet_path} <- packet_path(manifest, packet_path),
+         source_packet_root = source_packet_root(packet_path) do
       mapped_packet_root(source_packet_root, Plan.build(manifest))
+    end
+  end
+
+  @doc "Resolves the optional manifest packet binding inside the independent workspace clone."
+  @spec bound_packet_root(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  def bound_packet_root(reference, opts \\ []) do
+    with {:ok, manifest_path} <- Reference.resolve(reference, opts),
+         {:ok, manifest} <- Manifest.load(manifest_path),
+         {:ok, path} <- packet_path(manifest, nil) do
+      {:ok, path}
     end
   end
 
@@ -92,7 +105,8 @@ defmodule PromptRunner.Workspace do
 
   @spec doctor(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def doctor(manifest_path, opts \\ []) do
-    with {:ok, manifest} <- Manifest.load(manifest_path) do
+    with {:ok, manifest_path} <- Reference.resolve(manifest_path, opts),
+         {:ok, manifest} <- Manifest.load(manifest_path) do
       manifest |> Plan.build() |> Doctor.check(opts)
     end
   end
@@ -160,6 +174,47 @@ defmodule PromptRunner.Workspace do
   defp source_packet_root(path) do
     path = Path.expand(path)
     if File.dir?(path), do: path, else: Path.dirname(path)
+  end
+
+  defp packet_path(_manifest, packet_path) when is_binary(packet_path),
+    do: {:ok, packet_path}
+
+  defp packet_path(%Manifest{packet: nil}, nil),
+    do: {:error, :workspace_packet_binding_required}
+
+  defp packet_path(%Manifest{packet: %{repo: repo_name, path: relative}} = manifest, nil) do
+    plan = Plan.build(manifest)
+    repo = Map.fetch!(plan.repositories, repo_name)
+    resolved = Path.expand(relative, repo.path)
+
+    cond do
+      not within?(resolved, repo.path) ->
+        {:error, {:workspace_packet_path_escape, relative}}
+
+      not File.dir?(resolved) ->
+        {:error, {:workspace_bound_packet_missing, repo_name, relative, resolved}}
+
+      symlink_component?(repo.path, relative) ->
+        {:error, {:workspace_packet_symlink_not_allowed, repo_name, relative}}
+
+      true ->
+        {:ok, resolved}
+    end
+  end
+
+  defp symlink_component?(root, relative) do
+    relative
+    |> Path.split()
+    |> Enum.reduce_while(root, fn segment, current ->
+      path = Path.join(current, segment)
+
+      case File.lstat(path) do
+        {:ok, %{type: :symlink}} -> {:halt, true}
+        {:ok, _stat} -> {:cont, path}
+        {:error, _reason} -> {:halt, false}
+      end
+    end)
+    |> Kernel.==(true)
   end
 
   defp mapped_packet_root(source_packet_root, %Plan{} = workspace_plan) do

@@ -4,23 +4,27 @@ defmodule PromptRunner.Workspace.Manifest do
 
   Runtime repository paths are logical. They materialize beneath the current
   operator's data root and never point at a different operator's writable
-  checkout.
+  checkout. An optional `packet` binding names one logical repository and a
+  non-escaping repository-relative packet directory for concise workspace-id
+  execution.
   """
 
   @schema "prompt_runner.workspace/v1"
-  @root_keys ~w(schema id requires repositories operator commits failure_policy contracts)
+  @root_keys ~w(schema id requires repositories packet operator commits failure_policy contracts)
   @repo_keys ~w(remote ref source)
   @operator_keys ~w(workspace_root runtime_root containment)
   @requires_keys ~w(prompt_runner capabilities)
   @commits_keys ~w(mode push)
   @contracts_keys ~w(modules artifacts)
   @artifact_keys ~w(id repo project type)
+  @packet_keys ~w(repo path)
 
   @enforce_keys [:path, :id, :repositories]
   defstruct [
     :path,
     :id,
     :repositories,
+    :packet,
     :workspace_root,
     :runtime_root,
     :containment,
@@ -44,6 +48,7 @@ defmodule PromptRunner.Workspace.Manifest do
           path: String.t(),
           id: String.t(),
           repositories: %{required(String.t()) => repository()},
+          packet: %{repo: String.t(), path: String.t()} | nil,
           workspace_root: String.t(),
           runtime_root: String.t(),
           containment: String.t(),
@@ -68,7 +73,8 @@ defmodule PromptRunner.Workspace.Manifest do
          {:ok, id} <- required_string(raw, "id", []),
          :ok <- validate_id(id),
          {:ok, repositories} <- parse_repositories(raw["repositories"], Path.dirname(path)),
-         {:ok, manifest} <- build(path, id, repositories, raw) do
+         {:ok, packet} <- parse_packet(raw["packet"], repositories),
+         {:ok, manifest} <- build(path, id, repositories, packet, raw) do
       {:ok, manifest}
     else
       {:error, _reason} = error -> error
@@ -76,7 +82,7 @@ defmodule PromptRunner.Workspace.Manifest do
     end
   end
 
-  defp build(path, id, repositories, raw) do
+  defp build(path, id, repositories, packet, raw) do
     requires = stringify_keys(raw["requires"] || %{})
     operator = stringify_keys(raw["operator"] || %{})
     commits = stringify_keys(raw["commits"] || %{})
@@ -96,6 +102,7 @@ defmodule PromptRunner.Workspace.Manifest do
          path: path,
          id: id,
          repositories: repositories,
+         packet: packet,
          workspace_root: workspace_root,
          runtime_root: runtime_root,
          containment: operator["containment"] || "systemd_user",
@@ -137,6 +144,32 @@ defmodule PromptRunner.Workspace.Manifest do
 
   defp parse_repositories(_repositories, _manifest_dir),
     do: {:error, :workspace_repositories_invalid}
+
+  defp parse_packet(nil, _repositories), do: {:ok, nil}
+
+  defp parse_packet(raw, repositories) when is_map(raw) do
+    packet = stringify_keys(raw)
+
+    with :ok <- reject_unknown(packet, @packet_keys, ["packet"]),
+         {:ok, repo} <- required_string(packet, "repo", ["packet"]),
+         true <- Map.has_key?(repositories, repo) || {:error, {:unknown_packet_repo, repo}},
+         {:ok, path} <- required_string(packet, "path", ["packet"]),
+         :ok <- validate_relative_packet_path(path) do
+      {:ok, %{repo: repo, path: path}}
+    end
+  end
+
+  defp parse_packet(value, _repositories), do: {:error, {:invalid_workspace_packet, value}}
+
+  defp validate_relative_packet_path(path) do
+    expanded = Path.expand(path, "/workspace-repository")
+    relative = Path.relative_to(expanded, "/workspace-repository")
+
+    if Path.type(path) == :relative and Path.type(relative) == :relative and
+         (relative == "." or not (relative == ".." or String.starts_with?(relative, "../"))),
+       do: :ok,
+       else: {:error, {:workspace_packet_path_escape, path}}
+  end
 
   defp require_schema(%{"schema" => @schema}), do: :ok
 

@@ -14,7 +14,7 @@
 </p>
 
 Prompt Runner SDK executes packetized prompt workflows against local
-repositories. This README targets `prompt_runner_sdk ~> 0.12.0`.
+repositories. This README targets `prompt_runner_sdk ~> 0.12.1`.
 
 For unattended or multi-operator packets, use an installed escript plus an
 operator [workspace](guides/workspaces.md). Workspaces replace PID files,
@@ -31,7 +31,7 @@ The packet-first design introduced in `0.7.0` carries forward unchanged:
 - a built-in simulated provider can prove recovery behavior without any
   external provider CLI
 
-`0.12.0` adds agent-controlled movement through an ordinary linear prompt
+Agent-controlled execution supports movement through an ordinary linear prompt
 sequence. An agent can continue, repeat the current prompt in a fresh session,
 request verified early finish, or stop as blocked. The runner authenticates
 each iteration-scoped request, retains deterministic ownership of successful
@@ -40,13 +40,16 @@ per-prompt iteration cap. A failed provider launch never counts as a controlled
 iteration even when the ordinary repository contract was already green. No
 duplicated prompt slots, shell loop, process kill, or workflow graph is required.
 
-Workspace status is now an operator-facing summary instead of a wall of JSON.
+In 0.12.1, the agent can also publish a durable nonterminal project cursor while
+it is working. Workspace status is an operator-facing summary instead of a wall of JSON.
 It resolves a prepared workspace by stable id, or from a related manifest,
 source checkout, or independent clone when the current directory identifies one
 workspace unambiguously. The summary adapts to the run: prompt counts appear for
 multi-prompt sequences, iteration counts appear only after agent-controlled
 looping is relevant, and retry/repair details appear only when they need
 attention. `--json` retains the full machine-readable status.
+Prepared workspace ids now address monitoring and control commands consistently;
+an optional strict manifest packet binding also makes `plan` and `start` concise.
 
 See the [CHANGELOG](CHANGELOG.md) for the full list.
 
@@ -67,6 +70,8 @@ The same runtime is exposed through public Elixir modules and the CLI.
 - cgroup-contained unattended runs with run-ID/lease/journal/progress health
 - concise workspace status by id or related current directory, with full JSON
   available for automation
+- live agent-owned project cursor reporting without consuming terminal control
+- concise plan, start, watch, stop, and control commands by prepared workspace id
 - zero-dependency simulation for retry, repair, and resume demos
 - public packet/profile/runtime APIs plus matching CLI commands
 - Claude, Codex, Amp, Cursor, and Antigravity support through
@@ -78,7 +83,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.12.0"}
+    {:prompt_runner_sdk, "~> 0.12.1"}
   ]
 end
 ```
@@ -229,6 +234,38 @@ For a ready-made authoring walkthrough from ADRs/docs to finished prompts, see
 
 ## Operator Workspace Status
 
+An optional packet binding in the strict workspace manifest makes the packet
+addressable without repeating paths:
+
+```yaml
+schema: prompt_runner.workspace/v1
+id: operator-packet
+repositories:
+  docset:
+    remote: git@github.com:owner/docs.git
+    ref: main
+    source: /path/to/bootstrap/docs
+packet:
+  repo: docset
+  path: docs/packet
+```
+
+`packet.path` is repository-relative. Absolute paths, `..` escapes, unknown
+repositories, and symlink escapes are rejected. After preparation, the normal
+operator lifecycle is short and copy/paste safe:
+
+```bash
+prompt_runner plan operator-packet --remaining
+prompt_runner start operator-packet --remaining --no-commit
+prompt_runner status operator-packet
+prompt_runner control events operator-packet
+prompt_runner watch operator-packet
+prompt_runner stop operator-packet
+```
+
+Manifests without a packet binding remain valid. Use the preserved explicit
+`--workspace MANIFEST --packet PACKET_DIR` forms for their plan and start.
+
 After `workspace prepare`, the ordinary status command accepts the workspace's
 manifest id:
 
@@ -255,6 +292,20 @@ Workspace discovery uses versioned operator-owned records written by
 `workspace prepare`; it does not depend on shell aliases, project-specific
 configuration, or scanning arbitrary directories. Packet-local
 `mix prompt_runner status demo` remains JSON.
+
+During an agent-controlled run, the provider—not the human operator—publishes
+the project cursor from its authenticated invocation:
+
+```bash
+prompt_runner agent-control progress --cursor P09R.2 --unit C --summary "generic runtime ownership is in progress"
+```
+
+The command is nonterminal and may be refreshed repeatedly. It never consumes
+the separate first-wins `continue`, `repeat`, `finish`, or `blocked` directive.
+Human status renders the cursor immediately; JSON exposes it as
+`agent_control.progress` with run, prompt, iteration, cursor, unit, summary,
+timestamp, and a `stale` flag. A retained prior-iteration handoff is labeled as
+such instead of looking like current activity.
 
 ## Packet Model
 

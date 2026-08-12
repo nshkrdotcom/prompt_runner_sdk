@@ -1,5 +1,11 @@
 defmodule PromptRunner.Workspace.Status do
-  @moduledoc "Read-only reconciliation of run, lease, containment, journal, and progress facts."
+  @moduledoc """
+  Read-only reconciliation of run, lease, containment, journal, and progress facts.
+
+  Agent-controlled runs expose their authenticated nonterminal cursor under
+  `agent_control.progress`. Retained progress from an earlier iteration is
+  marked `stale`; records from another run or prompt are ignored.
+  """
 
   alias ExecutionPlane.Process.Containment.SystemdUser
   alias PromptRunner.AgentControl
@@ -24,9 +30,16 @@ defmodule PromptRunner.Workspace.Status do
       journal = journal_report(run)
       runtime_state = read_json(Path.join(state_dir, "state.json"))
       progress = progress_report(state_dir, run, control, runtime_state)
-      agent_control = agent_control_report(control, runtime_state)
+      agent_control = agent_control_report(control, runtime_state, run)
       run_id_agrees? = run_id_agrees?(run, control)
-      progress_at = latest_time([run["updated_at"], control && control.updated_at])
+
+      progress_at =
+        latest_time([
+          run["updated_at"],
+          control && control.updated_at,
+          agent_control && get_in(agent_control, [:progress, :updated_at])
+        ])
+
       state = run["state"] || "not_started"
 
       healthy? =
@@ -188,9 +201,9 @@ defmodule PromptRunner.Workspace.Status do
       |> Enum.find_value(fn id -> prompt_reason(prompt_states[id]) end)
   end
 
-  defp agent_control_report(nil, _runtime_state), do: nil
+  defp agent_control_report(nil, _runtime_state, _run), do: nil
 
-  defp agent_control_report(control, runtime_state) do
+  defp agent_control_report(control, runtime_state, run) do
     prompt_state = get_in(runtime_state, ["prompts", control.prompt_id]) || %{}
 
     case agent_control_config(control.packet_dir, prompt_state) do
@@ -214,6 +227,8 @@ defmodule PromptRunner.Workspace.Status do
             prompt_state["status"] == "agent_control_finish_rejected" or
             default_action == :repeat
 
+        progress = agent_progress(run, control.prompt_id, current_iteration)
+
         %{
           enabled: true,
           looping: looping?,
@@ -221,13 +236,40 @@ defmodule PromptRunner.Workspace.Status do
           completed_iterations: completed_iterations,
           max_iterations: max_iterations,
           last_action: record["action"],
-          last_reason: record["reason"]
+          last_reason: record["reason"],
+          progress: progress
         }
 
       _other ->
         nil
     end
   end
+
+  defp agent_progress(
+         %{"run_id" => run_id, "snapshot_path" => snapshot_path},
+         prompt_id,
+         current_iteration
+       )
+       when is_binary(run_id) and is_binary(snapshot_path) and is_binary(prompt_id) do
+    case AgentControl.latest_progress(Path.dirname(snapshot_path), run_id, prompt_id) do
+      %{"iteration" => iteration} = record when iteration <= current_iteration ->
+        %{
+          run_id: record["run_id"],
+          prompt_id: record["prompt_id"],
+          iteration: iteration,
+          cursor: record["cursor"],
+          unit: record["unit"],
+          summary: record["summary"],
+          updated_at: record["updated_at"],
+          stale: iteration != current_iteration
+        }
+
+      _other ->
+        nil
+    end
+  end
+
+  defp agent_progress(_run, _prompt_id, _current_iteration), do: nil
 
   defp agent_control_config(packet_dir, prompt_state) when is_binary(packet_dir) do
     with {:ok, packet} <- Packet.load(packet_dir),

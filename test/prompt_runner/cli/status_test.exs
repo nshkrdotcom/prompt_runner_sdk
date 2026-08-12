@@ -54,7 +54,17 @@ defmodule PromptRunner.CLI.StatusTest do
             completed_iterations: 1,
             max_iterations: 20,
             last_action: "repeat",
-            last_reason: "work remains"
+            last_reason: "P09R.2 unit B complete; next unit C",
+            progress: %{
+              run_id: "run-123",
+              prompt_id: "01",
+              iteration: 2,
+              cursor: "P09R.2",
+              unit: "C",
+              summary: "generic runtime session ownership is in progress",
+              updated_at: "2026-08-12T03:59:55Z",
+              stale: false
+            }
           },
           control: control(%{"prompt_id" => "01"})
         }),
@@ -63,9 +73,41 @@ defmodule PromptRunner.CLI.StatusTest do
       )
 
     assert output =~ "current    01 — Build the runtime"
+
+    assert output =~
+             "cursor     P09R.2 · unit C — generic runtime session ownership is in progress"
+
     assert output =~ "iteration  2 of 20 · 1 verified · last action repeat"
-    assert output =~ "reason     work remains"
+    assert output =~ "reason     P09R.2 unit B complete; next unit C"
     refute output =~ "0/1 prompts complete"
+  end
+
+  test "prior-iteration progress is clearly marked stale" do
+    output =
+      Status.render_workspace(
+        workspace_status(%{
+          agent_control: %{
+            enabled: true,
+            looping: true,
+            current_iteration: 3,
+            completed_iterations: 2,
+            max_iterations: 20,
+            last_action: "repeat",
+            last_reason: "next iteration",
+            progress: %{
+              cursor: "P09R.2",
+              unit: "B",
+              summary: "unit B completed",
+              iteration: 2,
+              stale: true
+            }
+          }
+        }),
+        now: @now,
+        color: false
+      )
+
+    assert output =~ "cursor     P09R.2 · unit B · previous iteration — unit B completed"
   end
 
   test "linear agent control does not show iteration fields until it actually loops" do

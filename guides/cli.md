@@ -128,6 +128,22 @@ prompt_runner verify --packet demo --workspace workspace.yml --json
 The workspace form binds logical repositories and installed contract artifacts
 to the current operator's independent workspace.
 
+When the prepared workspace manifest declares its default packet, the id is the
+whole target:
+
+```bash
+prompt_runner plan operator-packet --remaining
+prompt_runner verify operator-packet 01
+prompt_runner start operator-packet --remaining --no-commit
+prompt_runner status operator-packet
+prompt_runner control events operator-packet
+prompt_runner watch operator-packet
+prompt_runner stop operator-packet
+```
+
+All explicit `--workspace MANIFEST --packet PACKET_DIR` forms remain supported.
+See [Operator Workspaces](workspaces.md) for the strict packet binding.
+
 Run specific prompts:
 
 ```bash
@@ -244,13 +260,16 @@ When the packet enables `agent_control`, the running provider receives these
 iteration-scoped commands:
 
 ```bash
+prompt_runner agent-control progress --cursor P09R.2 --unit C --summary "generic runtime ownership is in progress"
 prompt_runner agent-control continue
-prompt_runner agent-control repeat --reason "work remains"
+prompt_runner agent-control repeat --reason "P09R.2 unit B is complete; next is unit C runtime ownership"
 prompt_runner agent-control finish --reason "the packet objective is complete"
 prompt_runner agent-control blocked --reason "exact external blocker"
 ```
 
-The commands are rejected outside a live controlled invocation. `finish` does
+The provider publishes progress repeatedly; a human only runs `status`.
+Progress is nonterminal and never consumes the first-wins directive. The
+commands are rejected outside a live controlled invocation. `finish` does
 not trust the provider's claim: Prompt Runner runs the packet-level
 `completion_verify` contract and starts a fresh iteration with its failures if
 the request was premature. See [Agent-Controlled Linear Runs](agent-control.md).

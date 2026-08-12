@@ -7,6 +7,11 @@ defmodule PromptRunner.AgentControl do
   because progress is blocked. Requests are scoped to one prompt iteration and
   are consumed only after that iteration satisfies its ordinary verifier.
 
+  The provider may also publish a durable project cursor with `progress/3`.
+  Progress is authenticated to the same invocation but stored separately: it
+  can be refreshed repeatedly and never consumes the first-wins terminal
+  request.
+
   Successful early finish remains verifier-owned: the packet's
   `completion_verify` contract must pass before the runner accepts `finish`.
   """
@@ -16,6 +21,7 @@ defmodule PromptRunner.AgentControl do
   alias PromptRunner.Verifier
 
   @schema "prompt_runner.agent_control/request/v1"
+  @progress_schema "prompt_runner.agent_control/progress/v1"
   @actions ~w(continue repeat finish blocked)
   @option_keys ~w(enabled default_action max_iterations completion_verify)
   @env_names ~w(
@@ -25,6 +31,7 @@ defmodule PromptRunner.AgentControl do
     PROMPT_RUNNER_PROMPT_ID
     PROMPT_RUNNER_PROMPT_ITERATION
   )
+  @progress_env_name "PROMPT_RUNNER_AGENT_PROGRESS_FILE"
 
   @type action :: :continue | :repeat | :finish | :blocked
 
@@ -37,6 +44,7 @@ defmodule PromptRunner.AgentControl do
 
   @type invocation :: %{
           request_file: String.t(),
+          progress_file: String.t(),
           token: String.t(),
           run_id: String.t(),
           prompt_id: String.t(),
@@ -119,10 +127,17 @@ defmodule PromptRunner.AgentControl do
         "#{safe_segment(prompt_id)}-#{iteration}-#{binary_part(token, 0, 12)}.json"
       )
 
+    progress_file =
+      Path.join(
+        request_dir,
+        "#{safe_segment(prompt_id)}-#{iteration}-#{binary_part(token, 0, 12)}.progress.json"
+      )
+
     with :ok <- File.mkdir_p(request_dir) do
       {:ok,
        %{
          request_file: request_file,
+         progress_file: progress_file,
          token: token,
          run_id: run_id,
          prompt_id: prompt_id,
@@ -139,6 +154,7 @@ defmodule PromptRunner.AgentControl do
 
     control_env = %{
       "PROMPT_RUNNER_AGENT_CONTROL_FILE" => invocation.request_file,
+      "PROMPT_RUNNER_AGENT_PROGRESS_FILE" => invocation.progress_file,
       "PROMPT_RUNNER_AGENT_CONTROL_TOKEN" => invocation.token,
       "PROMPT_RUNNER_RUN_ID" => invocation.run_id,
       "PROMPT_RUNNER_PROMPT_ID" => invocation.prompt_id,
@@ -181,11 +197,17 @@ defmodule PromptRunner.AgentControl do
       ## Prompt Runner agent control
 
       This is iteration #{invocation.iteration} of at most #{config.max_iterations} for
-      prompt #{invocation.prompt_id}. After the work, verification, handoff, commits,
-      and pushes for this iteration are complete, choose at most one directive:
+      prompt #{invocation.prompt_id}. After determining the current project cursor,
+      report it with `#{executable} agent-control progress --cursor CURSOR --summary
+      "exact work now in progress"` (add `--unit UNIT` when useful). Refresh that
+      progress after coherent milestones and once more immediately before the terminal
+      directive. Progress is informational and does not end the iteration.
+
+      After the work, verification, handoff, commits, and pushes for this iteration are
+      complete, choose at most one terminal directive:
 
       - `#{executable} agent-control continue`
-      - `#{executable} agent-control repeat --reason "work remains"`
+      - `#{executable} agent-control repeat --reason "CURSOR unit COMPLETED is complete; next is CURSOR unit NEXT: exact next action"`
       - `#{executable} agent-control finish --reason "the full packet objective is complete"`
       - `#{executable} agent-control blocked --reason "exact external blocker"`
 
@@ -217,6 +239,68 @@ defmodule PromptRunner.AgentControl do
        }}
     end
   end
+
+  @doc "Atomically publishes nonterminal progress from inside the provider subprocess."
+  @spec progress(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def progress(cursor, summary, opts \\ []) do
+    env = Keyword.get(opts, :env, System.get_env())
+    cursor = normalize_text(cursor)
+    summary = normalize_text(summary)
+    unit = opts |> Keyword.get(:unit) |> normalize_text()
+
+    with :ok <- require_progress_value(:cursor, cursor),
+         :ok <- require_progress_value(:summary, summary),
+         {:ok, context} <- progress_context(env),
+         record = progress_document(context, cursor, unit, summary),
+         :ok <- write_progress(context.progress_file, record) do
+      {:ok,
+       %{
+         schema: record["schema"],
+         run_id: record["run_id"],
+         prompt_id: record["prompt_id"],
+         iteration: record["iteration"],
+         cursor: record["cursor"],
+         unit: record["unit"],
+         summary: record["summary"],
+         updated_at: record["updated_at"]
+       }}
+    end
+  end
+
+  @doc "Reads and authenticates the progress record for one invocation."
+  @spec read_progress(invocation()) :: {:ok, map() | nil} | {:error, term()}
+  def read_progress(invocation) when is_map(invocation) do
+    case File.read(invocation.progress_file) do
+      {:error, :enoent} ->
+        {:ok, nil}
+
+      {:error, reason} ->
+        {:error, {:agent_control_progress_unreadable, reason}}
+
+      {:ok, contents} ->
+        with {:ok, record} <- Jason.decode(contents),
+             true <- progress_matches?(record, invocation) do
+          {:ok, Map.drop(record, ["token"])}
+        else
+          false -> {:error, :agent_control_progress_mismatch}
+          {:error, %Jason.DecodeError{}} -> {:error, :agent_control_progress_invalid_json}
+        end
+    end
+  end
+
+  @doc false
+  @spec latest_progress(String.t(), String.t(), String.t()) :: map() | nil
+  def latest_progress(run_dir, run_id, prompt_id)
+      when is_binary(run_dir) and is_binary(run_id) and is_binary(prompt_id) do
+    run_dir
+    |> Path.join("agent-control/*.progress.json")
+    |> Path.wildcard()
+    |> Enum.flat_map(&read_public_progress/1)
+    |> Enum.filter(&(&1["run_id"] == run_id and &1["prompt_id"] == prompt_id))
+    |> Enum.max_by(&{&1["iteration"] || 0, &1["updated_at"] || ""}, fn -> nil end)
+  end
+
+  def latest_progress(_run_dir, _run_id, _prompt_id), do: nil
 
   @doc "Reads and authenticates the request for one invocation."
   @spec consume(invocation()) :: {:ok, map() | nil} | {:error, term()}
@@ -299,6 +383,7 @@ defmodule PromptRunner.AgentControl do
           {:ok,
            %{
              request_file: env["PROMPT_RUNNER_AGENT_CONTROL_FILE"],
+             progress_file: env["PROMPT_RUNNER_AGENT_PROGRESS_FILE"],
              token: env["PROMPT_RUNNER_AGENT_CONTROL_TOKEN"],
              run_id: env["PROMPT_RUNNER_RUN_ID"],
              prompt_id: env["PROMPT_RUNNER_PROMPT_ID"],
@@ -315,6 +400,18 @@ defmodule PromptRunner.AgentControl do
 
   defp request_context(_env), do: {:error, {:agent_control_environment_missing, @env_names}}
 
+  defp progress_context(env) do
+    with {:ok, context} <- request_context(env),
+         progress_file when is_binary(progress_file) and progress_file != "" <-
+           env[@progress_env_name] do
+      {:ok, Map.put(context, :progress_file, progress_file)}
+    else
+      nil -> {:error, {:agent_control_environment_missing, [@progress_env_name]}}
+      "" -> {:error, {:agent_control_environment_missing, [@progress_env_name]}}
+      {:error, _reason} = error -> error
+    end
+  end
+
   defp request_document(context, action, reason) do
     %{
       "schema" => @schema,
@@ -325,6 +422,20 @@ defmodule PromptRunner.AgentControl do
       "action" => Atom.to_string(action),
       "reason" => reason,
       "requested_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+  end
+
+  defp progress_document(context, cursor, unit, summary) do
+    %{
+      "schema" => @progress_schema,
+      "token" => context.token,
+      "run_id" => context.run_id,
+      "prompt_id" => context.prompt_id,
+      "iteration" => context.iteration,
+      "cursor" => cursor,
+      "unit" => unit,
+      "summary" => summary,
+      "updated_at" => DateTime.utc_now() |> DateTime.to_iso8601()
     }
   end
 
@@ -351,12 +462,71 @@ defmodule PromptRunner.AgentControl do
     end
   end
 
+  defp write_progress(path, record) do
+    if File.dir?(Path.dirname(path)) do
+      atomic_write(path, Jason.encode!(record, pretty: true))
+    else
+      {:error, :agent_control_progress_scope_missing}
+    end
+  end
+
+  defp atomic_write(path, contents) do
+    temp = path <> ".tmp.#{System.unique_integer([:positive, :monotonic])}"
+
+    try do
+      with :ok <- File.write(temp, contents, [:binary, :sync]),
+           :ok <- File.rename(temp, path) do
+        :ok
+      else
+        {:error, reason} -> {:error, {:agent_control_progress_write_failed, reason}}
+      end
+    after
+      _ = File.rm(temp)
+    end
+  end
+
   defp request_matches?(request, invocation) do
     request["schema"] == @schema and
       request["token"] == invocation.token and
       request["run_id"] == invocation.run_id and
       request["prompt_id"] == invocation.prompt_id and
       request["iteration"] == invocation.iteration
+  end
+
+  defp progress_matches?(record, invocation) do
+    record["schema"] == @progress_schema and
+      record["token"] == invocation.token and
+      record["run_id"] == invocation.run_id and
+      record["prompt_id"] == invocation.prompt_id and
+      record["iteration"] == invocation.iteration and
+      present?(record["cursor"]) and present?(record["summary"])
+  end
+
+  defp read_public_progress(path) do
+    with {:ok, contents} <- File.read(path),
+         {:ok, %{"schema" => @progress_schema} = record} <- Jason.decode(contents),
+         true <- present?(record["token"]),
+         true <- progress_filename_matches?(path, record["token"]),
+         true <- present?(record["run_id"]),
+         true <- present?(record["prompt_id"]),
+         true <- is_integer(record["iteration"]) and record["iteration"] > 0,
+         true <- present?(record["cursor"]),
+         true <- present?(record["summary"]) do
+      [Map.drop(record, ["token"])]
+    else
+      _other -> []
+    end
+  end
+
+  defp progress_filename_matches?(path, token) do
+    String.ends_with?(
+      Path.basename(path),
+      "-#{binary_part(token, 0, min(byte_size(token), 12))}.progress.json"
+    )
+  end
+
+  defp require_progress_value(name, value) do
+    if present?(value), do: :ok, else: {:error, {:agent_control_progress_required, name}}
   end
 
   defp require_reason(action, reason) when action in [:finish, :blocked] do
@@ -389,6 +559,9 @@ defmodule PromptRunner.AgentControl do
 
   defp normalize_reason(nil), do: nil
   defp normalize_reason(reason), do: reason |> to_string() |> String.trim() |> blank_to_nil()
+
+  defp normalize_text(nil), do: nil
+  defp normalize_text(value), do: value |> to_string() |> String.trim() |> blank_to_nil()
 
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(value), do: value

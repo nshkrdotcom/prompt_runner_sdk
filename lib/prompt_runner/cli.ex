@@ -424,7 +424,7 @@ defmodule PromptRunner.CLI do
   defp run_plan(rest) do
     case parse_run_options(rest) do
       {:ok, opts, remaining} ->
-        {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining, opts[:packet])
+        {packet_dir, prompt_ids, opts} = workspace_plan_target(remaining, opts)
 
         case cli_plan(packet_dir, opts) do
           {:ok, plan} ->
@@ -462,7 +462,7 @@ defmodule PromptRunner.CLI do
 
   defp run_run(rest) do
     with {:ok, opts, remaining} <- parse_run_options(rest),
-         {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining, opts[:packet]),
+         {packet_dir, prompt_ids, opts} = workspace_plan_target(remaining, opts),
          {:ok, plan} <- cli_plan(packet_dir, opts) do
       execute_cli_run(plan, opts, prompt_ids)
     else
@@ -476,7 +476,7 @@ defmodule PromptRunner.CLI do
       OptionParser.parse(rest, strict: [workspace: :string, packet: :string, json: :boolean])
 
     with true <- invalid == [] || {:error, {:invalid_options, invalid}},
-         {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining, opts[:packet]),
+         {packet_dir, prompt_ids, opts} = workspace_plan_target(remaining, opts),
          {:ok, plan} <- cli_plan(packet_dir, opts),
          :ok <- validate_verify_prompt_ids(plan, prompt_ids),
          {:ok, reports} <-
@@ -536,6 +536,34 @@ defmodule PromptRunner.CLI do
         case Workspace.plan(manifest_path, packet_dir, cli_opts(opts)) do
           {:ok, %{runner: plan}} -> {:ok, plan}
           {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  defp workspace_plan_target(remaining, opts) do
+    cond do
+      is_binary(opts[:workspace]) ->
+        {opts[:packet], normalize_prompt_ids(remaining), opts}
+
+      is_binary(opts[:packet]) ->
+        {opts[:packet], normalize_prompt_ids(remaining), opts}
+
+      match?([_ | _], remaining) ->
+        [first | rest] = remaining
+
+        case if(File.dir?(first), do: {:error, :packet_directory}, else: Workspace.resolve(first)) do
+          {:ok, manifest_path} ->
+            {nil, normalize_prompt_ids(rest), Keyword.put(opts, :workspace, manifest_path)}
+
+          {:error, _reason} ->
+            {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining, nil)
+            {packet_dir, prompt_ids, opts}
+        end
+
+      true ->
+        case Workspace.resolve() do
+          {:ok, manifest_path} -> {nil, [], Keyword.put(opts, :workspace, manifest_path)}
+          {:error, _reason} -> {File.cwd!(), [], opts}
         end
     end
   end
@@ -684,9 +712,44 @@ defmodule PromptRunner.CLI do
 
     if invalid != [], do: handle_error({:invalid_options, invalid})
 
-    case opts[:workspace] do
-      nil -> run_packet_watch(remaining, opts)
-      manifest_path -> run_workspace_watch(manifest_path, opts)
+    case workspace_watch_target(opts, remaining) do
+      {:workspace, reference} -> run_workspace_watch(reference, opts)
+      {:packet, packet_remaining} -> run_packet_watch(packet_remaining, opts)
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp workspace_watch_target(opts, remaining) do
+    cond do
+      is_binary(opts[:workspace]) ->
+        if remaining == [],
+          do: {:workspace, opts[:workspace]},
+          else: {:error, {:unexpected_arguments, remaining}}
+
+      is_binary(opts[:packet]) ->
+        {:packet, remaining}
+
+      remaining == [] ->
+        case Workspace.resolve() do
+          {:ok, manifest} -> {:workspace, manifest}
+          {:error, {:workspace_not_discovered, _cwd}} -> {:packet, []}
+          {:error, reason} -> {:error, reason}
+        end
+
+      length(remaining) == 1 ->
+        [reference] = remaining
+
+        if File.dir?(reference) do
+          {:packet, remaining}
+        else
+          case Workspace.resolve(reference) do
+            {:ok, manifest} -> {:workspace, manifest}
+            {:error, reason} -> {:error, reason}
+          end
+        end
+
+      true ->
+        {:packet, remaining}
     end
   end
 
@@ -903,13 +966,33 @@ defmodule PromptRunner.CLI do
         end
 
       _other ->
-        control_packet_root(opts[:packet], remaining)
+        inferred_control_root(opts[:packet], remaining)
     end
   end
 
+  defp inferred_control_root(explicit, remaining) when is_binary(explicit),
+    do: control_packet_root(explicit, remaining)
+
+  defp inferred_control_root(nil, []) do
+    case Workspace.resolve() do
+      {:ok, manifest} -> Workspace.control_root(manifest)
+      {:error, {:workspace_not_discovered, _cwd}} -> {:ok, File.cwd!()}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp inferred_control_root(nil, [reference]) do
+    if File.dir?(reference) do
+      {:ok, reference}
+    else
+      with {:ok, manifest} <- Workspace.resolve(reference), do: Workspace.control_root(manifest)
+    end
+  end
+
+  defp inferred_control_root(nil, remaining),
+    do: {:error, {:unexpected_control_target, remaining, nil}}
+
   defp control_packet_root(explicit, []) when is_binary(explicit), do: {:ok, explicit}
-  defp control_packet_root(nil, []), do: {:ok, File.cwd!()}
-  defp control_packet_root(nil, [packet]), do: {:ok, packet}
 
   defp control_packet_root(explicit, remaining),
     do: {:error, {:unexpected_control_target, remaining, explicit}}
@@ -924,7 +1007,44 @@ defmodule PromptRunner.CLI do
         end
 
       _other ->
-        steer_packet_target(opts[:packet], remaining, opts)
+        inferred_steer_target(opts[:packet], remaining, opts)
+    end
+  end
+
+  defp inferred_steer_target(nil, [reference | words], _opts) when words != [] do
+    if File.dir?(reference) do
+      {:ok, reference, words}
+    else
+      case Workspace.resolve(reference) do
+        {:ok, manifest} ->
+          with {:ok, root} <- Workspace.control_root(manifest), do: {:ok, root, words}
+
+        {:error, {:workspace_not_prepared, _id}} ->
+          inferred_current_workspace_steer([reference | words])
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  defp inferred_steer_target(packet, remaining, opts),
+    do:
+      if(is_nil(packet) and remaining != [],
+        do: inferred_current_workspace_steer(remaining),
+        else: steer_packet_target(packet, remaining, opts)
+      )
+
+  defp inferred_current_workspace_steer(words) do
+    case Workspace.resolve() do
+      {:ok, manifest} ->
+        with {:ok, root} <- Workspace.control_root(manifest), do: {:ok, root, words}
+
+      {:error, {:workspace_not_discovered, _cwd}} ->
+        {:ok, File.cwd!(), words}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -942,9 +1062,8 @@ defmodule PromptRunner.CLI do
   defp with_control_prompt_target(opts, remaining, fun) do
     case opts[:workspace] do
       manifest when is_binary(manifest) ->
-        with packet when is_binary(packet) <- opts[:packet] || {:error, :missing_packet},
-             [prompt_id] <- remaining,
-             {:ok, %{runner: plan}} <- Workspace.plan(manifest, packet) do
+        with [prompt_id] <- remaining,
+             {:ok, %{runner: plan}} <- Workspace.plan(manifest, opts[:packet]) do
           fun.(plan, normalize_id(prompt_id))
         else
           {:error, reason} -> handle_error(reason)
@@ -952,16 +1071,52 @@ defmodule PromptRunner.CLI do
         end
 
       _other ->
-        case {opts[:packet], remaining} do
-          {packet, [prompt_id]} when is_binary(packet) ->
-            fun.(packet, normalize_id(prompt_id))
+        with_inferred_control_prompt_target(opts, remaining, fun)
+    end
+  end
 
-          {nil, arguments} ->
+  defp with_inferred_control_prompt_target(opts, [reference, prompt_id], fun) do
+    if File.dir?(reference) do
+      fun.(reference, normalize_id(prompt_id))
+    else
+      case Workspace.resolve(reference) do
+        {:ok, manifest} ->
+          case Workspace.plan(manifest, opts[:packet]) do
+            {:ok, %{runner: plan}} -> fun.(plan, normalize_id(prompt_id))
+            {:error, reason} -> handle_error(reason)
+          end
+
+        {:error, _reason} ->
+          with_inferred_control_prompt_target(opts, [prompt_id], fun)
+      end
+    end
+  end
+
+  defp with_inferred_control_prompt_target(opts, remaining, fun) do
+    case {opts[:packet], remaining} do
+      {packet, [prompt_id]} when is_binary(packet) ->
+        fun.(packet, normalize_id(prompt_id))
+
+      {nil, [prompt_id] = arguments} ->
+        case Workspace.resolve() do
+          {:ok, manifest} ->
+            case Workspace.plan(manifest, nil) do
+              {:ok, %{runner: plan}} -> fun.(plan, normalize_id(prompt_id))
+              {:error, reason} -> handle_error(reason)
+            end
+
+          {:error, {:workspace_not_discovered, _cwd}} ->
             with_prompt_target(arguments, fun)
 
-          {packet, arguments} ->
-            handle_error({:unexpected_control_target, arguments, packet})
+          {:error, reason} ->
+            handle_error(reason)
         end
+
+      {nil, arguments} ->
+        with_prompt_target(arguments, fun)
+
+      {packet, arguments} ->
+        handle_error({:unexpected_control_target, arguments, packet})
     end
   end
 
@@ -1005,13 +1160,6 @@ defmodule PromptRunner.CLI do
   defp packet_dir(remaining), do: packet_dir(remaining, nil)
 
   defp packet_and_prompt_ids(remaining, explicit_packet)
-
-  defp packet_and_prompt_ids(remaining, explicit_packet) when is_binary(explicit_packet) do
-    prompt_ids = Enum.reject(remaining, &String.starts_with?(&1, "-"))
-    {explicit_packet, normalize_prompt_ids(prompt_ids)}
-  end
-
-  defp packet_and_prompt_ids([], nil), do: {File.cwd!(), []}
 
   defp packet_and_prompt_ids([first | rest], nil) do
     if String.starts_with?(first, "-") do
@@ -1119,6 +1267,38 @@ defmodule PromptRunner.CLI do
   end
 
   defp run_agent_control(action, rest) do
+    run_agent_control_action(action, rest)
+  end
+
+  defp run_agent_control_action("progress", rest) do
+    {opts, remaining, invalid} =
+      OptionParser.parse(rest, strict: [cursor: :string, unit: :string, summary: :string])
+
+    with true <- invalid == [] || {:error, {:invalid_options, invalid}},
+         true <- remaining == [] || {:error, {:unexpected_arguments, remaining}},
+         {:ok, receipt} <-
+           AgentControl.progress(opts[:cursor], opts[:summary], unit: opts[:unit]) do
+      IO.puts(
+        Jason.encode!(
+          %{
+            schema: "prompt_runner.agent_control.progress/receipt/v1",
+            cursor: receipt.cursor,
+            unit: receipt.unit,
+            prompt_id: receipt.prompt_id,
+            iteration: receipt.iteration,
+            state: "accepted"
+          },
+          pretty: true
+        )
+      )
+
+      :ok
+    else
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp run_agent_control_action(action, rest) do
     {opts, remaining, invalid} = OptionParser.parse(rest, strict: [reason: :string])
 
     with true <- invalid == [] || {:error, {:invalid_options, invalid}},
@@ -1178,8 +1358,8 @@ defmodule PromptRunner.CLI do
   end
 
   defp run_workspace_doctor(rest) do
-    with {:ok, manifest_path} <- one_argument(rest, :workspace_manifest),
-         {:ok, report} <- Workspace.doctor(manifest_path) do
+    with {:ok, workspace_reference} <- one_raw_argument(rest, :workspace_reference),
+         {:ok, report} <- Workspace.doctor(workspace_reference) do
       IO.puts(Jason.encode!(report, pretty: true))
       if report.ready?, do: :ok, else: handle_error(:workspace_not_ready)
     else
@@ -1216,9 +1396,9 @@ defmodule PromptRunner.CLI do
 
   defp run_start(rest) do
     with {:ok, opts, remaining} <- parse_run_options(rest),
-         {:ok, manifest_path} <- required_option(opts, :workspace),
-         {:ok, packet_path} <- required_option(opts, :packet),
-         true <- remaining == [] || {:error, {:unexpected_arguments, remaining}},
+         {:ok, workspace_reference} <- workspace_reference(opts[:workspace], remaining),
+         {:ok, manifest_path} <- Workspace.resolve(workspace_reference),
+         {:ok, packet_path} <- workspace_packet_option(manifest_path, opts[:packet]),
          {:ok, report} <- Workspace.doctor(manifest_path),
          true <- report.ready? || {:error, {:workspace_not_ready, report}},
          {:ok, %{workspace: workspace_plan, packet_root: workspace_packet_root}} <-
@@ -1256,8 +1436,8 @@ defmodule PromptRunner.CLI do
     {opts, remaining, invalid} = OptionParser.parse(rest, strict: [workspace: :string])
 
     with true <- invalid == [] || {:error, {:invalid_options, invalid}},
-         true <- remaining == [] || {:error, {:unexpected_arguments, remaining}},
-         {:ok, manifest_path} <- required_option(opts, :workspace),
+         {:ok, workspace_reference} <- workspace_reference(opts[:workspace], remaining),
+         {:ok, manifest_path} <- Workspace.resolve(workspace_reference),
          {:ok, manifest} <- WorkspaceManifest.load(manifest_path),
          unit = Workspace.service_unit(manifest.id),
          :ok <- SystemdUser.stop(unit),
@@ -1280,15 +1460,23 @@ defmodule PromptRunner.CLI do
     end
   end
 
+  defp workspace_reference(reference, []) when is_binary(reference), do: {:ok, reference}
+  defp workspace_reference(nil, [reference]), do: {:ok, reference}
+  defp workspace_reference(nil, []), do: {:ok, nil}
+
+  defp workspace_reference(reference, remaining),
+    do: {:error, {:unexpected_workspace_target, reference, remaining}}
+
+  defp workspace_packet_option(_manifest_path, packet) when is_binary(packet),
+    do: {:ok, Path.expand(packet)}
+
+  defp workspace_packet_option(manifest_path, nil),
+    do: Workspace.bound_packet_root(manifest_path)
+
   defp one_argument([argument], _name), do: {:ok, Path.expand(argument)}
   defp one_argument(arguments, name), do: {:error, {:expected_one_argument, name, arguments}}
-
-  defp required_option(opts, key) do
-    case opts[key] do
-      value when is_binary(value) and value != "" -> {:ok, Path.expand(value)}
-      _other -> {:error, {:missing_option, key}}
-    end
-  end
+  defp one_raw_argument([argument], _name), do: {:ok, argument}
+  defp one_raw_argument(arguments, name), do: {:error, {:expected_one_argument, name, arguments}}
 
   defp installed_executable do
     case :escript.script_name() do
@@ -1504,6 +1692,16 @@ defmodule PromptRunner.CLI do
     System.halt(1)
   end
 
+  defp handle_error(:workspace_packet_binding_required) do
+    IO.puts(UI.red("ERROR: this workspace manifest has no default packet binding"))
+
+    IO.puts(
+      "Add `packet.repo` and repository-relative `packet.path`, or use --packet PACKET_DIR."
+    )
+
+    System.halt(1)
+  end
+
   defp handle_error(reason) do
     IO.puts(UI.red("ERROR: #{inspect(reason)}"))
     System.halt(1)
@@ -1534,13 +1732,15 @@ defmodule PromptRunner.CLI do
     Operator workspaces:
       prompt_runner workspace plan MANIFEST
       prompt_runner workspace prepare MANIFEST
-      prompt_runner workspace doctor MANIFEST
+      prompt_runner workspace doctor [WORKSPACE_ID | MANIFEST]
       prompt_runner workspace import-state MANIFEST PACKET_DIR [--source PROGRESS_FILE]
-      prompt_runner start --workspace MANIFEST --packet PACKET_DIR --remaining [--new-run] [--from ID] [--through ID]
+      prompt_runner plan WORKSPACE_ID --remaining
+      prompt_runner start WORKSPACE_ID --remaining [--new-run] [--from ID] [--through ID]
+      prompt_runner start --workspace MANIFEST --packet PACKET_DIR --remaining [--new-run]
       prompt_runner status [WORKSPACE_ID | --workspace MANIFEST] [--json]
-      prompt_runner watch --workspace MANIFEST [--for 240m] [--every 10m]
+      prompt_runner watch [WORKSPACE_ID | --workspace MANIFEST] [--for 240m] [--every 10m]
         [--require-running] [--require-progress] [--progress-timeout 60m] [--json]
-      prompt_runner stop --workspace MANIFEST
+      prompt_runner stop [WORKSPACE_ID | --workspace MANIFEST]
 
     Execution:
       prompt_runner list [PACKET_DIR]
@@ -1553,17 +1753,18 @@ defmodule PromptRunner.CLI do
       prompt_runner watch [PACKET_DIR] [--interval SECONDS] [--once] [--json]
 
     Agent control (inside an enabled provider session):
+      prompt_runner agent-control progress --cursor CURSOR [--unit UNIT] --summary "exact current work"
       prompt_runner agent-control continue
       prompt_runner agent-control repeat [--reason "..."]
       prompt_runner agent-control finish --reason "..."
       prompt_runner agent-control blocked --reason "..."
 
     Control (a live run, from another terminal):
-      prompt_runner control status [PACKET_DIR | --workspace MANIFEST] [--json]
-      prompt_runner control view [PACKET_DIR | --workspace MANIFEST] [--log-mode MODE] [--tool-output MODE] [--diff MODE]
-      prompt_runner control log [PACKET_DIR | --workspace MANIFEST] [--follow] [--json]
-      prompt_runner control events [PACKET_DIR | --workspace MANIFEST] [--from current] [--json]
-      prompt_runner control steer [PACKET_DIR | --workspace MANIFEST] TEXT... [--author NAME]
+      prompt_runner control status [WORKSPACE_ID | PACKET_DIR | --workspace MANIFEST] [--json]
+      prompt_runner control view [WORKSPACE_ID | PACKET_DIR | --workspace MANIFEST] [--log-mode MODE] [--tool-output MODE] [--diff MODE]
+      prompt_runner control log [WORKSPACE_ID | PACKET_DIR | --workspace MANIFEST] [--follow] [--json]
+      prompt_runner control events [WORKSPACE_ID | PACKET_DIR | --workspace MANIFEST] [--from current] [--json]
+      prompt_runner control steer [WORKSPACE_ID | PACKET_DIR | --workspace MANIFEST] TEXT... [--author NAME]
       prompt_runner control contract [PACKET_DIR] PROMPT_ID [--json]
       prompt_runner control contract --workspace MANIFEST --packet PACKET_DIR PROMPT_ID [--json]
       prompt_runner control amend [PACKET_DIR] PROMPT_ID --add-file PATH --reason "..." [--persist]

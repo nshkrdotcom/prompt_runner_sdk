@@ -1,6 +1,6 @@
 # Verification And Repair
 
-Prompt Runner 0.12.0 treats deterministic verification as the source of truth
+Prompt Runner 0.12.1 treats deterministic verification as the source of truth
 for prompt completion. A provider reporting success is evidence, not a verdict.
 
 ## Contract Keys

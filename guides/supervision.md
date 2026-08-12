@@ -1,7 +1,7 @@
 # Supervising A Long Run
 
 A packet with thirty prompts, each sized for tens of minutes of model work, is
-a run nobody watches continuously. Prompt Runner 0.12.0 adds
+a run nobody watches continuously. Legacy packet mode provides
 `mix prompt_runner watch` for that case.
 
 ```bash
@@ -128,6 +128,20 @@ IO.puts(PromptRunner.Watch.format_line(sample))
 
 `PromptRunner.Watch.run/2` is the loop; `sample/2` is the single measurement,
 for embedding in a host application's own supervision.
+
+## Operator Workspace Monitoring
+
+Prepared workspaces have a separate bounded, evidence-producing monitor. Use a
+workspace id (or omit it from an unambiguous related directory):
+
+```bash
+prompt_runner watch operator-packet --for 240m --every 10m --require-running --require-progress --progress-timeout 60m
+```
+
+This reads the durable run, journal, service cgroup, process lease, ordinary
+prompt progress, and agent cursor heartbeat. It writes JSONL samples and a final
+report below the workspace runtime's `acceptance/` directory. The explicit
+`prompt_runner watch --workspace MANIFEST ...` form remains supported.
 
 ## When A Run Dies Mid-Packet
 

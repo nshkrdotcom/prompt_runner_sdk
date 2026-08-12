@@ -209,10 +209,12 @@ defmodule PromptRunner.CLIFlagsTest do
   test "agent-control CLI writes a scoped directive" do
     root = FSHelpers.tmp_dir("prompt_runner_cli_agent_control")
     request_file = Path.join(root, "request.json")
+    progress_file = Path.join(root, "01-2-cli-test-tok.progress.json")
 
     previous =
       ~w(
         PROMPT_RUNNER_AGENT_CONTROL_FILE
+        PROMPT_RUNNER_AGENT_PROGRESS_FILE
         PROMPT_RUNNER_AGENT_CONTROL_TOKEN
         PROMPT_RUNNER_RUN_ID
         PROMPT_RUNNER_PROMPT_ID
@@ -221,6 +223,7 @@ defmodule PromptRunner.CLIFlagsTest do
       |> Map.new(&{&1, System.get_env(&1)})
 
     System.put_env("PROMPT_RUNNER_AGENT_CONTROL_FILE", request_file)
+    System.put_env("PROMPT_RUNNER_AGENT_PROGRESS_FILE", progress_file)
     System.put_env("PROMPT_RUNNER_AGENT_CONTROL_TOKEN", "cli-test-token")
     System.put_env("PROMPT_RUNNER_RUN_ID", "cli-run")
     System.put_env("PROMPT_RUNNER_PROMPT_ID", "01")
@@ -234,6 +237,24 @@ defmodule PromptRunner.CLIFlagsTest do
 
       File.rm_rf!(root)
     end)
+
+    progress_output =
+      capture_io(fn ->
+        assert :ok =
+                 CLI.main([
+                   "agent-control",
+                   "progress",
+                   "--cursor",
+                   "P09R.2",
+                   "--unit",
+                   "C",
+                   "--summary",
+                   "runtime ownership is in progress"
+                 ])
+      end)
+
+    assert %{"cursor" => "P09R.2", "unit" => "C", "state" => "accepted"} =
+             Jason.decode!(progress_output)
 
     output =
       capture_io(fn ->

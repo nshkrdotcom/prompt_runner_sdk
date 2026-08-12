@@ -22,6 +22,7 @@ defmodule PromptRunner.CLI.Status do
       header(status, color?),
       progress_line(progress, agent_control, color?),
       current_line(status[:state], control, progress, color?),
+      cursor_line(agent_control, color?),
       iteration_line(agent_control, color?),
       reason_line(agent_control, progress, color?),
       attempt_line(control, color?),
@@ -99,6 +100,15 @@ defmodule PromptRunner.CLI.Status do
   end
 
   defp iteration_line(_agent_control, _color?), do: nil
+
+  defp cursor_line(%{progress: %{cursor: cursor} = progress}, color?)
+       when is_binary(cursor) do
+    unit = if is_binary(progress[:unit]), do: " · unit #{progress[:unit]}", else: ""
+    stale = if progress[:stale], do: " · previous iteration", else: ""
+    wrapped_line("cursor", "#{cursor}#{unit}#{stale} — #{progress[:summary]}", color?)
+  end
+
+  defp cursor_line(_agent_control, _color?), do: nil
 
   defp reason_line(%{looping: true, last_reason: reason}, _progress, color?)
        when is_binary(reason) and reason != "",

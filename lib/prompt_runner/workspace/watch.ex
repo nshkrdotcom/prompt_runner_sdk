@@ -2,11 +2,12 @@ defmodule PromptRunner.Workspace.Watch do
   @moduledoc "Bounded, evidence-producing workspace health monitor."
 
   alias PromptRunner.Workspace
-  alias PromptRunner.Workspace.{Manifest, Plan}
+  alias PromptRunner.Workspace.{Manifest, Plan, Reference}
 
   @spec run(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def run(manifest_path, opts \\ []) do
-    with {:ok, manifest} <- Manifest.load(manifest_path),
+    with {:ok, manifest_path} <- Reference.resolve(manifest_path, opts),
+         {:ok, manifest} <- Manifest.load(manifest_path),
          :ok <- validate_options(opts) do
       plan = Plan.build(manifest)
       started_mono = System.monotonic_time(:millisecond)

@@ -1,6 +1,6 @@
 # Operator Workspaces
 
-Prompt Runner 0.12.0 replaces packet-specific shell orchestration with a strict
+Prompt Runner 0.12.1 replaces packet-specific shell orchestration with a strict
 workspace manifest and an installed escript. A workspace gives one operator
 full independent clones, ordinary in-clone `_build` and `deps`, external runtime
 state, installed contract artifacts, and cgroup-backed process containment.
@@ -13,15 +13,16 @@ prompt_runner workspace prepare workspace.yml
 prompt_runner workspace doctor workspace.yml
 prompt_runner packet lint packet --strict
 prompt_runner workspace import-state workspace.yml packet
-prompt_runner verify --workspace workspace.yml --packet packet 01
-prompt_runner start --workspace workspace.yml --packet packet --remaining --no-commit
+prompt_runner verify operator-packet 01
+prompt_runner plan operator-packet --remaining
+prompt_runner start operator-packet --remaining --no-commit
 prompt_runner status operator-packet
-prompt_runner control status --workspace workspace.yml --json
-prompt_runner control events --workspace workspace.yml
-prompt_runner control log --workspace workspace.yml --follow # operator requests only
-prompt_runner watch --workspace workspace.yml --for 240m --every 10m \
+prompt_runner control status operator-packet --json
+prompt_runner control events operator-packet
+prompt_runner control log operator-packet --follow # operator requests only
+prompt_runner watch operator-packet --for 240m --every 10m \
   --require-running --require-progress --progress-timeout 60m
-prompt_runner stop --workspace workspace.yml
+prompt_runner stop operator-packet
 ```
 
 If a reviewed packet upgrade intentionally changes the content fingerprint of
@@ -58,9 +59,10 @@ runner resolves and reads that packet from the corresponding independent clone
 before launch. Its process working directory, default project directory,
 control inbox, run-local amendments, steering records, logs, and state therefore
 cannot fall back to the author's checkout. The `control` commands use
-`--workspace MANIFEST` to address that external runtime directly; contract and
-amendment commands also take `--packet PACKET_DIR` so their versioned packet
-input is unambiguous.
+a prepared workspace id to address that external runtime directly. The explicit
+`--workspace MANIFEST` form remains supported. With a default packet binding,
+contract and amendment commands can resolve their versioned packet input by id;
+otherwise they retain the explicit `--packet PACKET_DIR` requirement.
 
 `watch` writes an append-only JSONL sample stream and a final JSON report under
 the operator runtime's `acceptance/` directory. Violations are structured
@@ -111,13 +113,20 @@ The JSON response retains the full control snapshot and adds structured
 `progress` and `agent_control` summaries. The manifest form remains available
 when a caller must not use discovery.
 
+For an agent-controlled run, `agent_control.progress` is the durable
+nonterminal cursor reported by the agent itself. It contains the authenticated
+run, prompt, and iteration identity plus cursor, optional unit, summary,
+timestamp, and `stale`. A retained prior-iteration report is labeled stale and
+does not masquerade as current activity. Terminal `last_action` and
+`last_reason` remain separate and unchanged.
+
 ## Manifest
 
 ```yaml
 schema: prompt_runner.workspace/v1
 id: operator-packet
 requires:
-  prompt_runner: ">= 0.12.0 and < 0.13.0"
+  prompt_runner: ">= 0.12.1 and < 0.13.0"
   capabilities:
     - verifier.argv
     - agent_control.linear
@@ -128,6 +137,9 @@ repositories:
     remote: git@github.com:owner/app.git
     ref: main
     source: /readable/bootstrap/source/app
+packet:
+  repo: app
+  path: packets/operator-packet
 operator:
   workspace_root: auto
   runtime_root: auto
@@ -142,6 +154,18 @@ contracts:
       repo: app
       project: support/packet_contracts
       type: escript
+```
+
+`packet` is optional. When present, `repo` must name a declared repository and
+`path` must be a non-escaping repository-relative directory. Absolute paths,
+unknown repositories, `..` escapes, symlink escapes, and missing clone paths
+fail closed. The binding is what permits `plan WORKSPACE_ID`,
+`verify WORKSPACE_ID`, `start WORKSPACE_ID`, and workspace contract operations
+without a packet path. A manifest without it remains valid and uses the
+preserved explicit form:
+
+```bash
+prompt_runner start --workspace workspace.yml --packet packet --remaining --no-commit
 ```
 
 `source` is bootstrap input only. The resulting clone's `origin` is `remote`.

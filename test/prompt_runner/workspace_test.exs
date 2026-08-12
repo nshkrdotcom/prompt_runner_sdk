@@ -3,7 +3,7 @@ defmodule PromptRunner.WorkspaceTest do
 
   import ExUnit.CaptureIO
 
-  alias PromptRunner.CLI
+  alias PromptRunner.{AgentControl, CLI}
   alias PromptRunner.Control.{Plane, Snapshot, Store}
   alias PromptRunner.Test.FSHelpers
   alias PromptRunner.Workspace
@@ -127,6 +127,27 @@ defmodule PromptRunner.WorkspaceTest do
     File.write!(manifest, File.read!(manifest) <> "surprise: true\n")
 
     assert {:error, {:unknown_workspace_keys, [], ["surprise"]}} = Manifest.load(manifest)
+  end
+
+  test "packet bindings reject unknown repositories and path escapes", %{manifest: manifest} do
+    File.write!(manifest, File.read!(manifest) <> "packet:\n  repo: missing\n  path: packet\n")
+    assert {:error, {:unknown_packet_repo, "missing"}} = Manifest.load(manifest)
+
+    File.write!(
+      manifest,
+      String.replace(
+        File.read!(manifest),
+        "repo: missing\n  path: packet",
+        "repo: app\n  path: ../../packet"
+      )
+    )
+
+    assert {:error, {:workspace_packet_path_escape, "../../packet"}} = Manifest.load(manifest)
+  end
+
+  test "a workspace without a packet binding fails explicitly", %{manifest: manifest} do
+    assert {:error, :workspace_packet_binding_required} = Workspace.bound_packet_root(manifest)
+    assert {:error, :workspace_packet_binding_required} = Workspace.plan(manifest, nil)
   end
 
   test "prepare creates a full independent clone and an immutable lock record", %{
@@ -343,12 +364,24 @@ defmodule PromptRunner.WorkspaceTest do
       )
     )
 
+    File.write!(
+      manifest,
+      File.read!(manifest) <> "packet:\n  repo: app\n  path: packets/demo\n"
+    )
+
     assert {:ok, _prepared} = Workspace.prepare(manifest)
     clone = Path.join([xdg_data, "prompt_runner", "workspaces", "test-workspace", "repos", "app"])
     expected = Path.join(clone, "packets/demo")
 
     assert {:ok, ^expected} = Workspace.packet_root(manifest, packet)
     assert {:ok, %{packet_root: ^expected, runner: runner}} = Workspace.plan(manifest, packet)
+    assert {:ok, ^expected} = Workspace.bound_packet_root("test-workspace")
+    assert {:ok, %{packet_root: ^expected}} = Workspace.plan("test-workspace", nil)
+
+    concise_plan =
+      capture_io(fn -> assert :ok = CLI.main(["plan", "test-workspace", "--remaining"]) end)
+
+    assert concise_plan =~ expected
     assert runner.source_root == expected
     assert runner.config.project_dir == clone
   end
@@ -358,6 +391,7 @@ defmodule PromptRunner.WorkspaceTest do
     packet: packet,
     xdg_state: xdg_state
   } do
+    assert {:ok, _prepared} = Workspace.prepare(manifest)
     state = Path.join([xdg_state, "prompt_runner", "workspaces", "test-workspace", "packet"])
 
     plane =
@@ -381,6 +415,13 @@ defmodule PromptRunner.WorkspaceTest do
       end)
 
     assert Jason.decode!(status)["run_id"] == Plane.run_id(plane)
+
+    status_by_id =
+      capture_io(fn ->
+        assert :ok = CLI.main(["control", "status", "test-workspace", "--json"])
+      end)
+
+    assert Jason.decode!(status_by_id)["run_id"] == Plane.run_id(plane)
 
     log =
       capture_io(fn ->
@@ -523,9 +564,29 @@ defmodule PromptRunner.WorkspaceTest do
         "run_id" => "run-1",
         "state" => "running",
         "selection" => %{"targets" => ["01"]},
+        "snapshot_path" => Path.join([state_dir, "runs", "run-1", "current.json"]),
         "updated_at" => "2026-08-12T04:00:00Z"
       })
     )
+
+    run_dir = Path.join([state_dir, "runs", "run-1"])
+    File.mkdir_p!(run_dir)
+    assert {:ok, invocation} = AgentControl.prepare(run_dir, "run-1", "01", 2)
+
+    progress_env =
+      %{}
+      |> Map.put("PROMPT_RUNNER_AGENT_CONTROL_FILE", invocation.request_file)
+      |> Map.put("PROMPT_RUNNER_AGENT_PROGRESS_FILE", invocation.progress_file)
+      |> Map.put("PROMPT_RUNNER_AGENT_CONTROL_TOKEN", invocation.token)
+      |> Map.put("PROMPT_RUNNER_RUN_ID", invocation.run_id)
+      |> Map.put("PROMPT_RUNNER_PROMPT_ID", invocation.prompt_id)
+      |> Map.put("PROMPT_RUNNER_PROMPT_ITERATION", "2")
+
+    assert {:ok, _receipt} =
+             AgentControl.progress("P09R.2", "generic runtime ownership is in progress",
+               env: progress_env,
+               unit: "C"
+             )
 
     File.write!(
       Path.join(state_dir, "state.json"),
@@ -585,7 +646,21 @@ defmodule PromptRunner.WorkspaceTest do
              completed_iterations: 1,
              max_iterations: 7,
              last_action: "repeat",
-             last_reason: "more work remains"
+             last_reason: "more work remains",
+             progress: %{
+               run_id: "run-1",
+               prompt_id: "01",
+               iteration: 2,
+               cursor: "P09R.2",
+               unit: "C",
+               summary: "generic runtime ownership is in progress",
+               updated_at:
+                 invocation.progress_file
+                 |> File.read!()
+                 |> Jason.decode!()
+                 |> Map.fetch!("updated_at"),
+               stale: false
+             }
            }
   end
 
