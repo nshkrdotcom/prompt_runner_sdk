@@ -1,16 +1,7 @@
-# `build_support/` is not shipped in the published package, so its absence is
-# how this file knows it is running inside a consumer's deps/ rather than in a
-# source checkout.
-workspace_helper = Path.expand("build_support/dependency_sources.exs", __DIR__)
-
-if File.regular?(workspace_helper) and not Code.ensure_loaded?(DependencySources) do
-  Code.require_file(workspace_helper)
-end
+if bootstrap = System.get_env("MIX_WORKSPACE_OPS_BOOTSTRAP"), do: Code.require_file(bootstrap)
 
 defmodule PromptRunner.MixProject do
   use Mix.Project
-
-  @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
 
   @version "0.13.0"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
@@ -48,9 +39,9 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      workspace_dep(:agent_session_manager, "~> 0.15.0"),
-      workspace_dep(:cli_subprocess_core, "~> 0.7.0"),
-      workspace_dep(:execution_plane_process, "~> 0.3.0"),
+      workspace_dep({:agent_session_manager, "~> 0.15.0"}),
+      workspace_dep({:cli_subprocess_core, "~> 0.7.0"}),
+      workspace_dep({:execution_plane_process, "~> 0.3.0"}),
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.12"},
       {:mox, "~> 1.2", only: :test},
@@ -61,15 +52,10 @@ defmodule PromptRunner.MixProject do
     ]
   end
 
-  # In a source checkout the registry decides the source (path first). In a
-  # published package there is no registry, and the requirement stated here is
-  # the whole answer.
-  defp workspace_dep(app, hex_requirement) do
-    if @workspace_checkout? do
-      apply(DependencySources, :dep, [app, __DIR__])
-    else
-      {app, hex_requirement}
-    end
+  defp workspace_dep(committed) do
+    if function_exported?(MixWorkspaceOpsBootstrap, :dep, 2),
+      do: apply(MixWorkspaceOpsBootstrap, :dep, [committed, __DIR__]),
+      else: committed
   end
 
   defp description do

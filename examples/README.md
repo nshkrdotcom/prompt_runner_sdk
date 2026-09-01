@@ -20,10 +20,9 @@ mock provider lane.
 ## Which Code The Examples Run Against
 
 Running `mix prompt_runner ...` from this repository always uses the **local
-working tree**, not the published package, and by default it resolves
-`agent_session_manager` and `cli_subprocess_core` from sibling checkouts if you
-have them. That is the right default for developing Prompt Runner, but it does
-not tell you what a released install does.
+working tree**, not the published package. Plain Mix uses the committed Hex
+requirements. A managed Mix Workspace Ops run may substitute eligible sibling
+or Git sources from Portfolio Registry without changing this checkout.
 
 Check what you are actually about to run:
 
@@ -31,25 +30,20 @@ Check what you are actually about to run:
 mix deps.sources
 ```
 
-To exercise the **published** stack instead, there are two levels:
+To exercise the **published** stack, use Prompt Runner from Hex in a throwaway
+project and copy an example packet into it:
 
-1. Published ASM/core, local Prompt Runner — add the gitignored
-   `.dependency_sources.local.exs` described in the
-   [README](../README.md#dependency-sources), then `mix deps.get`.
-2. Fully published — use Prompt Runner from Hex in a throwaway project and copy
-   an example packet into it:
+```bash
+mix new consumer && cd consumer
+# deps: {:prompt_runner_sdk, "~> 0.13.0"}
+mix deps.get
+cp -r ../prompt_runner_sdk/examples/single_repo_packet pkt
+bash pkt/setup.sh
+mix prompt_runner run pkt
+```
 
-   ```bash
-   mix new consumer && cd consumer
-   # deps: {:prompt_runner_sdk, "~> 0.8.1"}
-   mix deps.get
-   cp -r ../prompt_runner_sdk/examples/single_repo_packet pkt
-   bash pkt/setup.sh
-   mix prompt_runner run pkt
-   ```
-
-   Nothing resolves to a sibling checkout there, so this is the honest check
-   that a release works for a real consumer.
+Nothing resolves to a sibling checkout there, so this is the honest check that
+a release works for a real consumer.
 
 ## Common Flow
 

@@ -16,21 +16,11 @@ defmodule PromptRunner.ReleasePreparationTest do
     project = Mix.Project.config()
 
     assert project[:elixir] == "~> 1.19"
+    mix_source = File.read!(Path.expand("../../mix.exs", __DIR__))
 
-    # The dependency tuple's shape varies by resolved source (path/github/hex),
-    # so the committed constraint is asserted at its source of truth instead.
-    # The assertion is on the *line*, not the patch: a patch bump in a sibling
-    # is an ordinary event, and pinning the digit here turned every one of them
-    # into a failing suite in this repository.
-    config = DependencySources.config!(Path.expand("../..", __DIR__))
-
-    assert config[:deps][:agent_session_manager][:hex] =~ ~r/^~> 0\.15\./
-    assert config[:deps][:cli_subprocess_core][:hex] =~ ~r/^~> 0\.7\./
-    assert config[:deps][:execution_plane_process][:hex] =~ ~r/^~> 0\.3\./
-
-    assert List.keymember?(project[:deps], :agent_session_manager, 0)
-    assert List.keymember?(project[:deps], :cli_subprocess_core, 0)
-    assert List.keymember?(project[:deps], :execution_plane_process, 0)
+    assert mix_source =~ ~s|workspace_dep({:agent_session_manager, "~> 0.15.0"})|
+    assert mix_source =~ ~s|workspace_dep({:cli_subprocess_core, "~> 0.7.0"})|
+    assert mix_source =~ ~s|workspace_dep({:execution_plane_process, "~> 0.3.0"})|
   end
 
   test "mix.exs version matches the newest CHANGELOG entry" do
@@ -41,10 +31,6 @@ defmodule PromptRunner.ReleasePreparationTest do
 
     assert [_, newest] = Regex.run(~r/^## \[(\d+\.\d+\.\d+)\]/m, changelog)
     assert Mix.Project.config()[:version] == newest
-  end
-
-  test "publish preflight accepts the committed hex constraints" do
-    assert {:ok, _entries} = DependencySources.publish_preflight(Path.expand("../..", __DIR__))
   end
 
   test "the emitted version is derived from mix.exs" do

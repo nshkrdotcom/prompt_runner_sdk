@@ -540,41 +540,28 @@ mix docs
 
 ### Dependency Sources
 
-`agent_session_manager` and `cli_subprocess_core` resolve through the shared
-`build_support/dependency_sources.exs` helper, the same one vendored by the
-other repositories in this stack. Sibling checkouts win automatically when
-they exist next to this repository, then GitHub, then Hex:
+The committed dependency tuples for `agent_session_manager`,
+`cli_subprocess_core`, and `execution_plane_process` are ordinary Hex
+requirements. Plain `mix deps.get` therefore behaves normally in a standalone
+checkout and in a published package.
+
+For managed portfolio development, run the command through Mix Workspace Ops.
+MWO loads its process-scoped bootstrap, derives eligible local/Git/Hex
+coordinates from Portfolio Registry, and applies operator source preferences
+without adding repository-local policy files:
 
 ```bash
-mix deps.sources
-# dependency sources:
-#   agent_session_manager -> path (../agent_session_manager) -> 0.15.0
-#   cli_subprocess_core -> path (../cli_subprocess_core) -> 0.7.0
+mix_workspace_ops run \
+  --project prompt_runner_sdk \
+  --registry /path/to/portfolio_registry/registry.json \
+  --checkout-root /path/to/checkouts \
+  -- mix deps.get
 ```
 
-To resolve against the published releases instead — which is what you want
-before packaging, and what CI sees — create a local, gitignored override:
-
-```elixir
-# .dependency_sources.local.exs
-%{
-  deps: %{
-    agent_session_manager: %{source: :hex},
-    cli_subprocess_core: %{source: :hex}
-  }
-}
-```
-
-```bash
-mix deps.get
-mix test
-mix hex.build
-```
-
-Packaging tasks (`hex.build`, `hex.publish`, `hex.package`) always resolve Hex
-sources regardless of the override, so package metadata stays Hex-clean. Note
-that the two modes share `deps/` and `mix.lock`, so re-run `mix deps.get`
-after switching. Delete the override file to return to sibling checkouts.
+Source preferences are operator state, not committed repository semantics.
+Packaging remains Hex-only, and MWO uses context-keyed external dependency and
+build paths so managed runs do not mutate this checkout's `deps/`, `_build/`,
+or `mix.lock`.
 
 ## License
 
