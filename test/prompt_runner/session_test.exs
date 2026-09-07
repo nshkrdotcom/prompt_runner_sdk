@@ -82,7 +82,7 @@ defmodule PromptRunner.SessionTest do
 
     llm = %{
       provider: "codex",
-      model: "gpt-5.4",
+      model: "gpt-5.4-mini",
       cwd: tmp_dir,
       permission_mode: :bypass,
       codex_thread_opts: %{reasoning_effort: :xhigh},

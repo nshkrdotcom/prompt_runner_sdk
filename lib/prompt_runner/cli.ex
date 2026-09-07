@@ -549,16 +549,7 @@ defmodule PromptRunner.CLI do
         {opts[:packet], normalize_prompt_ids(remaining), opts}
 
       match?([_ | _], remaining) ->
-        [first | rest] = remaining
-
-        case if(File.dir?(first), do: {:error, :packet_directory}, else: Workspace.resolve(first)) do
-          {:ok, manifest_path} ->
-            {nil, normalize_prompt_ids(rest), Keyword.put(opts, :workspace, manifest_path)}
-
-          {:error, _reason} ->
-            {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining, nil)
-            {packet_dir, prompt_ids, opts}
-        end
+        referenced_workspace_plan_target(remaining, opts)
 
       true ->
         case Workspace.resolve() do
@@ -566,6 +557,21 @@ defmodule PromptRunner.CLI do
           {:error, _reason} -> {File.cwd!(), [], opts}
         end
     end
+  end
+
+  defp referenced_workspace_plan_target([first | rest] = remaining, opts) do
+    case resolve_workspace_reference(first) do
+      {:ok, manifest_path} ->
+        {nil, normalize_prompt_ids(rest), Keyword.put(opts, :workspace, manifest_path)}
+
+      {:error, _reason} ->
+        {packet_dir, prompt_ids} = packet_and_prompt_ids(remaining, nil)
+        {packet_dir, prompt_ids, opts}
+    end
+  end
+
+  defp resolve_workspace_reference(reference) do
+    if File.dir?(reference), do: {:error, :packet_directory}, else: Workspace.resolve(reference)
   end
 
   defp execute_cli_run(plan, opts, prompt_ids) do
@@ -722,9 +728,7 @@ defmodule PromptRunner.CLI do
   defp workspace_watch_target(opts, remaining) do
     cond do
       is_binary(opts[:workspace]) ->
-        if remaining == [],
-          do: {:workspace, opts[:workspace]},
-          else: {:error, {:unexpected_arguments, remaining}}
+        explicit_workspace_watch_target(opts[:workspace], remaining)
 
       is_binary(opts[:packet]) ->
         {:packet, remaining}
@@ -738,20 +742,25 @@ defmodule PromptRunner.CLI do
 
       length(remaining) == 1 ->
         [reference] = remaining
-
-        if File.dir?(reference) do
-          {:packet, remaining}
-        else
-          case Workspace.resolve(reference) do
-            {:ok, manifest} -> {:workspace, manifest}
-            {:error, reason} -> {:error, reason}
-          end
-        end
+        referenced_workspace_watch_target(reference)
 
       true ->
         {:packet, remaining}
     end
   end
+
+  defp referenced_workspace_watch_target(reference) do
+    case resolve_workspace_reference(reference) do
+      {:ok, manifest} -> {:workspace, manifest}
+      {:error, :packet_directory} -> {:packet, [reference]}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp explicit_workspace_watch_target(reference, []), do: {:workspace, reference}
+
+  defp explicit_workspace_watch_target(_reference, remaining),
+    do: {:error, {:unexpected_arguments, remaining}}
 
   defp run_packet_watch(remaining, opts) do
     case Watch.run(packet_dir(remaining, opts[:packet]), opts) do
@@ -1015,16 +1024,7 @@ defmodule PromptRunner.CLI do
     if File.dir?(reference) do
       {:ok, reference, words}
     else
-      case Workspace.resolve(reference) do
-        {:ok, manifest} ->
-          with {:ok, root} <- Workspace.control_root(manifest), do: {:ok, root, words}
-
-        {:error, {:workspace_not_prepared, _id}} ->
-          inferred_current_workspace_steer([reference | words])
-
-        {:error, reason} ->
-          {:error, reason}
-      end
+      referenced_workspace_steer(reference, words)
     end
   end
 
@@ -1042,6 +1042,19 @@ defmodule PromptRunner.CLI do
 
       {:error, {:workspace_not_discovered, _cwd}} ->
         {:ok, File.cwd!(), words}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp referenced_workspace_steer(reference, words) do
+    case Workspace.resolve(reference) do
+      {:ok, manifest} ->
+        with {:ok, root} <- Workspace.control_root(manifest), do: {:ok, root, words}
+
+      {:error, {:workspace_not_prepared, _id}} ->
+        inferred_current_workspace_steer([reference | words])
 
       {:error, reason} ->
         {:error, reason}
@@ -1081,10 +1094,7 @@ defmodule PromptRunner.CLI do
     else
       case Workspace.resolve(reference) do
         {:ok, manifest} ->
-          case Workspace.plan(manifest, opts[:packet]) do
-            {:ok, %{runner: plan}} -> fun.(plan, normalize_id(prompt_id))
-            {:error, reason} -> handle_error(reason)
-          end
+          with_workspace_prompt_target(manifest, opts[:packet], prompt_id, fun)
 
         {:error, _reason} ->
           with_inferred_control_prompt_target(opts, [prompt_id], fun)
@@ -1098,25 +1108,28 @@ defmodule PromptRunner.CLI do
         fun.(packet, normalize_id(prompt_id))
 
       {nil, [prompt_id] = arguments} ->
-        case Workspace.resolve() do
-          {:ok, manifest} ->
-            case Workspace.plan(manifest, nil) do
-              {:ok, %{runner: plan}} -> fun.(plan, normalize_id(prompt_id))
-              {:error, reason} -> handle_error(reason)
-            end
-
-          {:error, {:workspace_not_discovered, _cwd}} ->
-            with_prompt_target(arguments, fun)
-
-          {:error, reason} ->
-            handle_error(reason)
-        end
+        with_current_workspace_prompt_target(prompt_id, arguments, fun)
 
       {nil, arguments} ->
         with_prompt_target(arguments, fun)
 
       {packet, arguments} ->
         handle_error({:unexpected_control_target, arguments, packet})
+    end
+  end
+
+  defp with_workspace_prompt_target(manifest, packet, prompt_id, fun) do
+    case Workspace.plan(manifest, packet) do
+      {:ok, %{runner: plan}} -> fun.(plan, normalize_id(prompt_id))
+      {:error, reason} -> handle_error(reason)
+    end
+  end
+
+  defp with_current_workspace_prompt_target(prompt_id, arguments, fun) do
+    case Workspace.resolve() do
+      {:ok, manifest} -> with_workspace_prompt_target(manifest, nil, prompt_id, fun)
+      {:error, {:workspace_not_discovered, _cwd}} -> with_prompt_target(arguments, fun)
+      {:error, reason} -> handle_error(reason)
     end
   end
 

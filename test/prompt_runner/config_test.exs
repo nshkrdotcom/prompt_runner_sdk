@@ -902,7 +902,7 @@ defmodule PromptRunner.ConfigTest do
         commit_messages_file: "commit-messages.txt",
         progress_file: ".progress",
         log_dir: "logs",
-        model: "gpt-5.4",
+        model: "gpt-5.4-mini",
         target_repos: [
           %{name: "default", path: "../repo_alias", default: true},
           %{name: "other", path: "../repo_other_alias", default: false}

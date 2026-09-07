@@ -80,8 +80,8 @@ defmodule PromptRunner.Workspace do
       when is_binary(manifest_path) do
     with {:ok, manifest_path} <- Reference.resolve(manifest_path),
          {:ok, manifest} <- Manifest.load(manifest_path),
-         {:ok, packet_path} <- packet_path(manifest, packet_path),
-         source_packet_root = source_packet_root(packet_path) do
+         {:ok, packet_path} <- packet_path(manifest, packet_path) do
+      source_packet_root = source_packet_root(packet_path)
       mapped_packet_root(source_packet_root, Plan.build(manifest))
     end
   end
@@ -90,9 +90,8 @@ defmodule PromptRunner.Workspace do
   @spec bound_packet_root(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def bound_packet_root(reference, opts \\ []) do
     with {:ok, manifest_path} <- Reference.resolve(reference, opts),
-         {:ok, manifest} <- Manifest.load(manifest_path),
-         {:ok, path} <- packet_path(manifest, nil) do
-      {:ok, path}
+         {:ok, manifest} <- Manifest.load(manifest_path) do
+      packet_path(manifest, nil)
     end
   end
 

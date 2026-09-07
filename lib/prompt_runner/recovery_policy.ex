@@ -3,8 +3,8 @@ defmodule PromptRunner.RecoveryPolicy do
   Recovery decisions for Prompt Runner attempts.
   """
 
-  alias PromptRunner.FailureEnvelope
   alias PromptRunner.CompletionPolicy
+  alias PromptRunner.FailureEnvelope
   alias PromptRunner.Plan
   alias PromptRunner.RecoveryConfig
   alias PromptRunner.Runtime

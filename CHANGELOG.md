@@ -1,5 +1,7 @@
 # Changelog
 
+[0.13.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.12.1...v0.13.0
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -7,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.13.0] - 2026-08-12
+## [0.13.0] - 2026-09-07
 
 ### Added
 
@@ -30,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stale passing structural evidence.
 
 ### Changed
+
+- Require Agent Session Manager 0.16, CLI Subprocess Core 0.8, and Execution Plane Process 0.3.1; refresh locked dependencies and current model fixtures.
+- Remove an unreachable completion-policy branch detected by current Dialyzer.
 
 - Packet plan construction and lint reject `verify.commands`, legacy
   `validation_commands`, and clean-only contracts when agent-owned completion

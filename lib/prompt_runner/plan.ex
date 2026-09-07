@@ -5,8 +5,8 @@ defmodule PromptRunner.Plan do
 
   alias PromptRunner.Committer.GitCommitter
   alias PromptRunner.Committer.NoopCommitter
-  alias PromptRunner.Config
   alias PromptRunner.CompletionPolicy
+  alias PromptRunner.Config
   alias PromptRunner.LLMFacade
   alias PromptRunner.Paths
   alias PromptRunner.PermissionMode

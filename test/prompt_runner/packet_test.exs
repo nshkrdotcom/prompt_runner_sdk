@@ -96,7 +96,7 @@ defmodule PromptRunner.PacketTest do
       name: "sample-packet"
       profile: "codex-default"
       provider: "codex"
-      model: "gpt-5.4"
+      model: "gpt-5.4-mini"
       codex_thread_opts:
         additional_directories:
           - "#{repo}"
@@ -173,7 +173,7 @@ defmodule PromptRunner.PacketTest do
       name: "sample-packet"
       profile: "codex-default"
       provider: "codex"
-      model: "gpt-5.4"
+      model: "gpt-5.4-mini"
       reasoning_effort: "xhigh"
       codex_thread_opts:
         additional_directories:
@@ -198,7 +198,7 @@ defmodule PromptRunner.PacketTest do
         - "app"
       commit: "chore: create hello"
       provider: "codex"
-      model: "gpt-5.4"
+      model: "gpt-5.4-mini"
       verify:
         files_exist:
           - "hello.txt"
@@ -209,13 +209,13 @@ defmodule PromptRunner.PacketTest do
 
     assert {:ok, plan} = PromptRunner.plan(packet.root, interface: :cli)
     assert plan.config.llm_sdk == :codex
-    assert plan.config.model == "gpt-5.4"
+    assert plan.config.model == "gpt-5.4-mini"
     assert plan.options[:codex_thread_opts]["additional_directories"] == [extra]
 
     llm = Config.llm_for_prompt(plan.config, hd(plan.prompts))
 
     assert llm.sdk == :codex
-    assert llm.model == "gpt-5.4"
+    assert llm.model == "gpt-5.4-mini"
     assert llm.codex_thread_opts.additional_directories == [extra]
   end
 

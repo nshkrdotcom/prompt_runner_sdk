@@ -837,7 +837,7 @@ defmodule PromptRunner.RunnerTest do
         commit_messages_file: "commit-messages.txt",
         progress_file: ".progress",
         log_dir: "logs",
-        model: "gpt-5.4",
+        model: "gpt-5.4-mini",
         llm: %{
           provider: "codex",
           codex_thread_opts: %{reasoning_effort: :xhigh}
@@ -863,7 +863,7 @@ defmodule PromptRunner.RunnerTest do
               "exec",
               "--json",
               "--model",
-              "gpt-5.4",
+              "gpt-5.4-mini",
               "--config",
               ~s(model_reasoning_effort="xhigh")
             ]
@@ -873,7 +873,7 @@ defmodule PromptRunner.RunnerTest do
         %{type: :run_completed, data: %{stop_reason: "end_turn"}}
       ]
 
-      {:ok, stream, fn -> :ok end, %{sdk: :codex, model: "gpt-5.4", cwd: tmp_dir}}
+      {:ok, stream, fn -> :ok end, %{sdk: :codex, model: "gpt-5.4-mini", cwd: tmp_dir}}
     end)
 
     output =
@@ -888,7 +888,7 @@ defmodule PromptRunner.RunnerTest do
                  )
       end)
 
-    assert output =~ "LLM confirmed (codex_cli): model=gpt-5.4 reasoning=xhigh"
+    assert output =~ "LLM confirmed (codex_cli): model=gpt-5.4-mini reasoning=xhigh"
   end
 
   test "writes machine-readable codex audit lines to session log" do

@@ -49,7 +49,7 @@ defmodule PromptRunner.FailureEnvelopeTest do
     envelope =
       FailureEnvelope.from_reason(
         {:cli_confirmation_mismatch,
-         %{configured_model: "gpt-5.4", confirmed_model: "gpt-5.3-codex"}}
+         %{configured_model: "gpt-5.4-mini", confirmed_model: "gpt-5.3-codex"}}
       )
 
     assert envelope.class == :cli_confirmation_mismatch

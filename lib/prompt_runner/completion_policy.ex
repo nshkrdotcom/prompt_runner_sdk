@@ -143,6 +143,4 @@ defmodule PromptRunner.CompletionPolicy do
   defp field(map, key) when is_map(map) do
     Map.get(map, key) || Map.get(map, to_string(key))
   end
-
-  defp field(_map, _key), do: nil
 end

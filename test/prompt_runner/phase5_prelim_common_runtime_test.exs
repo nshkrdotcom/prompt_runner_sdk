@@ -115,7 +115,7 @@ defmodule PromptRunner.Phase5PrelimCommonRuntimeTest do
   end
 
   defp model_for(:claude), do: "sonnet"
-  defp model_for(:codex), do: "gpt-5.4"
+  defp model_for(:codex), do: "gpt-5.4-mini"
   defp model_for(:amp), do: "amp-1"
   defp model_for(:cursor), do: "composer"
   defp model_for(:antigravity), do: "default"
