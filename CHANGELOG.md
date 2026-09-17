@@ -7,9 +7,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [0.13.0] - 2026-09-07
+## [0.13.0] - 2026-09-17
 
 ### Added
 
@@ -1022,7 +1020,6 @@ paid in provider tokens for as long as nobody is watching.
 - Multi-repo prompt execution with per-repo commit messages.
 - Example prompt sets for single-repo and multi-repo workflows.
 
-[Unreleased]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.12.1...HEAD
 [0.12.1]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.10.0...v0.11.0
