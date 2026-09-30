@@ -501,13 +501,19 @@ defmodule PromptRunner.WorkspaceTest do
     clone = Path.join([xdg_data, "prompt_runner", "workspaces", "test-workspace", "repos", "app"])
     File.write!(Path.join(clone, "DIRTY.txt"), "dirty\n")
 
-    assert {:ok, report} = Workspace.doctor(manifest)
+    assert {:ok, report} = Workspace.doctor(manifest, systemd_available_opts())
     assert report.ready?
     assert report.repositories["app"].ready?
 
     assert [[:dirty_resumable_workspace, paths]] = report.repositories["app"].warnings
     assert paths =~ "DIRTY.txt"
     assert is_binary(Jason.encode!(report))
+
+    unavailable = fn "systemctl", ["--user", "show-environment"], _opts -> {"no user bus", 1} end
+    assert {:ok, blocked} = Workspace.doctor(manifest, command_runner: unavailable)
+    refute blocked.ready?
+    refute blocked.containment.ready?
+    assert blocked.repositories["app"].ready?
   end
 
   test "status remains JSON-serializable when the systemd user bus is unavailable", %{
@@ -735,7 +741,9 @@ defmodule PromptRunner.WorkspaceTest do
     assert report.artifacts["contract_tool"].path == artifact
     assert File.regular?(artifact)
     assert {_output, 0} = System.cmd(artifact, [])
-    assert {:ok, %{ready?: true, artifacts: %{ready?: true}}} = Workspace.doctor(manifest)
+
+    assert {:ok, %{ready?: true, artifacts: %{ready?: true}}} =
+             Workspace.doctor(manifest, systemd_available_opts())
   end
 
   test "doctor probes pinned tools from the exact repository cwd without running Mix", %{
@@ -813,6 +821,10 @@ defmodule PromptRunner.WorkspaceTest do
 
     assert {:error, {:legacy_progress_unknown_prompts, ["99"]}} =
              Workspace.import_state(manifest, packet)
+  end
+
+  defp systemd_available_opts do
+    [command_runner: fn "systemctl", ["--user", "show-environment"], _opts -> {"", 0} end]
   end
 
   defp restore_env(name, nil), do: System.delete_env(name)

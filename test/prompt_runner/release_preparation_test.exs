@@ -18,8 +18,8 @@ defmodule PromptRunner.ReleasePreparationTest do
     assert project[:elixir] == "~> 1.19"
     mix_source = File.read!(Path.expand("../../mix.exs", __DIR__))
 
-    assert mix_source =~ ~s|workspace_dep({:agent_session_manager, "~> 0.16.0"})|
-    assert mix_source =~ ~s|workspace_dep({:cli_subprocess_core, "~> 0.8.0"})|
+    assert mix_source =~ ~s|workspace_dep({:agent_session_manager, "~> 0.17.3"})|
+    assert mix_source =~ ~s|workspace_dep({:cli_subprocess_core, "~> 0.9.3"})|
     assert mix_source =~ ~s|workspace_dep({:execution_plane_process, "~> 0.3.1"})|
   end
 

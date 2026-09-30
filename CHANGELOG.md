@@ -7,6 +7,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] - 2026-09-29
+
+### Changed
+
+- Refresh Codex integration fixtures to GPT-6.1 Sol and make workspace doctor unit checks independent of the host user bus while retaining unavailable-containment assertions.
+
+- Update all dependency requirements and regenerate lockfiles against current published releases, including `cli_subprocess_core ~> 0.9.3`.
+- Require published `agent_session_manager ~> 0.17.3`.
+
+
 ## [0.13.0] - 2026-09-17
 
 ### Added

@@ -1,6 +1,6 @@
 # Verification And Repair
 
-Prompt Runner 0.13.0 supports two explicit completion owners. Verifier-owned
+Prompt Runner 0.13.1 supports two explicit completion owners. Verifier-owned
 completion remains the default. Agent-owned completion keeps executable quality
 control in the coding-agent session and uses deterministic structural evidence
 as the runner's completion boundary.
