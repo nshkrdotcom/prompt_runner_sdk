@@ -1,7 +1,7 @@
 # Provider Guide
 
 Prompt Runner delegates provider execution to `agent_session_manager`.
-This guide targets `prompt_runner_sdk ~> 0.13.1`.
+This guide targets `prompt_runner_sdk ~> 0.13.2`.
 
 Supported providers:
 
@@ -67,9 +67,8 @@ Normalized shared permission modes:
 
 Not every provider accepts every mode. Prompt Runner delegates the decision to
 `ASM.Permission.normalize/2`, so an unsupported pairing fails at config load
-with `{:invalid_permission_mode, provider, mode}` rather than at launch. On
-`agent_session_manager ~> 0.15.0`, Cursor and Antigravity reject `auto`, and
-Antigravity additionally rejects `plan`.
+with `{:invalid_permission_mode, provider, mode}` rather than at launch.
+Cursor and Antigravity reject `auto`, and Antigravity also rejects `plan`.
 
 ## Normalized Common Options
 
@@ -120,11 +119,16 @@ codex_thread_opts:
 Do not put raw unsupported CLI flags such as `sandbox` or `ask_for_approval`
 under `codex_thread_opts`.
 
-Claude accepts `reasoning_effort` in `agent_session_manager ~> 0.15.0`; it
-resolves through the shared model registry the same way Codex's does.
-`include_thinking` remains the separate control for thinking output:
+Set Claude reasoning effort through `claude_opts`. Core resolves the
+model and its effort through the shared registry. Claude Opus 5.5,
+Sonnet 5.5, Haiku 5.5, and Fable 5.2 accept `low`, `medium`, `high`,
+`xhigh`, and `max`, with a Claude Code default of `medium`.
+`include_thinking` controls thinking output separately.
+[Claude Code effort settings](https://code.claude.com/docs/en/model-config#adjust-effort-level)
 
 ```yaml
+provider: claude
+model: sonnet
 claude_opts:
   reasoning_effort: "high"
   include_thinking: true

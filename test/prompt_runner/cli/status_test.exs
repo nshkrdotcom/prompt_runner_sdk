@@ -234,7 +234,7 @@ defmodule PromptRunner.CLI.StatusTest do
         "attempt" => 1,
         "mode" => "run",
         "provider" => "claude",
-        "model" => "claude-opus-5",
+        "model" => "claude-opus-5-5",
         "prompt_elapsed_ms" => 913_506,
         "elapsed_ms" => 4_015_290,
         "tool_count" => 78,

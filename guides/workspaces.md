@@ -1,6 +1,6 @@
 # Operator Workspaces
 
-Prompt Runner 0.13.1 replaces packet-specific shell orchestration with a strict
+Prompt Runner workspaces replace packet-specific shell orchestration with a strict
 workspace manifest and an installed escript. A workspace gives one operator
 full independent clones, ordinary in-clone `_build` and `deps`, external runtime
 state, installed contract artifacts, and cgroup-backed process containment.

@@ -1,6 +1,6 @@
 # Packet Manifest Reference
 
-Prompt Runner 0.13.1 uses two primary authoring files:
+Prompt Runner 0.13.2 uses two primary authoring files:
 
 - `prompt_runner_packet.md`
 - `*.prompt.md`
@@ -158,7 +158,7 @@ In this mode:
 - an unrecorded prompt is never preflight-completed from stale structural
   files; completed IDs in durable progress remain excluded by `--remaining`.
 
-The supported 0.13.1 combinations are omitted/`verifier_owned` plus `fail`, or
+The supported 0.13.2 combinations are omitted/`verifier_owned` plus `fail`, or
 `agent_owned` plus `repeat`. Packet plan construction and strict lint reject
 other values, executable verifier commands in agent-owned mode, and clean-only
 completion.
@@ -315,7 +315,7 @@ recovery:
 
 ## Completion Contract Keys
 
-Prompt Runner 0.13.1 supports:
+Prompt Runner 0.13.2 supports:
 
 - `files_exist`
 - `files_absent`

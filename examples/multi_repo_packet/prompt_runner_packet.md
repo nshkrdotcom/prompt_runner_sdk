@@ -49,4 +49,4 @@ phases:
 ---
 # Multi Repo Packet
 
-Friendly multi-repo packet example for Prompt Runner 0.8.1.
+Friendly multi-repo packet example.

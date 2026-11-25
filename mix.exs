@@ -3,7 +3,7 @@ if bootstrap = System.get_env("MIX_WORKSPACE_OPS_BOOTSTRAP"), do: Code.require_f
 defmodule PromptRunner.MixProject do
   use Mix.Project
 
-  @version "0.13.1"
+  @version "0.13.2"
   @source_url "https://github.com/nshkrdotcom/prompt_runner_sdk"
   @homepage_url "https://hex.pm/packages/prompt_runner_sdk"
   @docs_url "https://hexdocs.pm/prompt_runner_sdk"
@@ -39,16 +39,16 @@ defmodule PromptRunner.MixProject do
 
   defp deps do
     [
-      workspace_dep({:agent_session_manager, "~> 0.17.3"}),
-      workspace_dep({:cli_subprocess_core, "~> 0.9.3"}),
-      workspace_dep({:execution_plane_process, "~> 0.3.1"}),
+      workspace_dep({:agent_session_manager, "~> 0.17.7"}),
+      workspace_dep({:cli_subprocess_core, "~> 0.10.2"}),
+      workspace_dep({:execution_plane_process, "~> 0.3.3"}),
       {:jason, "~> 1.4.5"},
       {:yaml_elixir, "~> 2.12.2"},
       {:mox, "~> 1.3.2", only: :test},
-      {:ex_doc, "~> 0.40.4", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.40.5", only: :dev, runtime: false},
       # 1.7.19+ tokenizes Elixir 1.20 sigils; older releases crash on them.
       {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4.8", only: :dev, runtime: false}
+      {:dialyxir, "~> 1.4.9", only: :dev, runtime: false}
     ]
   end
 

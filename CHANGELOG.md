@@ -1,11 +1,20 @@
 # Changelog
 
+[0.13.2]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.13.1...v0.13.2
 [0.13.0]: https://github.com/nshkrdotcom/prompt_runner_sdk/compare/v0.12.1...v0.13.0
 
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.13.2] - 2026-11-25
+
+### Changed
+
+- Require Agent Session Manager 0.17.7 and CLI Subprocess Core 0.10.2 for the current Claude lineup.
+- Document Claude effort levels and use Haiku 5.5 at low effort in the example packet.
+- Refresh the remaining dependency floors and Hex lock entries.
 
 ## [0.13.1] - 2026-09-29
 

@@ -14,7 +14,7 @@
 </p>
 
 Prompt Runner SDK executes packetized prompt workflows against local
-repositories. This README targets `prompt_runner_sdk ~> 0.13.1`.
+repositories. This README targets `prompt_runner_sdk ~> 0.13.2`.
 
 For unattended or multi-operator packets, use an installed escript plus an
 operator [workspace](guides/workspaces.md). Workspaces replace PID files,
@@ -53,7 +53,7 @@ attention. `--json` retains the full machine-readable status.
 Prepared workspace ids now address monitoring and control commands consistently;
 an optional strict manifest packet binding also makes `plan` and `start` concise.
 
-In 0.13.1, a packet may instead declare agent-owned completion:
+A packet may also declare agent-owned completion:
 
 ```yaml
 execution:
@@ -100,7 +100,7 @@ The same runtime is exposed through public Elixir modules and the CLI.
 ```elixir
 def deps do
   [
-    {:prompt_runner_sdk, "~> 0.13.1"}
+    {:prompt_runner_sdk, "~> 0.13.2"}
   ]
 end
 ```

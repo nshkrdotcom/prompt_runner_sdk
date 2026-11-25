@@ -1,6 +1,6 @@
 # Examples
 
-These examples all use the 0.8.1 packet/profile workflow.
+These examples all use the packet and profile workflow.
 
 ## Included Examples
 

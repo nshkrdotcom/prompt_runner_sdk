@@ -1,6 +1,6 @@
 # Agent-Controlled Linear Runs
 
-Prompt Runner 0.13.1 lets an agent control movement through an ordinary ordered
+Prompt Runner lets an agent control movement through an ordinary ordered
 prompt sequence without introducing a workflow graph.
 
 The runner still owns scheduling and completion. The agent can request one of

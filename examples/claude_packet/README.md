@@ -18,7 +18,7 @@ a required dependency of your project.
 
 ## What It Covers
 
-- `provider: claude` with a `claude_opts` section
+- `provider: claude` with the `haiku` alias (Claude Haiku 5.5) at `low` effort
 - prompt-local verification contracts
 - generated checklist files
 - packet-local runtime state in `.prompt_runner/`
